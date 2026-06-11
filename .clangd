@@ -1,2 +1,5 @@
 CompileFlags:
-  Add: [-DLG_CORE_IMPLEMENTATION_]
+  Add: [
+    -DLG_CORE_IMPLEMENTATION_,
+    -DLG_CPU_IMPLEMENTATION_
+  ]

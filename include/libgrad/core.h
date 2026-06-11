@@ -102,8 +102,6 @@ typedef enum lg_opcode {
     LG_OPCODE_LOSS_CROSS_ENTROPY,
 
     /// --- UNARY OPERATIONS ---
-    /// Metadata-only tensor transposition
-    LG_OPCODE_TRANSPOSE,
     /// Element-wise ReLU
     LG_OPCODE_RELU,
     /// Element-wise stable softmax
@@ -114,8 +112,12 @@ typedef enum lg_opcode {
     LG_OPCODE_LN,
 
     /// The total number of opcodes
-    /// Used in backend vtable construction
-    __LG_N_OPCODES__
+    /// used in backend vtable construction
+    __LG_N_VIRTUAL_OPS,
+    
+    /// Metadata-only tensor transposition
+    /// NOT implemented by backends.
+    LG_OPCODE_TRANSPOSE,
 } lg_opcode;
 
 /// A tape used to record operations
@@ -137,12 +139,12 @@ typedef struct lg_tape {
 
 /// Function signature used in a forward pass.
 /// b.data == NULL for unary operations.
-typedef void (*lg_forward_fn)(void *ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
+typedef lg_status (*lg_forward_fn)(void *ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
 
 /// Function signature used in a backward pass.
 /// b.data == NULL for unary operations.
 /// out_grad_b must not be mutated in unary operations.
-typedef void (*lg_backward_fn)(
+typedef lg_status (*lg_backward_fn)(
     void *ctx, 
     lg_tensor out_grad_a,          // Gradient accumulator for A
     lg_tensor out_grad_b,          // Gradient accumulator for B
@@ -157,15 +159,15 @@ typedef struct lg_backend {
     /// Execution context passed to every function invocation
     /// NOT thread-safe by default
     void *ctx;
-    lg_forward_fn forward_vtable[__LG_N_OPCODES__];
-    lg_backward_fn backward_vtable[__LG_N_OPCODES__];
+    lg_forward_fn forward_vtable[__LG_N_VIRTUAL_OPS];
+    lg_backward_fn backward_vtable[__LG_N_VIRTUAL_OPS];
 } lg_backend;
 
 /// Context passsed to each core function
 /// If lg_tape == NULL, then no tracking is performed.
 typedef struct lg_context {
-    lg_tape *lg_tape;
-    lg_backend *lg_backend;
+    lg_tape *tape;
+    lg_backend *backend;
 } lg_context;
 
 lg_status lg_add(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
@@ -176,15 +178,88 @@ lg_status lg_hadamard(lg_context ctx, lg_tensor out, const lg_tensor a, const lg
 lg_status lg_loss_mse(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
 lg_status lg_loss_cross_entropy(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
 
-lg_tensor lg_transpose(lg_context ctx, const lg_tensor in);
 lg_status lg_relu(lg_context ctx, lg_tensor out, const lg_tensor in);
 lg_status lg_stable_softmax(lg_context ctx, const lg_tensor out, const lg_tensor in);
 lg_status lg_sigmoid(lg_context ctx, lg_tensor out, const lg_tensor in);
 lg_status lg_ln(lg_context ctx, lg_tensor out, const lg_tensor in);
 
+lg_status lg_backward(lg_context ctx);
+lg_tensor lg_transpose(lg_context ctx, const lg_tensor in);
+
 #endif // LG_CORE_H_
+
 
 #ifdef LG_CORE_IMPLEMENTATION_
 #undef LG_CORE_IMPLEMENTATION_
+
+static inline lg_status lg_tape_push(
+    lg_tape *tape,
+    const lg_opcode opcode,
+    const lg_tensor a,
+    const lg_tensor b,
+    const lg_tensor output
+) {
+#ifdef LG_SAFE
+    if (tape->len >= tape->cap) {
+        return LG_STATUS_TAPE_OVERFLOW;
+    }
+#endif // LG_SAFE
+
+    lg_size next_idx = tape->len;
+    tape->len += 1;
+    tape->opcodes[next_idx] = opcode;
+    tape->inputs_a[next_idx] = a;
+    tape->inputs_b [next_idx] = b;
+    tape->outputs[next_idx] = output;
+
+    return LG_STATUS_OK;
+}
+
+lg_status lg_add(
+    lg_context ctx,
+    lg_tensor out,
+    const lg_tensor a,
+    const lg_tensor b
+) {
+#ifdef LG_SAFE
+    // Check dimensionality from right to left, aligning their trailing dimensions.
+    // Tensors are add-compatible if all of their dimensions are add-compatible.
+    // Two dimensions are add-compatible if one of three things is true:
+    // 1) The dimensions are the same.
+    // 2) One of the dimensions is 1.
+    // 3) One of the dimensions does not exist.
+    lg_size max_rank = (a.rank > b.rank) ? a.rank : b.rank;
+    for (lg_size i = 0; i < max_rank; i++) {
+        // Default missing trailing dimensions to 1 for correct broadcasting semantics
+        lg_size dim_a = (i < a.rank) ? a.dim[a.rank - 1 - i] : 1;
+        lg_size dim_b = (i < b.rank) ? b.dim[b.rank - 1 - i] : 1;
+
+        if (dim_a != dim_b && dim_a != 1 && dim_b != 1) {
+            return LG_STATUS_SHAPE_MISMATCH;
+        }
+    }
+
+    if (!ctx.backend) {
+        return LG_STATUS_NULL_POINTER;
+    } 
+    if (!ctx.backend->forward_vtable[LG_OPCODE_ADD]) {
+        return LG_STATUS_UNSUPPORTED_OPCODE;
+    }
+#endif // LG_SAFE
+
+    lg_status status;
+    status = ctx.backend->forward_vtable[LG_OPCODE_ADD](ctx.backend->ctx, out, a, b);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    if (ctx.tape != NULL) {
+        status = lg_tape_push(ctx.tape, LG_OPCODE_ADD, a, b, out);
+        if (status != LG_STATUS_OK) {
+            return status;
+        }
+    }
+
+    return LG_STATUS_OK;
+}
 
 #endif // LG_CORE_IMPLEMENTATION_ 
