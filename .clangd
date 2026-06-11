@@ -1,0 +1,2 @@
+CompileFlags:
+  Add: [-DLG_CORE_IMPLEMENTATION_]

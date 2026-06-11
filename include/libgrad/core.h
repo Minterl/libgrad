@@ -131,7 +131,7 @@ typedef struct lg_tape {
     
     lg_opcode *opcodes  LG_CHECK_BOUNDS(len);
     lg_tensor *inputs_a LG_CHECK_BOUNDS(len);
-    lg_tensor *inputs_b LG_CHECK_BOUNDS_NULLABLE(len);
+    lg_tensor *inputs_b LG_CHECK_BOUNDS(len);
     lg_tensor *outputs  LG_CHECK_BOUNDS(len);
 } lg_tape;
 
@@ -157,8 +157,8 @@ typedef struct lg_backend {
     /// Execution context passed to every function invocation
     /// NOT thread-safe by default
     void *ctx;
-    lg_forward_fn forward_vtable[__LG_N_OPCODES__]   LG_CHECK_BOUNDS(__LG_N_OPCODES__);
-    lg_backward_fn backward_vtable[__LG_N_OPCODES__] LG_CHECK_BOUNDS(__LG_N_OPCODES__);
+    lg_forward_fn forward_vtable[__LG_N_OPCODES__];
+    lg_backward_fn backward_vtable[__LG_N_OPCODES__];
 } lg_backend;
 
 /// Context passsed to each core function
