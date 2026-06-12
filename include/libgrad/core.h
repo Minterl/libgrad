@@ -13,6 +13,14 @@
 #define lg_dtype float
 #endif // lg_dtype
 
+#ifndef lg_bool
+#define lg_bool int
+#endif // lg_bool
+
+#ifndef lg_byte
+#define lg_byte char 
+#endif // lg_bool
+ 
 /// Pointer-sized integer
 #ifndef lg_size
 #include <stddef.h>
@@ -44,6 +52,7 @@ typedef enum lg_status {
     LG_STATUS_TAPE_OVERFLOW,
     LG_STATUS_NULL_POINTER,
     LG_STATUS_UNSUPPORTED_OPCODE,
+    LG_STATUS_OUT_OF_MEMORY,
     LG_STATUS_HARDWARE_FAULT,
     LG_STATUS_UNEXPECTED_NAN
 } lg_status;

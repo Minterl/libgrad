@@ -8,6 +8,7 @@ bear -- cc -o out/test-core.out \
     -Iinclude \
     -Itest \
     -DLG_SAFE \
+    -DLG_DEBUG \
     test/core.c
 
 ./out/test-core.out
