@@ -14,8 +14,9 @@
 #include "testing.h"
 
 test_status test_cpu_add() {
-    lg_backend_cpu cpu_backend = {};
-    lg_backend backend = lg_backend_cpu_interface(&cpu_backend);
+    lg_backend backend;
+    lg_backend_cpu_init(&backend);
+
     lg_context ctx = (lg_context){
         .backend = &backend,
         .tape = NULL,
