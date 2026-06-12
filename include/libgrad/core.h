@@ -189,8 +189,8 @@ lg_tensor lg_transpose(lg_context ctx, const lg_tensor in);
 #endif // LG_CORE_H_
 
 
-#ifdef LG_CORE_IMPLEMENTATION_
-#undef LG_CORE_IMPLEMENTATION_
+#ifdef LG_CORE_IMPLEMENTATION
+#undef LG_CORE_IMPLEMENTATION
 
 static inline lg_status lg_tape_push(
     lg_tape *tape,
@@ -261,4 +261,4 @@ lg_status lg_add(
     return LG_STATUS_OK;
 }
 
-#endif // LG_CORE_IMPLEMENTATION_ 
+#endif // LG_CORE_IMPLEMENTATION 

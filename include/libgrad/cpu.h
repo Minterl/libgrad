@@ -14,8 +14,8 @@ lg_status lg_cpu_add(void *ctx, lg_tensor out, const lg_tensor a, const lg_tenso
 #endif // LG_CPU_H_
 
 
-#ifdef LG_CPU_IMPLEMENTATION_
-#undef LG_CPU_IMPLEMENTATION_
+#ifdef LG_CPU_IMPLEMENTATION
+#undef LG_CPU_IMPLEMENTATION
 
 lg_backend lg_backend_cpu_interface(lg_backend_cpu *backend) {
     return (lg_backend){
@@ -40,4 +40,4 @@ lg_status lg_cpu_add(
     return LG_STATUS_OK;
 }
 
-#endif // LG_CPU_IMPLEMENTATION_
+#endif // LG_CPU_IMPLEMENTATION

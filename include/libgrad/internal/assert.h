@@ -14,8 +14,8 @@ void __lg_assert(const char *msg, bool cond, const char *file, int line);
 
 #endif // LG_INTERNAL_ASSERT_H_
 
-#if defined(LG_INTERNAL_ASSERT_IMPLEMENTATION_) && defined(LG_ASSERTIONS)
-#undef LG_INTERNAL_ASSERT_IMPLEMENTATION_
+#if defined(LG_INTERNAL_ASSERT_IMPLEMENTATION) && defined(LG_ASSERTIONS)
+#undef LG_INTERNAL_ASSERT_IMPLEMENTATION
 
 #include <stdio.h>
 
@@ -26,4 +26,4 @@ void __lg_assert(const char *msg, bool cond, const char *file, int line) {
     }
 }
 
-#endif // LG_INTERNAL_ASSERT_IMPLEMENTATION_
+#endif // LG_INTERNAL_ASSERT_IMPLEMENTATION
