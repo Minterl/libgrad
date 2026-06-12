@@ -238,7 +238,6 @@ lg_status lg_add(
             return LG_STATUS_SHAPE_MISMATCH;
         }
     }
-
     if (!ctx.backend) {
         return LG_STATUS_NULL_POINTER;
     } 
