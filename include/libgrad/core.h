@@ -19,7 +19,7 @@
 
 #ifndef lg_byte
 #define lg_byte char 
-#endif // lg_bool
+#endif // lg_byte
  
 /// Pointer-sized integer
 #ifndef lg_size
@@ -192,6 +192,19 @@ static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor);
 /// This is the recommended and standard way to initialize a tensor layout.
 static inline lg_tensor lg_tensor_rmaj(lg_size dim[LG_MAX_RANK], lg_size row_align);
 
+/// Returns an isotropic tensor of rank `rank` and dim `dim`.
+/// All vectors are anisotropic, and as such, if a rank of 2 is passed in,
+/// this function returns LG_STATUS_INVALID_RANK.
+///
+/// See `lg_tensor_rmaj`.
+static inline lg_status lg_tensor_rmaj_isotropic(lg_tensor *out, lg_size rank, lg_size dim, lg_size row_align);
+
+/// Returns true if a tensor is isotropic.
+/// 
+/// Tensors with a rank of zero, and all scalars are considered isotropic,
+/// while all vectors are considered anisotropic.
+static inline lg_bool lg_tensor_is_isotropic(const lg_tensor tensor);
+
 lg_status lg_add(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
 lg_status lg_sub(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
 lg_status lg_contract(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
@@ -230,11 +243,9 @@ static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor) {
 }
 
 static inline lg_tensor lg_tensor_rmaj(lg_size dim[LG_MAX_RANK], lg_size row_align) {
-    lg_tensor ten = {
-        .dim = {*dim},
-    };
+    lg_tensor ten = {0};
 
-    for (ten.rank = 0; dim[ten.rank] > 0; ten.rank++) {
+    for (ten.rank = 0; ten.rank < LG_MAX_RANK && dim[ten.rank] > 0; ten.rank++) {
          ten.dim[ten.rank] = dim[ten.rank];
     }
 
@@ -252,6 +263,46 @@ static inline lg_tensor lg_tensor_rmaj(lg_size dim[LG_MAX_RANK], lg_size row_ali
     }
 
     return ten;
+}
+
+static inline lg_status lg_tensor_rmaj_isotropic(lg_tensor *out, lg_size rank, lg_size dim, lg_size row_align) {
+#ifdef LG_SAFE
+    if (rank > LG_MAX_RANK) {
+        return LG_STATUS_INVALID_RANK;
+    }
+#endif // LG_SAFE
+    // All vectors are anisotropic.
+    // This is not included in safe mode because it's too big a footgun.
+    if (rank == 2) {
+        return LG_STATUS_INVALID_RANK;
+    }
+    lg_size dims[LG_MAX_RANK] = {0};
+    for (lg_size i = 0; i < rank; i++) {
+        dims[i] = dim;
+    }
+    *out = lg_tensor_rmaj(dims, row_align);
+    return LG_STATUS_OK;
+}
+
+static inline lg_bool lg_tensor_is_isotropic(const lg_tensor tensor) {
+    switch (tensor.rank) {
+    // All vectors are anisotropic.
+    case 2:
+        return 0;
+    // All scalars and tensors of rank zero are isotropic.
+    case 1:
+    case 0:
+        return 1;
+    default: {
+        lg_size last_dim = tensor.dim[0];
+        for (lg_size i = 0; i < tensor.rank; i++) {
+            if (last_dim != tensor.dim[i]) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    }
 }
 
 static inline lg_status lg_tape_push(

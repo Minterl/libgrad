@@ -35,7 +35,7 @@ inline static lg_size mock_align_hint() {
 }
 
 test_status test_tensor_init() {
-    // --- no padding ---
+    // --- w/o padding ---
     {
         lg_size expected_strides[] = {8, 4, 1};
         lg_tensor ten = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){3, 2, 4}, 1);
@@ -56,6 +56,37 @@ test_status test_tensor_init() {
         lg_size expected_strides[4] = {224, 32, 8, 1};
         lg_tensor ten = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){2, 7, 4, 3}, 8);
         test_assert(ten.rank == 4, "got tensor rank %d", ten.rank);
+        for (int i = 0; i < 4; i++) {
+            test_assert(
+                expected_strides[i] == ten.strides[i],
+                "wanted stride of %d, got %d, i = %d",
+                expected_strides[i],
+                ten.strides[i],
+                i
+            );
+        }
+    }
+
+    // --- isotropic w/o padding ---
+    {
+        lg_size expected_dims[4] = {4, 4, 4, 4};
+        lg_size expected_strides[4] = {64, 16, 4, 1};
+
+        lg_tensor ten = {0};
+        lg_status status = lg_tensor_rmaj_isotropic(&ten, 4, 4, 1);
+
+        test_assert(status == LG_STATUS_OK, "failed to initialize isotropic tensor");
+        test_assert(ten.rank == 4, "got tensor rank %d", ten.rank);
+        test_assert(lg_tensor_is_isotropic(ten), "tensor was not isotropic");
+        for (int i = 0; i < 4; i++) {
+            test_assert(
+                expected_dims[i] == ten.dim[i],
+                "wanted dim of %d, got %d, i = %d",
+                expected_dims[i],
+                ten.dim[i],
+                i
+            );
+        }
         for (int i = 0; i < 4; i++) {
             test_assert(
                 expected_strides[i] == ten.strides[i],
