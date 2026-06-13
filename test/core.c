@@ -179,9 +179,57 @@ test_status test_alloc_tensor() {
     return TEST_STATUS_OK;
 }
 
+test_status test_tensor_iter_not_compatible() {
+    lg_tensor tensors[LG_MAX_ITER_TENSORS] = {
+        // 4 != 5, so these should clash and not be compatible
+        lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1),
+        lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 5, 4}, 1),
+    };
+
+    lg_tensor_iter iter;
+    lg_status status = lg_tensor_iter_init(&iter, tensors, 2);
+    test_assert(status == LG_STATUS_SHAPE_MISMATCH, "failed to detect shape mismatch");
+
+    return TEST_STATUS_OK;
+}
+
+test_status test_tensor_iter_two() {
+    lg_tensor tensors[LG_MAX_ITER_TENSORS] = {
+        // This is a mat44.
+        // In memory, with no alignment, this should be a contiguous
+        // row-major 2d array (these are (x, y) pairs, not matrix coords):
+        // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
+        // The first offset should be zero.
+        lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1),
+        // This is a 6x4x4 tensor.
+        // In memory, this looks like this:
+        // { 
+        //     (0, 0, 0), (0, 0, 1) ...
+        //     (0, 1, 0), (0, 1, 1) ...
+        //     (1, 0, 0), (1, 0, 1) ...
+        //     (m-1, n-1, k-1)
+        // }
+        // The first offset is still zero.
+        lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 4, 4}, 1),
+    };
+
+    test_assert(tensors[0].strides[0] == 4, "got first stride of %d", tensors[0].strides[0]);
+    test_assert(tensors[0].strides[1] == 1, "got second stride of %d", tensors[0].strides[1]);
+
+    lg_tensor_iter iter;
+    lg_status status = lg_tensor_iter_init(&iter, tensors, 2);
+    test_assert(status == LG_STATUS_OK, "could not initialize tensor iterator");
+    test_assert(iter.offsets[0] == 0, "got offset of %d", iter.offsets[0]);
+    test_assert(iter.offsets[1] == 0, "got offset of %d", iter.offsets[1]);
+
+    return TEST_STATUS_OK;
+}
+
 int main(void) {
     test_run(tensor_init);
     test_run(tensor_size);
     test_run(alloc_tensor);
+    test_run(tensor_iter_not_compatible);
+    test_run(tensor_iter_two);
     return 0;
 }
