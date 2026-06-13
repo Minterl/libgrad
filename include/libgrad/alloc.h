@@ -38,8 +38,7 @@ typedef struct lg_allocator {
 /// Allocate necessary memory for `tensor`, and mutate the `data`
 /// and `grad` pointers, the latter iff `with_grad` == true.
 ///
-/// Allocations for `data` and `grad` are guaranteed to be continuous
-/// and atomic.
+/// Uses a single allocation for `data` and `grad` buffers.
 ///
 /// If allocator.align_hint != NULL, then the gradient buffer will be aligned
 /// with the result.
@@ -47,7 +46,12 @@ typedef struct lg_allocator {
 /// If a tensor is zero-sized, returns early without mutating `tensor`.
 lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, lg_bool with_grad);
 
+/// Frees the buffers backing `tensor`.
+///
+/// Assumes `tensor` was allocated using `lg_alloc_tensor`, which uses a single allocation
+/// for both the `data` and `grad` buffers.
 lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor);
+
 lg_status lg_alloc_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len, lg_bool with_grad);
 lg_status lg_free_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len, lg_bool with_grad);
 
@@ -124,6 +128,18 @@ lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, lg_bool wi
         tensor->grad = NULL;
     }
 
+    return LG_STATUS_OK;
+}
+
+lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor) {
+#ifdef LG_SAFE
+    if (tensor->data == NULL) {
+        return LG_STATUS_NULL_POINTER;
+    }
+#endif // LG_SAFE
+    allocator->free(allocator->ctx, tensor->data);
+    tensor->data = NULL;
+    tensor->grad = NULL;
     return LG_STATUS_OK;
 }
 
