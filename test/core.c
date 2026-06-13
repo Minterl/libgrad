@@ -38,7 +38,7 @@ test_status test_tensor_init() {
     // --- no padding ---
     {
         lg_size expected_strides[] = {8, 4, 1};
-        lg_tensor ten = lg_tensor_init_default((lg_size[LG_MAX_RANK]){3, 2, 4}, 1);
+        lg_tensor ten = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){3, 2, 4}, 1);
         test_assert(ten.rank == 3, "got tensor rank %d", ten.rank);
         for (int i = 0; i < 3; i++) {
             test_assert(
@@ -54,7 +54,7 @@ test_status test_tensor_init() {
     // --- w/ padding ---
     {
         lg_size expected_strides[4] = {224, 32, 8, 1};
-        lg_tensor ten = lg_tensor_init_default((lg_size[LG_MAX_RANK]){2, 7, 4, 3}, 8);
+        lg_tensor ten = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){2, 7, 4, 3}, 8);
         test_assert(ten.rank == 4, "got tensor rank %d", ten.rank);
         for (int i = 0; i < 4; i++) {
             test_assert(
@@ -91,7 +91,7 @@ test_status test_tensor_size() {
     lg_size also_36_size = lg_tensor_size_bytes(also_36);
     test_assert(also_36_size == 36 * sizeof(lg_dtype), "tensor size was %d", also_36_size);
 
-    lg_tensor padded = lg_tensor_init_default((lg_size[LG_MAX_RANK]){3, 3, 3}, 4);
+    lg_tensor padded = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){3, 3, 3}, 4);
     lg_size calculated_bytes = lg_tensor_size_bytes(padded);
     // Strides should be (12, 4, 1), meaning the maximum offset at (2, 2, 2) is
     // (12 + 4 + 1) * 2, so the max size is one more than that.
@@ -107,7 +107,7 @@ test_status test_tensor_size() {
     calculated_bytes = lg_tensor_size_bytes(zero_ten);
     test_assert(calculated_bytes == 0, "tensor size calculated to be %d bytes", calculated_bytes);
 
-    lg_tensor scalar = lg_tensor_init_default((lg_size[LG_MAX_RANK]){1}, 0);
+    lg_tensor scalar = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){1}, 0);
     calculated_bytes = lg_tensor_size_bytes(scalar);
     test_assert(calculated_bytes == sizeof(lg_dtype), "tensor size calculated to be %d bytes", calculated_bytes);
 

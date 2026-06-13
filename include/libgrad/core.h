@@ -179,6 +179,19 @@ typedef struct lg_context {
     lg_backend *backend;
 } lg_context;
 
+/// Compute the size in bytes of a tensor's data buffer.
+static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor);
+
+/// Returns a tensor with dim `dim`, with strides as if it was stored in row-major
+/// order. In this layout, the rightmost dimension has the unit stride.
+///
+/// Rows (the unit stride dimension) are padded to align with `row_align` if `row_align` > 1.
+///
+/// Does not allocate any memory; that can be done with `lg_alloc_tensor`.
+///
+/// This is the recommended and standard way to initialize a tensor layout.
+static inline lg_tensor lg_tensor_rmaj(lg_size dim[LG_MAX_RANK], lg_size row_align);
+
 lg_status lg_add(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
 lg_status lg_sub(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
 lg_status lg_contract(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
@@ -200,6 +213,46 @@ lg_tensor lg_transpose(lg_context ctx, const lg_tensor in);
 
 #ifdef LG_CORE_IMPLEMENTATION
 #undef LG_CORE_IMPLEMENTATION
+
+static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor) {
+    if (tensor.rank == 0) {
+        return 0;
+    }
+
+    lg_size max_offset = 0;
+    for (lg_size i = 0; i < tensor.rank; i++) {
+        if (tensor.dim[i] > 0) {
+            max_offset += (tensor.dim[i] - 1) * tensor.strides[i];
+        }
+    }
+
+    return (max_offset + 1) * sizeof(lg_dtype);
+}
+
+static inline lg_tensor lg_tensor_rmaj(lg_size dim[LG_MAX_RANK], lg_size row_align) {
+    lg_tensor ten = {
+        .dim = {*dim},
+    };
+
+    for (ten.rank = 0; dim[ten.rank] > 0; ten.rank++) {
+         ten.dim[ten.rank] = dim[ten.rank];
+    }
+
+    lg_size last_stride = 1;
+    for (lg_size i = 1; i <= ten.rank; i++) {
+        lg_size axis = ten.rank - i;
+        ten.strides[axis] = last_stride;
+        last_stride *= dim[ten.rank - i];
+        // Conceptually, we only pad the rightmost dimension.
+        // However, this affects the stride of the second-rightmost dimension first
+        // (and then all subsequent dimensions).
+        if (row_align > 1 && i == 1) {
+            last_stride = (last_stride + row_align - 1) & ~(row_align - 1);
+        }
+    }
+
+    return ten;
+}
 
 static inline lg_status lg_tape_push(
     lg_tape *tape,
