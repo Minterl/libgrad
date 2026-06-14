@@ -9,10 +9,10 @@
 #endif // LG_MAX_RANK
 
 /// Maximum possible number of Tensors that can
-/// be iterated over
-#ifndef LG_MAX_ITER_TENSORS
-#define LG_MAX_ITER_TENSORS 4
-#endif // LG_MAX_ITER_TENSORS
+/// be in an `lg_aligned_views`.
+#ifndef LG_MAX_ALIGNED_TENSORS
+#define LG_MAX_ALIGNED_TENSORS 4
+#endif // LG_MAX_ALIGNED_TENSORS
 
 /// Type to back Tensor data
 #ifndef lg_dtype
@@ -169,30 +169,24 @@ typedef lg_status (*lg_backward_fn)(
     const lg_tensor b              // The original input B (NULL if unary)
 );
 
-/// Broadcasting iterator over a set of tensors.
+/// Set of aligned tensor views for broadcasting.
 ///
-/// The first tensor in the iterator is considered the 
-/// "primary tensor."
-/// The primary tensor is the one that dictates the optimized iteration
+/// The first tensor in the set is considered the 
+/// "primary."
+/// The primary tensor is the one that dictates the optimized plan
 /// plan for the other tensors. In that, this is the tensor where it is 
 /// guaranteed that the contiguous dimension (the dimension with the unit stride)
 /// will be accessed sequentially in memory.
-typedef struct lg_tensor_iter {
-    /// Views on all of the tensors to be iterated over.
+typedef struct lg_aligned_views {
+    /// Views on all of the tensors.
     /// The view at index zero is considered the primary.
     lg_size n_tensors;
-    lg_tensor views[LG_MAX_ITER_TENSORS];
+    lg_tensor views[LG_MAX_ALIGNED_TENSORS];
+} lg_aligned_views;
 
-    /// The current iteration coordinate on the primary tensor.
-    lg_size primary_coord[LG_MAX_RANK];
-
-    /// The offset into the tensor at views[i] corresponding to the current step.
-    lg_size offsets[LG_MAX_ITER_TENSORS];
-} lg_tensor_iter;
-
-/// Initializes an `lg_tensor_iter`.
+/// Initializes an `lg_aligned_views`.
 /// The first tensor in the array is considered the primary tensor.
-lg_status lg_tensor_iter_init(lg_tensor_iter *out, lg_tensor tensors[LG_MAX_ITER_TENSORS], lg_size n_tensors);
+lg_status lg_aligned_views_init(lg_aligned_views *out, lg_tensor tensors[LG_MAX_ALIGNED_TENSORS], lg_size n_tensors);
 
 /// Execution backend (e.g CPU, Cuda)
 typedef struct lg_backend {
@@ -336,7 +330,7 @@ static inline lg_bool lg_tensor_is_isotropic(const lg_tensor tensor) {
     }
 }
 
-lg_status lg_tensor_iter_init(lg_tensor_iter *out, lg_tensor tensors[LG_MAX_ITER_TENSORS], lg_size n_tensors) {
+lg_status lg_aligned_views_init(lg_aligned_views *out, lg_tensor tensors[LG_MAX_ALIGNED_TENSORS], lg_size n_tensors) {
     lg_size max_rank = 0;
     out->n_tensors = n_tensors;
     for (lg_size i = 0; i < n_tensors; i++) {
@@ -346,54 +340,20 @@ lg_status lg_tensor_iter_init(lg_tensor_iter *out, lg_tensor tensors[LG_MAX_ITER
         }
     }
 
-    lg_size master_dim[LG_MAX_RANK];
-    for (lg_size j = 0; j < max_rank; j++) {
-        // Default the missing trailing dimensions to 1
-        master_dim[j] = 1;
-    }
-
-    /// Pad the rest of the views to be aligned by their trailing dims.
+    /// Left-pad the rest of the views to be aligned by their trailing dims.
     for (lg_size i = 0; i < n_tensors; i++) {
         if (out->views[i].rank < max_rank) {
             lg_size shift = max_rank - out->views[i].rank;
-            for (int j = (int)out->views[i].rank - 1; j >= 0; j--) {
-                out->views[i].dim[j + shift] = out->views[i].dim[j];
-                out->views[i].strides[j + shift] = out->views[i].strides[j];
+            for (lg_size j = out->views[i].rank; j > 0; j--) {
+                lg_size src_idx = j - 1;
+                out->views[i].dim[src_idx + shift] = out->views[i].dim[src_idx];
+                out->views[i].strides[src_idx + shift] = out->views[i].strides[src_idx];
             }
             for (lg_size j = 0; j < shift; j++) {
                 out->views[i].dim[j] = 1;
                 out->views[i].strides[j] = 0;
             }
             out->views[i].rank = max_rank;
-        }
-    }
-
-    // --- Validate that all tensors are broadcast-compatible ---
-    // Every tensor participating in the iteration must be broadcast-compatible
-    // with every other tensor.
-    // Naively, we would perform an O(n^2) check across a matrix of all of the participating tensors.
-    // The shortcut below is equivalent.
-    //
-    // Tensors are broadcast-compatible if all of their dimensions are broadcast-compatible.
-    // Two dimensions are broadcast-compatible if one of three things is true:
-    // 1) The dimensions are the same.
-    // 2) One of the dimensions is 1.
-    // 3) One of the dimensions does not exist.
-    for (lg_size i = 0; i < n_tensors; i++) {
-        for (lg_size j = 0; j < max_rank; j++) {
-            lg_size dim_current = (j < out->views[i].rank) ? out->views[i].dim[j] : 1;
-            if (dim_current != 1) {
-                // If the master dimension is 1, it is compatible with anything.
-                // This now means, however, that all other tensors in the iterator
-                // must also be compatible with this new master dimension.
-                if (master_dim[j] == 1) {
-                    master_dim[j] = dim_current;
-                } 
-                // If there was some other master dimension already present, then we cannot continue.
-                else if (master_dim[j] != dim_current) {
-                    return LG_STATUS_SHAPE_MISMATCH;
-                }
-            }
         }
     }
 
@@ -406,7 +366,7 @@ lg_status lg_tensor_iter_init(lg_tensor_iter *out, lg_tensor tensors[LG_MAX_ITER
     // dimension, which destroys cache coherence.
     for (lg_size i = 0; i < max_rank; i++) {
         lg_bool swapped = 0;
-        for (lg_size j = 1; j < max_rank - i; j++) {
+        for (lg_size j = 1; j > max_rank - i; j++) {
             if (out->views[0].strides[j - 1] > out->views[0].strides[j]) {
                 // Swap the dimensions and strides for all of the tensors
                 for (lg_size k = 0; k < out->n_tensors; k++) {
@@ -417,10 +377,6 @@ lg_status lg_tensor_iter_init(lg_tensor_iter *out, lg_tensor tensors[LG_MAX_ITER
                     out->views[k].strides[j - 1] = out->views[k].strides[j];
                     out->views[k].strides[j] = temp;
                 }
-                // We also have to swap the master_dim in sync with the rest of the tensors.
-                lg_size temp = master_dim[j];
-                master_dim[j] = master_dim[j - 1];
-                master_dim[j - 1] = temp;
                 swapped = 1;
             }
         }
@@ -429,32 +385,69 @@ lg_status lg_tensor_iter_init(lg_tensor_iter *out, lg_tensor tensors[LG_MAX_ITER
         }
     }
 
-    // Finally, since we know all of the tensors are broadcast-compatible, and their
+    // --- Validate that all tensors are broadcast-compatible ---
+    // Every tensor participating in the tracking must be broadcast-compatible
+    // with every other tensor.
+    // Naively, we would perform an O(n^2) check across a matrix of all of the participating tensors.
+    // The shortcut below is equivalent.
+    //
+    // Tensors are broadcast-compatible if all of their dimensions are broadcast-compatible.
+    // Two dimensions are broadcast-compatible if one of three things is true:
+    // 1) The dimensions are the same.
+    // 2) One of the dimensions is 1.
+    // 3) One of the dimensions does not exist.
+    lg_size master_dim[LG_MAX_RANK];
+    for (lg_size j = 0; j < max_rank; j++) {
+        master_dim[j] = 1;
+    }
+
+    for (lg_size i = 0; i < n_tensors; i++) {
+        // Since all of the dims are already right-aligned, we can just iterate over the entire
+        // array.
+        for (lg_size j = 0; j < max_rank; j++) {
+            lg_size dim_current = (j < out->views[i].rank) ? out->views[i].dim[j] : 1;
+            if (dim_current != 1) {
+                // If the master dimension is 1, it is compatible with anything.
+                // This now means, however, that all other tensors in the set
+                // must also be compatible with this new master dimension.
+                if (master_dim[j] == 1) {
+                    master_dim[j] = dim_current;
+                } 
+                // If there was some other master dimension already present, then we cannot continue.
+                else if (master_dim[j] != dim_current) {
+                    return LG_STATUS_SHAPE_MISMATCH;
+                }
+            }
+        }
+    }
+    
+    // Since we know all of the tensors are broadcast-compatible, and their
     // dims/strides are all in the same order, we can pre-bake broadcasting into the
     // strides in the views.
+    //
+    // It's important to remember that both the max_rank array and the dims in the views
+    // are right-aligned at this point.
     //
     // This is done in two parts for every tensor along each axis:
     // 1) Setting all strides less than the master to zero, causing the actual
     //    offsets to never move.
     // 2) Aligning the logical dimensions of the tensor with the master.
     for (lg_size i = 0; i < n_tensors; i++) {
-        for (lg_size j = 0; j < max_rank; j++) {
-            if (out->views[i].dim[j] < master_dim[j]) {
-                out->views[i].strides[j] = 0;
-                out->views[i].dim[j] = master_dim[j];
+        for (lg_size j = 1; j <= max_rank; j++) {
+            if (out->views[i].dim[max_rank - j] < master_dim[max_rank - j]) {
+                out->views[i].strides[max_rank - j] = 0;
+                out->views[i].dim[max_rank - j] = master_dim[max_rank - j];
             }
         }
     }
 
-    return LG_STATUS_OK;
-}
+    // The resulting state of our tensor views looks like this:
+    // - All tensors have the same logical rank
+    // - All tensors have the exact same logical dims
+    // - The only thing that changes between tensor views is
+    //   striding.
 
-static inline lg_bool lg_tensor_iter_next(lg_tensor_iter *iter) {
-#pragma unroll LG_MAX_RANK
-    for (lg_size j = 0; j < iter->views[0].rank; j++) {
-        iter->offsets[0]++;
-    }
-    return LG_STATUS_OK;    
+    return LG_STATUS_OK;
 }
 
 static inline lg_status lg_tape_push(

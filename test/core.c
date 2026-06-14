@@ -39,32 +39,16 @@ test_status test_tensor_init() {
     {
         lg_size expected_strides[] = {8, 4, 1};
         lg_tensor ten = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){3, 2, 4}, 1);
-        test_assert(ten.rank == 3, "got tensor rank %d", ten.rank);
-        for (int i = 0; i < 3; i++) {
-            test_assert(
-                expected_strides[i] == ten.strides[i],
-                "wanted stride of %d, got %d, i = %d",
-                expected_strides[i],
-                ten.strides[i],
-                i
-            );
-        }
+        test_assert(ten.rank == 3, "got tensor rank %lu", ten.rank);
+        test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
     }
 
     // --- w/ padding ---
     {
         lg_size expected_strides[4] = {224, 32, 8, 1};
         lg_tensor ten = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){2, 7, 4, 3}, 8);
-        test_assert(ten.rank == 4, "got tensor rank %d", ten.rank);
-        for (int i = 0; i < 4; i++) {
-            test_assert(
-                expected_strides[i] == ten.strides[i],
-                "wanted stride of %d, got %d, i = %d",
-                expected_strides[i],
-                ten.strides[i],
-                i
-            );
-        }
+        test_assert(ten.rank == 4, "got tensor rank %lu", ten.rank);
+        test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
     }
 
     // --- isotropic w/o padding ---
@@ -76,26 +60,10 @@ test_status test_tensor_init() {
         lg_status status = lg_tensor_rmaj_isotropic(&ten, 4, 4, 1);
 
         test_assert(status == LG_STATUS_OK, "failed to initialize isotropic tensor");
-        test_assert(ten.rank == 4, "got tensor rank %d", ten.rank);
+        test_assert(ten.rank == 4, "got tensor rank %lu", ten.rank);
         test_assert(lg_tensor_is_isotropic(ten), "tensor was not isotropic");
-        for (int i = 0; i < 4; i++) {
-            test_assert(
-                expected_dims[i] == ten.dim[i],
-                "wanted dim of %d, got %d, i = %d",
-                expected_dims[i],
-                ten.dim[i],
-                i
-            );
-        }
-        for (int i = 0; i < 4; i++) {
-            test_assert(
-                expected_strides[i] == ten.strides[i],
-                "wanted stride of %d, got %d, i = %d",
-                expected_strides[i],
-                ten.strides[i],
-                i
-            );
-        }
+        test_assert_array_eq(expected_dims, ten.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
     }
 
     return TEST_STATUS_OK;
@@ -110,7 +78,7 @@ test_status test_tensor_size() {
         .grad = NULL,
     };
     lg_size _36_size = lg_tensor_size_bytes(_36);
-    test_assert(_36_size == 36 * sizeof(lg_dtype), "tensor size was %d", _36_size);
+    test_assert(_36_size == 36 * sizeof(lg_dtype), "tensor size was %lu", _36_size);
 
     lg_tensor also_36 = {
         .rank = 3,
@@ -120,7 +88,7 @@ test_status test_tensor_size() {
         .grad = NULL,
     };
     lg_size also_36_size = lg_tensor_size_bytes(also_36);
-    test_assert(also_36_size == 36 * sizeof(lg_dtype), "tensor size was %d", also_36_size);
+    test_assert(also_36_size == 36 * sizeof(lg_dtype), "tensor size was %lu", also_36_size);
 
     lg_tensor padded = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){3, 3, 3}, 4);
     lg_size calculated_bytes = lg_tensor_size_bytes(padded);
@@ -129,18 +97,18 @@ test_status test_tensor_size() {
     lg_size expected_bytes = ((12 + 4 + 1) * 2 + 1) * sizeof(lg_dtype);
     test_assert(
         calculated_bytes == expected_bytes,
-        "tensor size calculated to be %d bytes, wanted %d",
+        "tensor size calculated to be %lu bytes, wanted %lu",
         calculated_bytes,
         expected_bytes
     );
 
     lg_tensor zero_ten = {0};
     calculated_bytes = lg_tensor_size_bytes(zero_ten);
-    test_assert(calculated_bytes == 0, "tensor size calculated to be %d bytes", calculated_bytes);
+    test_assert(calculated_bytes == 0, "tensor size calculated to be %lu bytes", calculated_bytes);
 
     lg_tensor scalar = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){1}, 0);
     calculated_bytes = lg_tensor_size_bytes(scalar);
-    test_assert(calculated_bytes == sizeof(lg_dtype), "tensor size calculated to be %d bytes", calculated_bytes);
+    test_assert(calculated_bytes == sizeof(lg_dtype), "tensor size calculated to be %lu bytes", calculated_bytes);
 
     return TEST_STATUS_OK;
 }
@@ -170,36 +138,35 @@ test_status test_alloc_tensor() {
     lg_dtype *expected_grad_addr = (lg_dtype*)ALLOC_ADDR + 40;
 
     lg_size calculated_one_bytes = lg_tensor_size_bytes(ten);
-    test_assert(calculated_one_bytes == expected_one_bytes, "tensor size calculated to be %d bytes", calculated_one_bytes);
+    test_assert(calculated_one_bytes == expected_one_bytes, "tensor size calculated to be %lu bytes", calculated_one_bytes);
     test_assert(lg_alloc_tensor(&allocator, &ten, 1) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(ten.data == (lg_dtype*)ALLOC_ADDR, "allocated data at address %d, expected %d", ten.data, (lg_dtype*)ALLOC_ADDR);
-    test_assert(ten.grad == expected_grad_addr, "allocated grad at address %d, expected %d", ten.grad, expected_grad_addr);
-    test_assert(ctx.bytes_allocated == expected_total_bytes, "allocated %d bytes, wanted %d bytes" , ctx.bytes_allocated, expected_total_bytes);
+    test_assert(ten.data == (lg_dtype*)ALLOC_ADDR, "allocated data at address %lu, expected %lu", ten.data, (lg_dtype*)ALLOC_ADDR);
+    test_assert(ten.grad == expected_grad_addr, "allocated grad at address %lu, expected %lu", ten.grad, expected_grad_addr);
+    test_assert(ctx.bytes_allocated == expected_total_bytes, "allocated %lu bytes, wanted %lu bytes" , ctx.bytes_allocated, expected_total_bytes);
 
     return TEST_STATUS_OK;
 }
 
-test_status test_tensor_iter_not_compatible() {
-    lg_tensor tensors[LG_MAX_ITER_TENSORS] = {
+test_status test_tensor_aligned_views_not_compatible() {
+    lg_tensor tensors[LG_MAX_ALIGNED_TENSORS] = {
         // 4 != 5, so these should clash and not be compatible
         lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1),
         lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 5, 4}, 1),
     };
 
-    lg_tensor_iter iter;
-    lg_status status = lg_tensor_iter_init(&iter, tensors, 2);
+    lg_aligned_views views;
+    lg_status status = lg_aligned_views_init(&views, tensors, 2);
     test_assert(status == LG_STATUS_SHAPE_MISMATCH, "failed to detect shape mismatch");
 
     return TEST_STATUS_OK;
 }
 
-test_status test_tensor_iter_two() {
-    lg_tensor tensors[LG_MAX_ITER_TENSORS] = {
+test_status test_tensor_aligned_views() {
+    lg_tensor tensors[LG_MAX_ALIGNED_TENSORS] = {
         // This is a mat44.
         // In memory, with no alignment, this should be a contiguous
         // row-major 2d array (these are (x, y) pairs, not matrix coords):
         // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
-        // The first offset should be zero.
         lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1),
         // This is a 6x4x4 tensor.
         // In memory, this looks like this:
@@ -209,19 +176,20 @@ test_status test_tensor_iter_two() {
         //     (1, 0, 0), (1, 0, 1) ...
         //     (m-1, n-1, k-1)
         // }
-        // The first offset is still zero.
         lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 4, 4}, 1),
     };
 
-    test_assert(tensors[0].strides[0] == 4, "got first stride of %d", tensors[0].strides[0]);
-    test_assert(tensors[0].strides[1] == 1, "got second stride of %d", tensors[0].strides[1]);
+    test_assert(tensors[0].strides[0] == 4, "got first stride of %lu", tensors[0].strides[0]);
+    test_assert(tensors[0].strides[1] == 1, "got second stride of %lu", tensors[0].strides[1]);
 
-    lg_tensor_iter iter;
-    lg_status status = lg_tensor_iter_init(&iter, tensors, 2);
-    test_assert(status == LG_STATUS_OK, "could not initialize tensor iterator");
-    test_assert(iter.offsets[0] == 0, "got offset of %d", iter.offsets[0]);
-    test_assert(iter.offsets[1] == 0, "got offset of %d", iter.offsets[1]);
+    lg_size expected_strides_a[] = {0, 4, 1};
+    lg_size expected_strides_b[] = {16, 4, 1};
 
+    lg_aligned_views views = {0};
+    test_assert(lg_aligned_views_init(&views, tensors, 2) == LG_STATUS_OK, "failed to align views");
+    test_assert_array_eq(expected_strides_a, views.views[0].strides, 3, "%lu");
+    test_assert_array_eq(expected_strides_b, views.views[1].strides, 3, "%lu");
+    
     return TEST_STATUS_OK;
 }
 
@@ -229,7 +197,7 @@ int main(void) {
     test_run(tensor_init);
     test_run(tensor_size);
     test_run(alloc_tensor);
-    test_run(tensor_iter_not_compatible);
-    test_run(tensor_iter_two);
+    test_run(tensor_aligned_views_not_compatible);
+    test_run(tensor_aligned_views);
     return 0;
 }
