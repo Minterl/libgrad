@@ -148,47 +148,41 @@ test_status test_alloc_tensor() {
 }
 
 test_status test_tensor_aligned_views_not_compatible() {
-    lg_tensor tensors[LG_MAX_ALIGNED_TENSORS] = {
         // 4 != 5, so these should clash and not be compatible
-        lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1),
-        lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 5, 4}, 1),
-    };
+    lg_tensor a = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1);
+    lg_tensor b = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 5, 4}, 1);
 
-    lg_aligned_views views;
-    lg_status status = lg_aligned_views_init(&views, tensors, 2);
+    lg_status status = lg_tensor_optimize_views((lg_tensor*[]){&a, &b}, 2);
     test_assert(status == LG_STATUS_SHAPE_MISMATCH, "failed to detect shape mismatch");
 
     return TEST_STATUS_OK;
 }
 
 test_status test_tensor_aligned_views() {
-    lg_tensor tensors[LG_MAX_ALIGNED_TENSORS] = {
-        // This is a mat44.
-        // In memory, with no alignment, this should be a contiguous
-        // row-major 2d array (these are (x, y) pairs, not matrix coords):
-        // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
-        lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1),
-        // This is a 6x4x4 tensor.
-        // In memory, this looks like this:
-        // { 
-        //     (0, 0, 0), (0, 0, 1) ...
-        //     (0, 1, 0), (0, 1, 1) ...
-        //     (1, 0, 0), (1, 0, 1) ...
-        //     (m-1, n-1, k-1)
-        // }
-        lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 4, 4}, 1),
-    };
+    // This is a mat44.
+    // In memory, with no alignment, this should be a contiguous
+    // row-major 2d array (these are (x, y) pairs, not matrix coords):
+    // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
+    lg_tensor a = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1);
+    // This is a 6x4x4 tensor.
+    // In memory, this looks like this:
+    // { 
+    //     (0, 0, 0), (0, 0, 1) ...
+    //     (0, 1, 0), (0, 1, 1) ...
+    //     (1, 0, 0), (1, 0, 1) ...
+    //     (m-1, n-1, k-1)
+    // }
+    lg_tensor b = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 4, 4}, 1);
 
-    test_assert(tensors[0].strides[0] == 4, "got first stride of %lu", tensors[0].strides[0]);
-    test_assert(tensors[0].strides[1] == 1, "got second stride of %lu", tensors[0].strides[1]);
+    test_assert(a.strides[0] == 4, "got first stride of %lu", a.strides[0]);
+    test_assert(a.strides[1] == 1, "got second stride of %lu", a.strides[1]);
 
     lg_size expected_strides_a[] = {0, 4, 1};
     lg_size expected_strides_b[] = {16, 4, 1};
 
-    lg_aligned_views views = {0};
-    test_assert(lg_aligned_views_init(&views, tensors, 2) == LG_STATUS_OK, "failed to align views");
-    test_assert_array_eq(expected_strides_a, views.views[0].strides, 3, "%lu");
-    test_assert_array_eq(expected_strides_b, views.views[1].strides, 3, "%lu");
+    test_assert(lg_tensor_optimize_views((lg_tensor*[]){&a, &b}, 2) == LG_STATUS_OK, "failed to align views");
+    test_assert_array_eq(expected_strides_a, a.strides, 3, "%lu");
+    test_assert_array_eq(expected_strides_b, b.strides, 3, "%lu");
     
     return TEST_STATUS_OK;
 }

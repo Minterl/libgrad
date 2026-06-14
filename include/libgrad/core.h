@@ -8,12 +8,6 @@
 #define LG_MAX_RANK 8
 #endif // LG_MAX_RANK
 
-/// Maximum possible number of Tensors that can
-/// be in an `lg_aligned_views`.
-#ifndef LG_MAX_ALIGNED_TENSORS
-#define LG_MAX_ALIGNED_TENSORS 4
-#endif // LG_MAX_ALIGNED_TENSORS
-
 /// Type to back Tensor data
 #ifndef lg_dtype
 #define lg_dtype float
@@ -169,7 +163,7 @@ typedef lg_status (*lg_backward_fn)(
     const lg_tensor b              // The original input B (NULL if unary)
 );
 
-/// Set of aligned tensor views for broadcasting.
+/// Optimize tensor views for broadcasting.
 ///
 /// The first tensor in the set is considered the 
 /// "primary."
@@ -177,16 +171,7 @@ typedef lg_status (*lg_backward_fn)(
 /// plan for the other tensors. In that, this is the tensor where it is 
 /// guaranteed that the contiguous dimension (the dimension with the unit stride)
 /// will be accessed sequentially in memory.
-typedef struct lg_aligned_views {
-    /// Views on all of the tensors.
-    /// The view at index zero is considered the primary.
-    lg_size n_tensors;
-    lg_tensor views[LG_MAX_ALIGNED_TENSORS];
-} lg_aligned_views;
-
-/// Initializes an `lg_aligned_views`.
-/// The first tensor in the array is considered the primary tensor.
-lg_status lg_aligned_views_init(lg_aligned_views *out, lg_tensor tensors[LG_MAX_ALIGNED_TENSORS], lg_size n_tensors);
+lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors);
 
 /// Execution backend (e.g CPU, Cuda)
 typedef struct lg_backend {
@@ -330,30 +315,28 @@ static inline lg_bool lg_tensor_is_isotropic(const lg_tensor tensor) {
     }
 }
 
-lg_status lg_aligned_views_init(lg_aligned_views *out, lg_tensor tensors[LG_MAX_ALIGNED_TENSORS], lg_size n_tensors) {
+lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors) {
     lg_size max_rank = 0;
-    out->n_tensors = n_tensors;
     for (lg_size i = 0; i < n_tensors; i++) {
-        out->views[i] = tensors[i];
-        if (tensors[i].rank > max_rank) {
-            max_rank = tensors[i].rank;
+        if (tensors[i]->rank > max_rank) {
+            max_rank = tensors[i]->rank;
         }
     }
 
     /// Left-pad the rest of the views to be aligned by their trailing dims.
     for (lg_size i = 0; i < n_tensors; i++) {
-        if (out->views[i].rank < max_rank) {
-            lg_size shift = max_rank - out->views[i].rank;
-            for (lg_size j = out->views[i].rank; j > 0; j--) {
+        if (tensors[i]->rank < max_rank) {
+            lg_size shift = max_rank - tensors[i]->rank;
+            for (lg_size j = tensors[i]->rank; j > 0; j--) {
                 lg_size src_idx = j - 1;
-                out->views[i].dim[src_idx + shift] = out->views[i].dim[src_idx];
-                out->views[i].strides[src_idx + shift] = out->views[i].strides[src_idx];
+                tensors[i]->dim[src_idx + shift] = tensors[i]->dim[src_idx];
+                tensors[i]->strides[src_idx + shift] = tensors[i]->strides[src_idx];
             }
             for (lg_size j = 0; j < shift; j++) {
-                out->views[i].dim[j] = 1;
-                out->views[i].strides[j] = 0;
+                tensors[i]->dim[j] = 1;
+                tensors[i]->strides[j] = 0;
             }
-            out->views[i].rank = max_rank;
+            tensors[i]->rank = max_rank;
         }
     }
 
@@ -367,15 +350,15 @@ lg_status lg_aligned_views_init(lg_aligned_views *out, lg_tensor tensors[LG_MAX_
     for (lg_size i = 0; i < max_rank; i++) {
         lg_bool swapped = 0;
         for (lg_size j = 1; j > max_rank - i; j++) {
-            if (out->views[0].strides[j - 1] > out->views[0].strides[j]) {
+            if (tensors[0]->strides[j - 1] > tensors[0]->strides[j]) {
                 // Swap the dimensions and strides for all of the tensors
-                for (lg_size k = 0; k < out->n_tensors; k++) {
-                    lg_size temp = out->views[k].dim[j - 1];
-                    out->views[k].dim[j - 1] = out->views[k].dim[j];
-                    out->views[k].dim[j] = temp;
-                    temp = out->views[k].strides[j - 1];
-                    out->views[k].strides[j - 1] = out->views[k].strides[j];
-                    out->views[k].strides[j] = temp;
+                for (lg_size k = 0; k < n_tensors; k++) {
+                    lg_size temp = tensors[k]->dim[j - 1];
+                    tensors[k]->dim[j - 1] = tensors[k]->dim[j];
+                    tensors[k]->dim[j] = temp;
+                    temp = tensors[k]->strides[j - 1];
+                    tensors[k]->strides[j - 1] = tensors[k]->strides[j];
+                    tensors[k]->strides[j] = temp;
                 }
                 swapped = 1;
             }
@@ -405,7 +388,7 @@ lg_status lg_aligned_views_init(lg_aligned_views *out, lg_tensor tensors[LG_MAX_
         // Since all of the dims are already right-aligned, we can just iterate over the entire
         // array.
         for (lg_size j = 0; j < max_rank; j++) {
-            lg_size dim_current = (j < out->views[i].rank) ? out->views[i].dim[j] : 1;
+            lg_size dim_current = (j < tensors[i]->rank) ? tensors[i]->dim[j] : 1;
             if (dim_current != 1) {
                 // If the master dimension is 1, it is compatible with anything.
                 // This now means, however, that all other tensors in the set
@@ -434,9 +417,9 @@ lg_status lg_aligned_views_init(lg_aligned_views *out, lg_tensor tensors[LG_MAX_
     // 2) Aligning the logical dimensions of the tensor with the master.
     for (lg_size i = 0; i < n_tensors; i++) {
         for (lg_size j = 1; j <= max_rank; j++) {
-            if (out->views[i].dim[max_rank - j] < master_dim[max_rank - j]) {
-                out->views[i].strides[max_rank - j] = 0;
-                out->views[i].dim[max_rank - j] = master_dim[max_rank - j];
+            if (tensors[i]->dim[max_rank - j] < master_dim[max_rank - j]) {
+                tensors[i]->strides[max_rank - j] = 0;
+                tensors[i]->dim[max_rank - j] = master_dim[max_rank - j];
             }
         }
     }
