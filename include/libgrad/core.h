@@ -237,6 +237,8 @@ lg_tensor lg_transpose(lg_context ctx, const lg_tensor in);
 #ifdef LG_CORE_IMPLEMENTATION
 #undef LG_CORE_IMPLEMENTATION
 
+#include <libgrad/internal/debug.h>
+
 static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor) {
     if (tensor.rank == 0) {
         return 0;
@@ -349,7 +351,7 @@ lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors) {
     // dimension, which destroys cache coherence.
     for (lg_size i = 0; i < max_rank; i++) {
         lg_bool swapped = 0;
-        for (lg_size j = 1; j > max_rank - i; j++) {
+        for (lg_size j = 1; j < max_rank - i; j++) {
             if (tensors[0]->strides[j - 1] > tensors[0]->strides[j]) {
                 // Swap the dimensions and strides for all of the tensors
                 for (lg_size k = 0; k < n_tensors; k++) {
@@ -429,6 +431,54 @@ lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors) {
     // - All tensors have the exact same logical dims
     // - The only thing that changes between tensor views is
     //   striding.
+
+    // --- Coalesce dimensions ---
+    // Dimensions can be coalesced under three conditions:
+    // 1) One of the dimension is broadcasted
+    // 2) One of the dimensions has the unit stride
+    //    (is already contiguous in memory)
+    // 3) The latter dimensions is the contiguous extension of the 
+    //    previous dimenison.
+    //
+    // Use i + 1 < max_rank to handle underflows.
+    for (lg_size i = 0; i + 1 < max_rank; i++) {
+        while (i + 1 < max_rank) {
+            lg_bool can_coalesce = 1;
+            for (lg_size j = 0; j < n_tensors; j++) {
+                const lg_size d0 = tensors[j]->dim[i];
+                const lg_size d1 = tensors[j]->dim[i + 1];
+                const lg_size s0 = tensors[j]->strides[i];
+                const lg_size s1 = tensors[j]->strides[i + 1];
+
+                const lg_bool is_broadcasted = s0 == 0 || s1 == 0;
+                const lg_bool has_unit = d0 == 1 || d1 == 1;
+                const lg_bool is_contiguous_extension = s0 == s1 * d1;
+
+                if (!is_broadcasted && !has_unit && !is_contiguous_extension) {
+                    can_coalesce = 0;
+                    break;
+                }
+            }
+
+            if (!can_coalesce) {
+                break;
+            }
+
+            const lg_size new_dim = tensors[0]->dim[i] * tensors[0]->dim[i + 1];
+            max_rank--;
+            for (lg_size j = 0; j < n_tensors; j++) {
+                tensors[j]->rank = max_rank;
+                tensors[j]->dim[i] = new_dim;
+                if (tensors[j]->strides[i + 1] != 0) {
+                    tensors[j]->strides[i] = tensors[j]->strides[i + 1];
+                }
+                for (lg_size k = i + 1; k < max_rank; k++) {
+                    tensors[j]->dim[k] = tensors[j]->dim[k + 1];
+                    tensors[j]->strides[k] = tensors[j]->strides[k + 1];
+                }
+            }
+        }
+    }
 
     return LG_STATUS_OK;
 }

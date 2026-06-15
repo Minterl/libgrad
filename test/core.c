@@ -148,7 +148,7 @@ test_status test_alloc_tensor() {
 }
 
 test_status test_tensor_aligned_views_not_compatible() {
-        // 4 != 5, so these should clash and not be compatible
+    // 4 != 5, so these should clash and not be compatible
     lg_tensor a = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1);
     lg_tensor b = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 5, 4}, 1);
 
@@ -159,11 +159,6 @@ test_status test_tensor_aligned_views_not_compatible() {
 }
 
 test_status test_tensor_aligned_views() {
-    // This is a mat44.
-    // In memory, with no alignment, this should be a contiguous
-    // row-major 2d array (these are (x, y) pairs, not matrix coords):
-    // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
-    lg_tensor a = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1);
     // This is a 6x4x4 tensor.
     // In memory, this looks like this:
     // { 
@@ -172,17 +167,22 @@ test_status test_tensor_aligned_views() {
     //     (1, 0, 0), (1, 0, 1) ...
     //     (m-1, n-1, k-1)
     // }
-    lg_tensor b = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 4, 4}, 1);
+    lg_tensor a = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 4, 4}, 1);
+    // This is a mat44.
+    // In memory, with no alignment, this should be a contiguous
+    // row-major 2d array (these are (x, y) pairs, not matrix coords):
+    // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
+    lg_tensor b = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1);
 
-    test_assert(a.strides[0] == 4, "got first stride of %lu", a.strides[0]);
-    test_assert(a.strides[1] == 1, "got second stride of %lu", a.strides[1]);
+    test_assert(b.strides[0] == 4, "got first stride of %lu", a.strides[0]);
+    test_assert(b.strides[1] == 1, "got second stride of %lu", a.strides[1]);
 
-    lg_size expected_strides_a[] = {0, 4, 1};
-    lg_size expected_strides_b[] = {16, 4, 1};
+    // Coalesced dimensions
+    lg_size expected_strides[] = {1};
 
     test_assert(lg_tensor_optimize_views((lg_tensor*[]){&a, &b}, 2) == LG_STATUS_OK, "failed to align views");
-    test_assert_array_eq(expected_strides_a, a.strides, 3, "%lu");
-    test_assert_array_eq(expected_strides_b, b.strides, 3, "%lu");
+    test_assert_array_eq(expected_strides, a.strides, 1, "%lu");
+    test_assert_array_eq(expected_strides, b.strides, 1, "%lu");
     
     return TEST_STATUS_OK;
 }

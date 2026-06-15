@@ -8,7 +8,7 @@
 #define lg_dbgf(fmt, ...) /* nothing */
 #endif // LG_DEBUG
 
-void __lg_dbgf(const char *file, int line, const char* fmt, ...);
+static inline void __lg_dbgf(const char *file, int line, const char* fmt, ...);
 
 #if defined(LG_INTERNAL_DEBUG_IMPLEMENTATION) && defined(LG_DEBUG)
 #undef LG_INTERNAL_DEBUG_IMPLEMENTATION
@@ -16,7 +16,7 @@ void __lg_dbgf(const char *file, int line, const char* fmt, ...);
 #include <stdio.h>
 #include <stdarg.h>
 
-void __lg_dbgf(const char *file, int line, const char* fmt, ...) {
+static inline void __lg_dbgf(const char *file, int line, const char* fmt, ...) {
     fprintf(stderr, "\033[32m[DEBUG]\033[0m (%s:%d) -- ", file, line);
     va_list args;
     va_start(args, fmt);

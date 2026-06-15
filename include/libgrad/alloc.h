@@ -60,8 +60,6 @@ lg_status lg_free_tensor_many(lg_allocator *allocator, const lg_tensor *tensors,
 #ifdef LG_ALLOC_IMPLEMENTATION
 #undef LG_ALLOC_IMPLEMENTATION
 
-#include <libgrad/internal/debug.h>
-
 lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, lg_bool with_grad) {
     lg_size one_size = lg_tensor_size_bytes(*tensor);
     if (one_size == 0) {
