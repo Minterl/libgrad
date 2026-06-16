@@ -146,23 +146,6 @@ typedef struct lg_tape {
     lg_tensor *outputs  LG_CHECK_BOUNDS(len);
 } lg_tape;
 
-/// Function signature used in a forward pass.
-/// b.data == NULL for unary operations.
-typedef lg_status (*lg_forward_fn)(void *ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
-
-/// Function signature used in a backward pass.
-/// b.data == NULL for unary operations.
-/// out_grad_b must not be mutated in unary operations.
-typedef lg_status (*lg_backward_fn)(
-    void *ctx, 
-    lg_tensor out_grad_a,          // Gradient accumulator for A
-    lg_tensor out_grad_b,          // Gradient accumulator for B
-    const lg_tensor upstream_grad, // The incoming gradient from the next layer (dL/dout)
-    const lg_tensor result,        // The cached output from the forward pass
-    const lg_tensor a,             // The original input A
-    const lg_tensor b              // The original input B (NULL if unary)
-);
-
 /// Optimize tensor views for broadcasting.
 ///
 /// The first tensor in the set is considered the 
@@ -172,22 +155,6 @@ typedef lg_status (*lg_backward_fn)(
 /// guaranteed that the contiguous dimension (the dimension with the unit stride)
 /// will be accessed sequentially in memory.
 lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors);
-
-/// Execution backend (e.g CPU, Cuda)
-typedef struct lg_backend {
-    /// Execution context passed to every function invocation
-    /// NOT thread-safe by default
-    void *ctx;
-    lg_forward_fn forward_vtable[__LG_N_VIRTUAL_OPS];
-    lg_backward_fn backward_vtable[__LG_N_VIRTUAL_OPS];
-} lg_backend;
-
-/// Context passsed to each core function
-/// If lg_tape == NULL, then no tracking is performed.
-typedef struct lg_context {
-    lg_tape *tape;
-    lg_backend *backend;
-} lg_context;
 
 /// Compute the size in bytes of a tensor's data buffer.
 static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor);
@@ -215,21 +182,21 @@ static inline lg_status lg_tensor_rmaj_isotropic(lg_tensor *out, lg_size rank, l
 /// while all vectors are considered anisotropic.
 static inline lg_bool lg_tensor_is_isotropic(const lg_tensor tensor);
 
-lg_status lg_add(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
-lg_status lg_sub(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
-lg_status lg_contract(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
-lg_status lg_hadamard(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
+lg_status lg_add(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
+lg_status lg_sub(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
+lg_status lg_contract(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
+lg_status lg_hadamard(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
 
-lg_status lg_loss_mse(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
-lg_status lg_loss_cross_entropy(lg_context ctx, lg_tensor out, const lg_tensor a, const lg_tensor b);
+lg_status lg_loss_mse(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
+lg_status lg_loss_cross_entropy(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
 
-lg_status lg_relu(lg_context ctx, lg_tensor out, const lg_tensor in);
-lg_status lg_stable_softmax(lg_context ctx, const lg_tensor out, const lg_tensor in);
-lg_status lg_sigmoid(lg_context ctx, lg_tensor out, const lg_tensor in);
-lg_status lg_ln(lg_context ctx, lg_tensor out, const lg_tensor in);
+lg_status lg_relu(lg_tape *tape, lg_tensor out, const lg_tensor in);
+lg_status lg_stable_softmax(lg_tape *tape, const lg_tensor out, const lg_tensor in);
+lg_status lg_sigmoid(lg_tape *tape, lg_tensor out, const lg_tensor in);
+lg_status lg_ln(lg_tape *tape, lg_tensor out, const lg_tensor in);
 
-lg_status lg_backward(lg_context ctx);
-lg_tensor lg_transpose(lg_context ctx, const lg_tensor in);
+lg_status lg_backward(lg_tape *tape);
+lg_tensor lg_transpose(lg_tape *tape, const lg_tensor in);
 
 #endif // LG_CORE_H_
 
@@ -507,7 +474,7 @@ static inline lg_status lg_tape_push(
 }
 
 lg_status lg_add(
-    lg_context ctx,
+    lg_tape *tape,
     lg_tensor out,
     const lg_tensor a,
     const lg_tensor b
@@ -529,24 +496,10 @@ lg_status lg_add(
             return LG_STATUS_SHAPE_MISMATCH;
         }
     }
-    if (!ctx.backend) {
-        return LG_STATUS_NULL_POINTER;
-    } 
-    if (!ctx.backend->forward_vtable[LG_OPCODE_ADD]) {
-        return LG_STATUS_UNSUPPORTED_OPCODE;
-    }
 #endif // LG_SAFE
-
-    lg_status status;
-    status = ctx.backend->forward_vtable[LG_OPCODE_ADD](ctx.backend->ctx, out, a, b);
+    lg_status status = lg_tape_push(tape, LG_OPCODE_ADD, a, b, out);
     if (status != LG_STATUS_OK) {
         return status;
-    }
-    if (ctx.tape != NULL) {
-        status = lg_tape_push(ctx.tape, LG_OPCODE_ADD, a, b, out);
-        if (status != LG_STATUS_OK) {
-            return status;
-        }
     }
 
     return LG_STATUS_OK;
