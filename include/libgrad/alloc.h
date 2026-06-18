@@ -44,7 +44,7 @@ typedef struct lg_allocator {
 /// with the result.
 /// 
 /// If a tensor is zero-sized, returns early without mutating `tensor`.
-lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, lg_bool with_grad);
+lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, bool with_grad);
 
 /// Frees the buffers backing `tensor`.
 ///
@@ -52,15 +52,15 @@ lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, lg_bool wi
 /// for both the `data` and `grad` buffers.
 lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor);
 
-lg_status lg_alloc_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len, lg_bool with_grad);
-lg_status lg_free_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len, lg_bool with_grad);
+lg_status lg_alloc_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len, bool with_grad);
+lg_status lg_free_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len, bool with_grad);
 
 #endif // LG_ALLOC_H_
 
 #ifdef LG_ALLOC_IMPLEMENTATION
 #undef LG_ALLOC_IMPLEMENTATION
 
-lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, lg_bool with_grad) {
+lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, bool with_grad) {
     lg_size one_size = lg_tensor_size_bytes(*tensor);
     if (one_size == 0) {
         return LG_STATUS_OK;
@@ -74,13 +74,13 @@ lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, lg_bool wi
         total_size += padding + one_size;
     }
 
-    lg_byte *ptr = allocator->alloc(allocator->ctx, total_size);
+    uint8_t *ptr = allocator->alloc(allocator->ctx, total_size);
     if (ptr == NULL) {
         return LG_STATUS_OUT_OF_MEMORY;
     }
 
     if (with_grad) {
-        lg_byte *grad_offset = ptr + one_size + padding;
+        uint8_t *grad_offset = ptr + one_size + padding;
         tensor->data = (lg_dtype*)ptr;
         tensor->grad = (lg_dtype*)grad_offset;
     } else {

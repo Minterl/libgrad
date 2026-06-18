@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #include <libgrad/internal/fnv.h>
 
 /// Maximum possible Tensor rank
@@ -17,14 +18,6 @@
 #define lg_dtype float
 #endif // lg_dtype
 
-#ifndef lg_bool
-#define lg_bool int
-#endif // lg_bool
-
-#ifndef lg_byte
-#define lg_byte char
-#endif // lg_byte
- 
 /// Pointer-sized integer
 #ifndef lg_size
 #define lg_size size_t
@@ -185,7 +178,7 @@ lg_status lg_tensor_layout(lg_tensor *tensor, lg_layout layout, lg_size unit_ali
 /// 
 /// Tensors with a rank of zero, and all scalars are considered isotropic,
 /// while all vectors are considered anisotropic.
-static inline lg_bool lg_tensor_is_isotropic(const lg_tensor tensor);
+static inline bool lg_tensor_is_isotropic(const lg_tensor tensor);
 
 lg_status lg_add(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
 lg_status lg_sub(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
@@ -253,7 +246,7 @@ lg_status lg_tensor_layout(lg_tensor *tensor, lg_layout layout, lg_size unit_ali
     return LG_STATUS_OK;
 }
 
-static inline lg_bool lg_tensor_is_isotropic(const lg_tensor tensor) {
+static inline bool lg_tensor_is_isotropic(const lg_tensor tensor) {
     switch (tensor.rank) {
     // All vectors are anisotropic.
     case 2:
@@ -307,7 +300,7 @@ lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors) {
     // in the loop as opposed to constant indirection over a non-contiguous
     // dimension, which destroys cache coherence.
     for (lg_size i = 0; i < max_rank; i++) {
-        lg_bool swapped = 0;
+        bool swapped = 0;
         for (lg_size j = 1; j < max_rank - i; j++) {
             if (tensors[0]->strides[j - 1] > tensors[0]->strides[j]) {
                 // Swap the dimensions and strides for all of the tensors
@@ -400,16 +393,16 @@ lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors) {
     // Use i + 1 < max_rank to handle underflows.
     for (lg_size i = 0; i + 1 < max_rank; i++) {
         while (i + 1 < max_rank) {
-            lg_bool can_coalesce = 1;
+            bool can_coalesce = 1;
             for (lg_size j = 0; j < n_tensors; j++) {
                 const lg_size d0 = tensors[j]->dim[i];
                 const lg_size d1 = tensors[j]->dim[i + 1];
                 const lg_size s0 = tensors[j]->strides[i];
                 const lg_size s1 = tensors[j]->strides[i + 1];
 
-                const lg_bool is_broadcasted = s0 == 0 || s1 == 0;
-                const lg_bool has_unit = d0 == 1 || d1 == 1;
-                const lg_bool is_contiguous_extension = s0 == s1 * d1;
+                const bool is_broadcasted = s0 == 0 || s1 == 0;
+                const bool has_unit = d0 == 1 || d1 == 1;
+                const bool is_contiguous_extension = s0 == s1 * d1;
 
                 if (!is_broadcasted && !has_unit && !is_contiguous_extension) {
                     can_coalesce = 0;
