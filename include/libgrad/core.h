@@ -151,7 +151,7 @@ typedef struct lg_tape {
     lg_tensor *outputs  LG_CHECK_BOUNDS(len);
 } lg_tape;
 
-/// Optimize tensor views for broadcasting.
+/// Broadcast tensor views.
 ///
 /// The first tensor in the set is considered the 
 /// "primary."
@@ -159,7 +159,20 @@ typedef struct lg_tape {
 /// plan for the other tensors. In that, this is the tensor where it is 
 /// guaranteed that the contiguous dimension (the dimension with the unit stride)
 /// will be accessed sequentially in memory.
-lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors);
+lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors);
+
+/// Sort dims such that the primary is unit stride first.
+/// Follows the same "primary" rule as `lg_tensor_broadcast`.
+///
+/// Inputs to this function MUST be broadcasted.
+lg_status lg_tensor_sort_dims(lg_tensor **tensors, lg_size n_tensors);
+
+/// Coalesce tensor dims to be as flat as possible.
+/// Follows the same "primary" rule as `lg_tensor_broadcast`.
+///
+/// Inputs to this function MUST be broadcasted AND sorted from least to greatest
+/// using `lg_tensor_sort_dims`.
+lg_status lg_tensor_coalesce_dims(lg_tensor **tensors, lg_size n_tensors);
 
 /// Compute the size in bytes of a tensor's data buffer.
 static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor);
@@ -267,7 +280,7 @@ static inline bool lg_tensor_is_isotropic(const lg_tensor tensor) {
     }
 }
 
-lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors) {
+lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
     lg_size max_rank = 0;
     for (lg_size i = 0; i < n_tensors; i++) {
         if (tensors[i]->rank > max_rank) {
@@ -291,35 +304,7 @@ lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors) {
             tensors[i]->rank = max_rank;
         }
     }
-
-    // --- Bubble sort dimensions of the primary into ascending order ---
-    // Mathematically, this is just a series of transpositions.
-    // This aligns the tensor such that the dimension with the unit stride
-    // is first in the arrays. 
-    // This is good because it forces the CPU to access the primary's memory sequentially 
-    // in the loop as opposed to constant indirection over a non-contiguous
-    // dimension, which destroys cache coherence.
-    for (lg_size i = 0; i < max_rank; i++) {
-        bool swapped = 0;
-        for (lg_size j = 1; j < max_rank - i; j++) {
-            if (tensors[0]->strides[j - 1] > tensors[0]->strides[j]) {
-                // Swap the dimensions and strides for all of the tensors
-                for (lg_size k = 0; k < n_tensors; k++) {
-                    lg_size temp = tensors[k]->dim[j - 1];
-                    tensors[k]->dim[j - 1] = tensors[k]->dim[j];
-                    tensors[k]->dim[j] = temp;
-                    temp = tensors[k]->strides[j - 1];
-                    tensors[k]->strides[j - 1] = tensors[k]->strides[j];
-                    tensors[k]->strides[j] = temp;
-                }
-                swapped = 1;
-            }
-        }
-        if (!swapped) {
-            break;
-        }
-    }
-
+    
     // --- Validate that all tensors are broadcast-compatible ---
     // Every tensor participating in the tracking must be broadcast-compatible
     // with every other tensor.
@@ -381,6 +366,59 @@ lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors) {
     // - All tensors have the exact same logical dims
     // - The only thing that changes between tensor views is
     //   striding.
+
+    return LG_STATUS_OK;
+}
+
+lg_status lg_tensor_sort_dims(lg_tensor **tensors, lg_size n_tensors) {
+    lg_size max_rank = 0;
+    for (lg_size i = 0; i < n_tensors; i++) {
+        if (tensors[i]->rank > max_rank) {
+            max_rank = tensors[i]->rank;
+        }
+    }
+
+    // --- Bubble sort dimensions of the primary into ascending order ---
+    // Mathematically, this is just a series of transpositions.
+    // This aligns the tensor such that the dimension with the unit stride
+    // is first in the arrays. 
+    // This is good because it forces the CPU to access the primary's memory sequentially 
+    // in the loop as opposed to constant indirection over a non-contiguous
+    // dimension, which destroys cache coherence.
+    for (lg_size i = 0; i < max_rank; i++) {
+        bool swapped = 0;
+        for (lg_size j = 1; j < max_rank - i; j++) {
+            // Force broadcasted dimensions to the back
+            const lg_size prev_dim = tensors[0]->strides[j - 1] == 0 ? (lg_size) - 1 : tensors[0]->strides[j - 1];
+            const lg_size cur_dim = tensors[0]->strides[j] == 0 ? (lg_size) - 1 : tensors[0]->strides[j];
+            if (prev_dim > cur_dim) {
+                // Swap the dimensions and strides for all of the tensors
+                for (lg_size k = 0; k < n_tensors; k++) {
+                    lg_size temp = tensors[k]->dim[j - 1];
+                    tensors[k]->dim[j - 1] = tensors[k]->dim[j];
+                    tensors[k]->dim[j] = temp;
+                    temp = tensors[k]->strides[j - 1];
+                    tensors[k]->strides[j - 1] = tensors[k]->strides[j];
+                    tensors[k]->strides[j] = temp;
+                }
+                swapped = 1;
+            }
+        }
+        if (!swapped) {
+            break;
+        }
+    }
+
+    return LG_STATUS_OK;
+}
+
+lg_status lg_tensor_coalesce_dims(lg_tensor **tensors, lg_size n_tensors) {
+    lg_size max_rank = 0;
+    for (lg_size i = 0; i < n_tensors; i++) {
+        if (tensors[i]->rank > max_rank) {
+            max_rank = tensors[i]->rank;
+        }
+    }
 
     // --- Coalesce dimensions ---
     // Dimensions can be coalesced under three conditions:

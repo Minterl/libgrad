@@ -162,7 +162,7 @@ test_status test_tensor_aligned_views_not_compatible() {
     lg_tensor b = { .dim =  {6, 5, 4}, .rank = 3 };
     test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
 
-    lg_status status = lg_tensor_optimize_views((lg_tensor*[]){&a, &b}, 2);
+    lg_status status = lg_tensor_broadcast((lg_tensor*[]){&a, &b}, 2);
     test_assert(status == LG_STATUS_SHAPE_MISMATCH, "failed to detect shape mismatch");
 
     return TEST_STATUS_OK;
@@ -192,7 +192,9 @@ test_status test_tensor_aligned_views() {
     // Coalesced dimensions
     lg_size expected_strides[] = {1};
 
-    test_assert(lg_tensor_optimize_views((lg_tensor*[]){&a, &b}, 2) == LG_STATUS_OK, "failed to align views");
+    test_assert(lg_tensor_broadcast((lg_tensor*[]){&a, &b}, 2) == LG_STATUS_OK, "failed to broadcast tensors");
+    test_assert(lg_tensor_sort_dims((lg_tensor*[]){&a, &b}, 2) == LG_STATUS_OK, "failed to sort dmis");
+    test_assert(lg_tensor_coalesce_dims((lg_tensor*[]){&a, &b}, 2) == LG_STATUS_OK, "failed to coalesce dims");
     test_assert_array_eq(expected_strides, a.strides, 1, "%lu");
     test_assert_array_eq(expected_strides, b.strides, 1, "%lu");
     
