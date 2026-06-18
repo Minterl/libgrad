@@ -34,11 +34,12 @@ inline static lg_size mock_align_hint() {
     return ALLOC_ALIGN;
 }
 
-test_status test_tensor_init() {
+test_status test_tensor_layout() {
     // --- w/o padding ---
     {
         lg_size expected_strides[] = {8, 4, 1};
-        lg_tensor ten = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){3, 2, 4}, 1);
+        lg_tensor ten = { .dim = {3, 2, 4}, .rank = 3 };
+        test_assert(lg_tensor_layout(&ten, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.rank == 3, "got tensor rank %lu", ten.rank);
         test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
     }
@@ -46,23 +47,27 @@ test_status test_tensor_init() {
     // --- w/ padding ---
     {
         lg_size expected_strides[4] = {224, 32, 8, 1};
-        lg_tensor ten = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){2, 7, 4, 3}, 8);
+        lg_tensor ten = { .dim = {2, 7, 4, 3}, .rank = 4 };
+        test_assert(lg_tensor_layout(&ten, LG_LAYOUT_ROW_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.rank == 4, "got tensor rank %lu", ten.rank);
         test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
     }
-
-    // --- isotropic w/o padding ---
+    
+    // --- w/o padding ---
     {
-        lg_size expected_dims[4] = {4, 4, 4, 4};
-        lg_size expected_strides[4] = {64, 16, 4, 1};
+        lg_size expected_strides[] = {1, 4, 8};
+        lg_tensor ten = { .dim = {3, 2, 4}, .rank = 3 };
+        test_assert(lg_tensor_layout(&ten, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+        test_assert(ten.rank == 3, "got tensor rank %lu", ten.rank);
+        test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
+    }
 
-        lg_tensor ten = {0};
-        lg_status status = lg_tensor_rmaj_isotropic(&ten, 4, 4, 1);
-
-        test_assert(status == LG_STATUS_OK, "failed to initialize isotropic tensor");
+    // --- w/ padding ---
+    {
+        lg_size expected_strides[] = {1, 8, 32, 224};
+        lg_tensor ten = { .dim = {2, 7, 4, 3}, .rank = 4 };
+        test_assert(lg_tensor_layout(&ten, LG_LAYOUT_COL_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.rank == 4, "got tensor rank %lu", ten.rank);
-        test_assert(lg_tensor_is_isotropic(ten), "tensor was not isotropic");
-        test_assert_array_eq(expected_dims, ten.dim, 3, "%lu");
         test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
     }
 
@@ -90,7 +95,8 @@ test_status test_tensor_size() {
     lg_size also_36_size = lg_tensor_size_bytes(also_36);
     test_assert(also_36_size == 36 * sizeof(lg_dtype), "tensor size was %lu", also_36_size);
 
-    lg_tensor padded = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){3, 3, 3}, 4);
+    lg_tensor padded = { .dim = {3, 3, 3}, .rank = 4 };
+    test_assert(lg_tensor_layout(&padded, LG_LAYOUT_ROW_MAJOR, 4) == LG_STATUS_OK, "failed to initialize tensor");
     lg_size calculated_bytes = lg_tensor_size_bytes(padded);
     // Strides should be (12, 4, 1), meaning the maximum offset at (2, 2, 2) is
     // (12 + 4 + 1) * 2, so the max size is one more than that.
@@ -103,10 +109,12 @@ test_status test_tensor_size() {
     );
 
     lg_tensor zero_ten = {0};
+    test_assert(lg_tensor_layout(&zero_ten, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     calculated_bytes = lg_tensor_size_bytes(zero_ten);
     test_assert(calculated_bytes == 0, "tensor size calculated to be %lu bytes", calculated_bytes);
 
-    lg_tensor scalar = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){1}, 0);
+    lg_tensor scalar = { .dim = {1}, .rank = 0 };
+    test_assert(lg_tensor_layout(&scalar, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     calculated_bytes = lg_tensor_size_bytes(scalar);
     test_assert(calculated_bytes == sizeof(lg_dtype), "tensor size calculated to be %lu bytes", calculated_bytes);
 
@@ -149,8 +157,10 @@ test_status test_alloc_tensor() {
 
 test_status test_tensor_aligned_views_not_compatible() {
     // 4 != 5, so these should clash and not be compatible
-    lg_tensor a = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1);
-    lg_tensor b = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 5, 4}, 1);
+    lg_tensor a = { .dim =  {4, 4}, .rank = 2 };
+    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    lg_tensor b = { .dim =  {6, 5, 4}, .rank = 3 };
+    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
 
     lg_status status = lg_tensor_optimize_views((lg_tensor*[]){&a, &b}, 2);
     test_assert(status == LG_STATUS_SHAPE_MISMATCH, "failed to detect shape mismatch");
@@ -167,12 +177,14 @@ test_status test_tensor_aligned_views() {
     //     (1, 0, 0), (1, 0, 1) ...
     //     (m-1, n-1, k-1)
     // }
-    lg_tensor a = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){6, 4, 4}, 1);
+    lg_tensor a = { .dim = {6, 4, 4}, .rank = 3 };
+    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     // This is a mat44.
     // In memory, with no alignment, this should be a contiguous
     // row-major 2d array (these are (x, y) pairs, not matrix coords):
     // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
-    lg_tensor b = lg_tensor_rmaj((lg_size[LG_MAX_RANK]){4, 4}, 1);
+    lg_tensor b = { .dim = {4 ,4}, .rank = 2 };
+    test_assert(lg_tensor_layout(&b, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
 
     test_assert(b.strides[0] == 4, "got first stride of %lu", a.strides[0]);
     test_assert(b.strides[1] == 1, "got second stride of %lu", a.strides[1]);
@@ -188,7 +200,7 @@ test_status test_tensor_aligned_views() {
 }
 
 int main(void) {
-    test_run(tensor_init);
+    test_run(tensor_layout);
     test_run(tensor_size);
     test_run(alloc_tensor);
     test_run(tensor_aligned_views_not_compatible);

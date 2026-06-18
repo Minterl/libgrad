@@ -57,6 +57,11 @@ typedef enum lg_status {
     LG_STATUS_UNEXPECTED_NAN
 } lg_status;
 
+typedef enum lg_layout {
+    LG_LAYOUT_ROW_MAJOR,
+    LG_LAYOUT_COL_MAJOR,
+} lg_layout;
+
 /// Represents a single Tensor backed by `data`
 /// and `grad`.
 ///
@@ -159,22 +164,15 @@ lg_status lg_tensor_optimize_views(lg_tensor **tensors, lg_size n_tensors);
 /// Compute the size in bytes of a tensor's data buffer.
 static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor);
 
-/// Returns a tensor with dim `dim`, with strides as if it was stored in row-major
-/// order. In this layout, the rightmost dimension has the unit stride.
+/// Lays out a tensor with pre-populated `dim` and `rank` with the strides to be stored in
+/// the order in `layout`. In this layout, the rightmost dimension has the unit stride.
 ///
-/// Rows (the unit stride dimension) are padded to align with `row_align` if `row_align` > 1.
+/// Rows (the unit stride dimension) are padded to align with `unit_align` if `unit_align` > 1.
 ///
 /// Does not allocate any memory; that can be done with `lg_alloc_tensor`.
 ///
 /// This is the recommended and standard way to initialize a tensor layout.
-static inline lg_tensor lg_tensor_rmaj(lg_size dim[LG_MAX_RANK], lg_size row_align);
-
-/// Returns an isotropic tensor of rank `rank` and dim `dim`.
-/// All vectors are anisotropic, and as such, if a rank of 2 is passed in,
-/// this function returns LG_STATUS_INVALID_RANK.
-///
-/// See `lg_tensor_rmaj`.
-static inline lg_status lg_tensor_rmaj_isotropic(lg_tensor *out, lg_size rank, lg_size dim, lg_size row_align);
+lg_status lg_tensor_layout(lg_tensor *tensor, lg_layout layout, lg_size unit_align);
 
 /// Returns true if a tensor is isotropic.
 /// 
@@ -221,45 +219,30 @@ static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor) {
     return (max_offset + 1) * sizeof(lg_dtype);
 }
 
-static inline lg_tensor lg_tensor_rmaj(lg_size dim[LG_MAX_RANK], lg_size row_align) {
-    lg_tensor ten = {0};
-
-    for (ten.rank = 0; ten.rank < LG_MAX_RANK && dim[ten.rank] > 0; ten.rank++) {
-         ten.dim[ten.rank] = dim[ten.rank];
-    }
-
-    lg_size last_stride = 1;
-    for (lg_size i = 1; i <= ten.rank; i++) {
-        lg_size axis = ten.rank - i;
-        ten.strides[axis] = last_stride;
-        last_stride *= dim[ten.rank - i];
-        // Conceptually, we only pad the rightmost dimension.
-        // However, this affects the stride of the second-rightmost dimension first
-        // (and then all subsequent dimensions).
-        if (row_align > 1 && i == 1) {
-            last_stride = (last_stride + row_align - 1) & ~(row_align - 1);
-        }
-    }
-
-    return ten;
-}
-
-static inline lg_status lg_tensor_rmaj_isotropic(lg_tensor *out, lg_size rank, lg_size dim, lg_size row_align) {
+lg_status lg_tensor_layout(lg_tensor *tensor, lg_layout layout, lg_size unit_align) {
 #ifdef LG_SAFE
-    if (rank > LG_MAX_RANK) {
+    if (tensor->rank > LG_MAX_RANK) {
         return LG_STATUS_INVALID_RANK;
     }
 #endif // LG_SAFE
-    // All vectors are anisotropic.
-    // This is not included in safe mode because it's too big a footgun.
-    if (rank == 2) {
-        return LG_STATUS_INVALID_RANK;
+
+    for (tensor->rank = 0; tensor->rank < LG_MAX_RANK && tensor->dim[tensor->rank] > 0; tensor->rank++) {
+         tensor->dim[tensor->rank] = tensor->dim[tensor->rank];
     }
-    lg_size dims[LG_MAX_RANK] = {0};
-    for (lg_size i = 0; i < rank; i++) {
-        dims[i] = dim;
+
+    lg_size last_stride = 1;
+    for (lg_size i = 1; i <= tensor->rank; i++) {
+        lg_size axis = layout == LG_LAYOUT_ROW_MAJOR ? tensor->rank - i : i - 1;
+        tensor->strides[axis] = last_stride;
+        last_stride *= tensor->dim[tensor->rank - i];
+        // Conceptually, we only pad the rightmost dimension.
+        // However, this affects the stride of the second-rightmost dimension first
+        // (and then all subsequent dimensions).
+        if (unit_align > 1 && i == 1) {
+            last_stride = (last_stride + unit_align - 1) & ~(unit_align - 1);
+        }
     }
-    *out = lg_tensor_rmaj(dims, row_align);
+
     return LG_STATUS_OK;
 }
 
