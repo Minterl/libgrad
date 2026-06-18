@@ -4,6 +4,9 @@
 #ifndef LG_ALLOC_IMPLEMENTATION
 #define LG_ALLOC_IMPLEMENTATION
 #endif // LG_ALLOC_IMPLEMENTATION
+#ifndef LG_CPU_IMPLEMENTATION
+#define LG_CPU_IMPLEMENTATION
+#endif // LG_CPU_IMPLEMENTATION
 #ifndef TEST_IMPLEMENTATION
 #define TEST_IMPLEMENTATION
 #endif // TEST_IMPLEMENTATION
@@ -12,8 +15,10 @@
 #endif // LG_INTERNAL_DEBUG_IMPLEMENTATION
  
 #include <stdbool.h>
+#include <stdlib.h>
 #include <libgrad/core.h>
 #include <libgrad/alloc.h>
+#include <libgrad/cpu.h>
 #include "testing.h"
 
 // Using unusual memory alignment of 5 for testing purposes
@@ -203,11 +208,74 @@ test_status test_tensor_aligned_views() {
     return TEST_STATUS_OK;
 }
 
+void *alloc_libc(void *_, lg_size bytes) {
+    (void)_;
+    return malloc(bytes);
+}
+
+void free_libc(void* _, void *ptr) {
+    (void)_;
+    return free(ptr);
+}
+
+test_status test_cpu_add_basic() {
+    lg_tensor out = { .dim = {4, 4, 12}, .rank = 3 },
+              a = { .dim = {4, 1, 12}, .rank = 3 },
+              b = { .dim = {1, 4, 12}, .rank = 3 };
+    lg_allocator allocator = {
+        .alloc = alloc_libc,
+        .free = free_libc,
+    };
+
+    test_assert(lg_tensor_layout(&out, LG_LAYOUT_ROW_MAJOR, 7) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&b, LG_LAYOUT_COL_MAJOR, 2) == LG_STATUS_OK, "failed to lay out tensor");
+
+    test_assert(lg_alloc_tensor(&allocator, &out, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &a, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &b, false) == LG_STATUS_OK, "failed to allocate tensor");
+
+    test_assert(lg_tensor_broadcast(((lg_tensor*[]){&out, &a, &b}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
+
+    lg_size coords[LG_MAX_RANK] = {0};
+    do {
+        lg_size a_idx = 0;
+        lg_size b_idx = 0;
+        for (lg_size i = 0; i < out.rank; i++) {
+            a_idx += a.strides[i] * coords[i];
+            b_idx += b.strides[i] * coords[i];
+        }
+        a.data[a_idx] = 1.0f;
+        b.data[b_idx] = 2.0f;
+    } while (__lg_increment_coords_rtl(coords, out.dim, out.rank));
+
+    test_assert(lg_cpu_add(out, a, b) == LG_STATUS_OK, "failed to add");
+
+    for (lg_size i = 0; i < LG_MAX_RANK; i++) {
+        coords[i] = 0;
+    }
+
+    do {
+        lg_size idx = 0;
+        for (lg_size i = 0; i < out.rank; i++) {
+            idx += out.strides[i] * coords[i];
+        }
+        test_assert(out.data[idx] == 3.0f, "wanted 3, got %f", out.data[idx]);
+    } while (__lg_increment_coords_rtl(coords, out.dim, out.rank));;;
+
+    lg_free_tensor(&allocator, &out);
+    lg_free_tensor(&allocator, &a);
+    lg_free_tensor(&allocator, &b);
+
+    return TEST_STATUS_OK;
+}
+
 int main(void) {
     test_run(tensor_layout);
     test_run(tensor_size);
     test_run(alloc_tensor);
     test_run(tensor_aligned_views_not_compatible);
     test_run(tensor_aligned_views);
+    test_run(cpu_add_basic);
     return 0;
 }
