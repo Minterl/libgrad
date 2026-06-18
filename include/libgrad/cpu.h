@@ -6,18 +6,18 @@
 /// Tensors must be sorted & broadcasted
 lg_status lg_cpu_add(lg_tensor out, const lg_tensor a, const lg_tensor b);
 
-static inline bool __lg_increment_coords_rtl(lg_size *coord, const lg_size *dim, lg_size rank) {
+static inline bool __lg_increment_coords_rtl(lg_size *coords, const lg_size *dim, lg_size rank) {
     if (rank == 0) return false;
 
     lg_size axis = rank;
     
     while (axis > 0) {
         axis--;
-        coord[axis]++;
-        if (coord[axis] < dim[axis]) {
+        coords[axis]++;
+        if (coords[axis] < dim[axis]) {
             return true; 
         }
-        coord[axis] = 0;
+        coords[axis] = 0;
     }
 
     return false;
