@@ -378,7 +378,7 @@ lg_status lg_tensor_sort_dims(lg_tensor **tensors, lg_size n_tensors) {
         }
     }
 
-    // --- Bubble sort dimensions of the primary into ascending order ---
+    // --- Bubble sort dimensions of the primary into descending order ---
     // Mathematically, this is just a series of transpositions.
     // This aligns the tensor such that the dimension with the unit stride
     // is first in the arrays. 
@@ -388,10 +388,9 @@ lg_status lg_tensor_sort_dims(lg_tensor **tensors, lg_size n_tensors) {
     for (lg_size i = 0; i < max_rank; i++) {
         bool swapped = 0;
         for (lg_size j = 1; j < max_rank - i; j++) {
-            // Force broadcasted dimensions to the back
-            const lg_size prev_dim = tensors[0]->strides[j - 1] == 0 ? (lg_size) - 1 : tensors[0]->strides[j - 1];
-            const lg_size cur_dim = tensors[0]->strides[j] == 0 ? (lg_size) - 1 : tensors[0]->strides[j];
-            if (prev_dim > cur_dim) {
+            const lg_size prev_dim = tensors[0]->strides[j - 1];
+            const lg_size cur_dim = tensors[0]->strides[j];
+            if (prev_dim < cur_dim) {
                 // Swap the dimensions and strides for all of the tensors
                 for (lg_size k = 0; k < n_tensors; k++) {
                     lg_size temp = tensors[k]->dim[j - 1];
