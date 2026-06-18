@@ -1,6 +1,10 @@
 #ifndef LG_CORE_H_
 #define LG_CORE_H_
 
+#include <stdint.h>
+#include <stddef.h>
+#include <libgrad/internal/fnv.h>
+
 /// Maximum possible Tensor rank
 /// All tensors will have an array of this size to store
 /// dims, so  keep this to a minimum.
@@ -18,12 +22,11 @@
 #endif // lg_bool
 
 #ifndef lg_byte
-#define lg_byte char 
+#define lg_byte char
 #endif // lg_byte
  
 /// Pointer-sized integer
 #ifndef lg_size
-#include <stddef.h>
 #define lg_size size_t
 #endif // lg_size
 
@@ -61,6 +64,10 @@ typedef enum lg_layout {
     LG_LAYOUT_ROW_MAJOR,
     LG_LAYOUT_COL_MAJOR,
 } lg_layout;
+
+/// Define a tensor ID using an eight-character
+/// literal.
+#define LG_TENSOR_ID_8 LG_HASH_LITERAL_8
 
 /// Represents a single Tensor backed by `data`
 /// and `grad`.
