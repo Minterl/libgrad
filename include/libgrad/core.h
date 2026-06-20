@@ -177,6 +177,10 @@ lg_status lg_tensor_coalesce_dims(lg_tensor **tensors, lg_size n_tensors);
 /// Compute the size in bytes of a tensor's data buffer.
 static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor);
 
+/// Copy a vector value to the dim `copy_to_dim`.
+/// If `grad` is true, copies to the grad buffer instead of the data buffer.
+void lg_tensor_copy_vector(lg_tensor tensor, const lg_dtype *vector, lg_size copy_to_dim, bool grad);
+
 /// Lays out a tensor with pre-populated `dim` and `rank` with the strides to be stored in
 /// the order in `layout`. In this layout, the rightmost dimension has the unit stride.
 ///
@@ -230,6 +234,18 @@ static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor) {
     }
 
     return (max_offset + 1) * sizeof(lg_dtype);
+}
+
+void lg_tensor_copy_vector(lg_tensor tensor, const lg_dtype *vector, lg_size copy_to_dim, bool grad) {
+    lg_size dim_offset = 0;
+    for (lg_size i = 0; i < copy_to_dim; i++) {
+        dim_offset += tensor.dim[i];
+    }
+    const lg_size n_values = tensor.dim[copy_to_dim];
+    lg_dtype *const restrict dest = grad ? tensor.grad : tensor.data;
+    for (lg_size i = 0; i < n_values; i++) {
+        dest[dim_offset + i] = vector[i];
+    }
 }
 
 lg_status lg_tensor_layout(lg_tensor *tensor, lg_layout layout, lg_size unit_align) {
@@ -493,35 +509,47 @@ static inline lg_status lg_tape_push(
     return LG_STATUS_OK;
 }
 
+lg_status lg_tape_prepare(lg_tape tape) {
+    lg_status status;
+    for (lg_size i = 0; i < tape.len; i++) {
+        status = lg_tensor_broadcast((lg_tensor*[]){
+            &tape.outputs[i],
+            &tape.inputs_a[i],
+            &tape.inputs_b[i],
+        }, 3);
+        if (status == LG_STATUS_OK) {
+            return status;
+        }
+        status = lg_tensor_sort_dims((lg_tensor*[]){
+            &tape.outputs[i],
+            &tape.inputs_a[i],
+            &tape.inputs_b[i],
+        }, 3);
+        if (status == LG_STATUS_OK) {
+            return status;
+        }
+        status = lg_tensor_coalesce_dims((lg_tensor*[]){
+            &tape.outputs[i],
+            &tape.inputs_a[i],
+            &tape.inputs_b[i],
+        }, 3);
+        if (status == LG_STATUS_OK) {
+            return status;
+        }
+    }
+    return LG_STATUS_OK;
+}
+
 lg_status lg_add(
     lg_tape *tape,
     lg_tensor out,
     const lg_tensor a,
     const lg_tensor b
 ) {
-#ifdef LG_SAFE
-    // Check dimensionality from right to left, aligning their trailing dimensions.
-    // Tensors are add-compatible if all of their dimensions are add-compatible.
-    // Two dimensions are add-compatible if one of three things is true:
-    // 1) The dimensions are the same.
-    // 2) One of the dimensions is 1.
-    // 3) One of the dimensions does not exist.
-    lg_size max_rank = (a.rank > b.rank) ? a.rank : b.rank;
-    for (lg_size i = 0; i < max_rank; i++) {
-        // Default missing trailing dimensions to 1 for correct broadcasting semantics
-        lg_size dim_a = (i < a.rank) ? a.dim[a.rank - 1 - i] : 1;
-        lg_size dim_b = (i < b.rank) ? b.dim[b.rank - 1 - i] : 1;
-
-        if (dim_a != dim_b && dim_a != 1 && dim_b != 1) {
-            return LG_STATUS_SHAPE_MISMATCH;
-        }
-    }
-#endif // LG_SAFE
     lg_status status = lg_tape_push(tape, LG_OPCODE_ADD, a, b, out);
     if (status != LG_STATUS_OK) {
         return status;
     }
-
     return LG_STATUS_OK;
 }
 

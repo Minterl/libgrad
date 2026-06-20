@@ -210,7 +210,7 @@ test_status test_tensor_aligned_views() {
 
 void *alloc_libc(void *_, lg_size bytes) {
     (void)_;
-    return malloc(bytes);
+    return calloc(bytes, 1);
 }
 
 void free_libc(void* _, void *ptr) {
@@ -322,6 +322,64 @@ test_status test_cpu_add_vec() {
     return TEST_STATUS_OK;
 }
 
+test_status test_cpu_backward() {
+    const lg_size cap = 32;
+    lg_tape tape = {
+        .cap = cap,
+        .inputs_a = malloc(cap * sizeof(lg_tensor)),
+        .inputs_b = malloc(cap * sizeof(lg_tensor)),
+        .outputs = malloc(cap * sizeof(lg_tensor)),
+        .opcodes = malloc(cap * sizeof(lg_opcode)),
+    };
+
+    lg_tensor a = { .rank = 1, .dim = {4} },
+              b = { .rank = 1, .dim = {4}  },
+              out = { .rank = 1, .dim = {4} };
+
+    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&b, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&out, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+
+    lg_dtype a_vals[4] = {1, 2, 3, 4},
+             b_vals[4] = {3, 3, 1, 4},
+             out_grad[4] = {1, 1, 1, 1};
+
+    lg_allocator allocator = {
+        .alloc = alloc_libc,
+        .free = free_libc,
+    };
+
+    test_assert(lg_alloc_tensor(&allocator, &out, true) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &a, true) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &b, true) == LG_STATUS_OK, "failed to allocate tensor");
+
+    lg_tensor_copy_vector(a, a_vals, 0, false);
+    lg_tensor_copy_vector(b, b_vals, 0, false);
+    lg_tensor_copy_vector(out, out_grad, 0, true);
+
+    test_assert(lg_add(&tape, out, a, b) == LG_STATUS_OK, "failed to append add node");
+
+    test_assert(lg_tape_prepare(tape) == LG_STATUS_OK, "failed to prepare tape, status");
+    test_assert(lg_cpu_forward(tape) == LG_STATUS_OK, "failed to do forward pass");
+    test_assert(lg_cpu_backward(tape) == LG_STATUS_OK, "failed to do backward pass");
+
+    lg_dtype expected_data[4] = {4, 5, 4, 8};
+    lg_dtype expected_grad[4] = {1, 1, 1, 1};
+    test_assert_array_eq(expected_data, out.data, 4, "%f");
+    test_assert_array_eq(expected_grad, a.grad, 4, "%f");
+
+    lg_free_tensor(&allocator, &a);
+    lg_free_tensor(&allocator, &b);
+    lg_free_tensor(&allocator, &out);
+
+    free(tape.inputs_a);
+    free(tape.inputs_b);
+    free(tape.outputs);
+    free(tape.opcodes);
+
+    return TEST_STATUS_OK;
+}
+
 int main(void) {
     test_run(tensor_layout);
     test_run(tensor_size);
@@ -330,5 +388,6 @@ int main(void) {
     test_run(tensor_aligned_views);
     test_run(cpu_add_basic);
     test_run(cpu_add_vec);
+    test_run(cpu_backward);
     return 0;
 }
