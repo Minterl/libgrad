@@ -39,6 +39,23 @@ inline static lg_size mock_align_hint() {
     return ALLOC_ALIGN;
 }
 
+static inline bool increment_coords_rtl(lg_size *coords, const lg_size *dim, lg_size rank) {
+    if (rank == 0) return false;
+
+    lg_size axis = rank;
+    
+    while (axis > 0) {
+        axis--;
+        coords[axis]++;
+        if (coords[axis] < dim[axis]) {
+            return true; 
+        }
+        coords[axis] = 0;
+    }
+
+    return false;
+}
+
 test_status test_tensor_layout() {
     // --- w/o padding ---
     {
@@ -100,7 +117,7 @@ test_status test_tensor_size() {
     lg_size also_36_size = lg_tensor_size_bytes(also_36);
     test_assert(also_36_size == 36 * sizeof(lg_dtype), "tensor size was %lu", also_36_size);
 
-    lg_tensor padded = { .dim = {3, 3, 3}, .rank = 4 };
+    lg_tensor padded = { .dim = {3, 3, 3}, .rank = 3 };
     test_assert(lg_tensor_layout(&padded, LG_LAYOUT_ROW_MAJOR, 4) == LG_STATUS_OK, "failed to initialize tensor");
     lg_size calculated_bytes = lg_tensor_size_bytes(padded);
     // Strides should be (12, 4, 1), meaning the maximum offset at (2, 2, 2) is
@@ -118,7 +135,7 @@ test_status test_tensor_size() {
     calculated_bytes = lg_tensor_size_bytes(zero_ten);
     test_assert(calculated_bytes == 0, "tensor size calculated to be %lu bytes", calculated_bytes);
 
-    lg_tensor scalar = { .dim = {1}, .rank = 0 };
+    lg_tensor scalar = { .dim = {1}, .rank = 1 };
     test_assert(lg_tensor_layout(&scalar, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     calculated_bytes = lg_tensor_size_bytes(scalar);
     test_assert(calculated_bytes == sizeof(lg_dtype), "tensor size calculated to be %lu bytes", calculated_bytes);
@@ -236,6 +253,7 @@ test_status test_cpu_add_basic() {
     test_assert(lg_alloc_tensor(&allocator, &b, false) == LG_STATUS_OK, "failed to allocate tensor");
 
     test_assert(lg_tensor_broadcast(((lg_tensor*[]){&out, &a, &b}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
+    test_assert(lg_tensor_sort_dims(((lg_tensor*[]){&out, &a, &b}), 3) == LG_STATUS_OK, "failed to sort dims");
 
     lg_size coords[LG_MAX_RANK] = {0};
     do {
@@ -247,7 +265,7 @@ test_status test_cpu_add_basic() {
         }
         a.data[a_idx] = 1.0f;
         b.data[b_idx] = 2.0f;
-    } while (__lg_increment_coords_rtl(coords, out.dim, out.rank));
+    } while (increment_coords_rtl(coords, out.dim, out.rank));
 
     test_assert(lg_cpu_add(out, a, b) == LG_STATUS_OK, "failed to add");
 
@@ -261,7 +279,7 @@ test_status test_cpu_add_basic() {
             idx += out.strides[i] * coords[i];
         }
         test_assert(out.data[idx] == 3.0f, "wanted 3, got %f", out.data[idx]);
-    } while (__lg_increment_coords_rtl(coords, out.dim, out.rank));;;
+    } while (increment_coords_rtl(coords, out.dim, out.rank));;;
 
     lg_free_tensor(&allocator, &out);
     lg_free_tensor(&allocator, &a);
@@ -299,7 +317,7 @@ test_status test_cpu_add_vec() {
         }
         a.data[a_idx] = 1.0f;
         b.data[b_idx] = 2.0f;
-    } while (__lg_increment_coords_rtl(coords, out.dim, out.rank));
+    } while (increment_coords_rtl(coords, out.dim, out.rank));
 
     test_assert(lg_cpu_add(out, a, b) == LG_STATUS_OK, "failed to add");
 
@@ -313,7 +331,7 @@ test_status test_cpu_add_vec() {
             idx += out.strides[i] * coords[i];
         }
         test_assert(out.data[idx] == 3.0f, "wanted 3, got %f", out.data[idx]);
-    } while (__lg_increment_coords_rtl(coords, out.dim, out.rank));;;
+    } while (increment_coords_rtl(coords, out.dim, out.rank));;;
 
     lg_free_tensor(&allocator, &out);
     lg_free_tensor(&allocator, &a);

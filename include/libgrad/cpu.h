@@ -9,23 +9,6 @@ lg_status lg_cpu_backward(lg_tape tape);
 lg_status lg_cpu_add(lg_tensor out, const lg_tensor a, const lg_tensor b);
 lg_status lg_cpu_add_back(const lg_tensor upstream, lg_tensor operand_a, lg_tensor operand_b);
 
-static inline bool __lg_increment_coords_rtl(lg_size *coords, const lg_size *dim, lg_size rank) {
-    if (rank == 0) return false;
-
-    lg_size axis = rank;
-    
-    while (axis > 0) {
-        axis--;
-        coords[axis]++;
-        if (coords[axis] < dim[axis]) {
-            return true; 
-        }
-        coords[axis] = 0;
-    }
-
-    return false;
-}
-
 #endif // LG_CPU_H_
 
 
@@ -94,42 +77,40 @@ lg_status lg_cpu_add(
     const lg_tensor a,
     const lg_tensor b
 ) {
-    lg_size coords[LG_MAX_RANK] = {0};
+    lg_tracker tracker = {
+        .tensors = {out, a, b},
+        .n_tracked_dims = out.rank,
+        .coords = {0},
+        .indices = {0},
+    };
 
     do {
-        lg_size out_idx = 0;
-        lg_size a_idx = 0;
-        lg_size b_idx = 0;
-
-        for (lg_size i = 0; i < out.rank; i++) {
-            out_idx += out.strides[i] * coords[i];
-            a_idx += a.strides[i] * coords[i];
-            b_idx += b.strides[i] * coords[i];
-        }
+        const lg_size out_idx = tracker.indices[0];
+        const lg_size a_idx = tracker.indices[1];
+        const lg_size b_idx = tracker.indices[2];
 
         out.data[out_idx] = a.data[a_idx] + b.data[b_idx];
-    } while (__lg_increment_coords_rtl(coords, out.dim, out.rank));
+   } while (lg_tracker_increment(&tracker));
 
     return LG_STATUS_OK;
 }
 
 lg_status lg_cpu_add_back(const lg_tensor upstream, lg_tensor operand_a, lg_tensor operand_b) {
-    lg_size coords[LG_MAX_RANK] = {0};
+    lg_tracker tracker = {
+        .tensors = {upstream, operand_a, operand_b},
+        .n_tracked_dims = upstream.rank,
+        .coords = {0},
+        .indices = {0},
+    };
 
     do {
-        lg_size upstream_idx = 0;
-        lg_size a_idx = 0;
-        lg_size b_idx = 0;
-
-        for (lg_size i = 0; i < upstream.rank; i++) {
-            upstream_idx += upstream.strides[i] * coords[i];
-            a_idx += operand_a.strides[i] * coords[i];
-            b_idx += operand_b.strides[i] * coords[i];
-        }
+        const lg_size upstream_idx = tracker.indices[0];
+        const lg_size a_idx = tracker.indices[1];
+        const lg_size b_idx = tracker.indices[2];
 
         operand_a.grad[a_idx] += upstream.grad[upstream_idx];
         operand_b.grad[b_idx] += upstream.grad[upstream_idx];
-    } while (__lg_increment_coords_rtl(coords, upstream.dim, upstream.rank));
+    } while (lg_tracker_increment(&tracker));
 
     return LG_STATUS_OK;
 }

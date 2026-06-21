@@ -13,6 +13,11 @@
 #define LG_MAX_RANK 8
 #endif // LG_MAX_RANK
 
+/// The number of tensors tracked by `lg_tracker`.
+#ifndef LG_N_TRACKED_TENSORS
+#define LG_N_TRACKED_TENSORS 4
+#endif // LG_N_TRACKED_TENSORS 4
+
 /// Type to back Tensor data
 #ifndef lg_dtype
 #define lg_dtype float
@@ -134,6 +139,15 @@ typedef enum lg_opcode {
     LG_OPCODE_TRANSPOSE,
 } lg_opcode;
 
+typedef struct lg_tracker {
+    lg_size coords[LG_MAX_RANK];
+    lg_tensor tensors[LG_N_TRACKED_TENSORS];
+    lg_size indices[LG_N_TRACKED_TENSORS];
+    lg_size n_tracked_dims;
+} lg_tracker;
+
+bool lg_tracker_increment(lg_tracker *tracker);
+
 /// A tape used to record operations
 ///
 /// A tape is represented in memory as a structure of arrays.
@@ -254,11 +268,6 @@ lg_status lg_tensor_layout(lg_tensor *tensor, lg_layout layout, lg_size unit_ali
         return LG_STATUS_INVALID_RANK;
     }
 #endif // LG_SAFE
-
-    for (tensor->rank = 0; tensor->rank < LG_MAX_RANK && tensor->dim[tensor->rank] > 0; tensor->rank++) {
-         tensor->dim[tensor->rank] = tensor->dim[tensor->rank];
-    }
-
     lg_size last_stride = 1;
     for (lg_size i = 1; i <= tensor->rank; i++) {
         lg_size axis = layout == LG_LAYOUT_ROW_MAJOR ? tensor->rank - i : i - 1;
@@ -538,6 +547,34 @@ lg_status lg_tape_prepare(lg_tape tape) {
         }
     }
     return LG_STATUS_OK;
+}
+
+bool lg_tracker_increment(lg_tracker *tracker) {
+    const lg_size rank = tracker->tensors[0].rank;
+    const lg_size first_tracked_dim = rank - tracker->n_tracked_dims;
+    const lg_size *restrict dim = tracker->tensors[0].dim;
+
+    if (rank == 0) {
+        return false;
+    }
+
+    lg_size axis = rank;
+    while (axis > first_tracked_dim) {
+        axis--;
+        tracker->coords[axis]++;
+        if (tracker->coords[axis] < dim[axis]) {
+            for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
+                tracker->indices[i] += tracker->tensors[i].strides[axis];
+            }
+            return true; 
+        }
+        tracker->coords[axis] = 0;
+       for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
+            tracker->indices[i] -= tracker->tensors[i].strides[axis] * (dim[axis] - 1);
+        }
+    }
+
+    return false;
 }
 
 lg_status lg_add(
