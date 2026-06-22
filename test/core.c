@@ -377,7 +377,6 @@ test_status test_cpu_backward() {
 
     test_assert(lg_add(&tape, out, a, b) == LG_STATUS_OK, "failed to append add node");
 
-    test_assert(lg_tape_prepare(tape) == LG_STATUS_OK, "failed to prepare tape, status");
     test_assert(lg_cpu_forward(tape) == LG_STATUS_OK, "failed to do forward pass");
     test_assert(lg_cpu_backward(tape) == LG_STATUS_OK, "failed to do backward pass");
 

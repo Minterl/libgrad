@@ -518,37 +518,6 @@ static inline lg_status lg_tape_push(
     return LG_STATUS_OK;
 }
 
-lg_status lg_tape_prepare(lg_tape tape) {
-    lg_status status;
-    for (lg_size i = 0; i < tape.len; i++) {
-        status = lg_tensor_broadcast((lg_tensor*[]){
-            &tape.outputs[i],
-            &tape.inputs_a[i],
-            &tape.inputs_b[i],
-        }, 3);
-        if (status == LG_STATUS_OK) {
-            return status;
-        }
-        status = lg_tensor_sort_dims((lg_tensor*[]){
-            &tape.outputs[i],
-            &tape.inputs_a[i],
-            &tape.inputs_b[i],
-        }, 3);
-        if (status == LG_STATUS_OK) {
-            return status;
-        }
-        status = lg_tensor_coalesce_dims((lg_tensor*[]){
-            &tape.outputs[i],
-            &tape.inputs_a[i],
-            &tape.inputs_b[i],
-        }, 3);
-        if (status == LG_STATUS_OK) {
-            return status;
-        }
-    }
-    return LG_STATUS_OK;
-}
-
 bool lg_tracker_increment(lg_tracker *tracker) {
     const lg_size rank = tracker->tensors[0].rank;
     const lg_size first_tracked_dim = rank - tracker->n_tracked_dims;
@@ -583,7 +552,33 @@ lg_status lg_add(
     const lg_tensor a,
     const lg_tensor b
 ) {
-    lg_status status = lg_tape_push(tape, LG_OPCODE_ADD, a, b, out);
+    lg_status status;
+    status = lg_tape_push(tape, LG_OPCODE_ADD, a, b, out);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    const lg_size i = tape->len - 1;
+    status = lg_tensor_broadcast((lg_tensor*[]){
+        &tape->outputs[i],
+        &tape->inputs_a[i],
+        &tape->inputs_b[i],
+    }, 3);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    status = lg_tensor_sort_dims((lg_tensor*[]){
+        &tape->outputs[i],
+        &tape->inputs_a[i],
+        &tape->inputs_b[i],
+    }, 3);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    status = lg_tensor_coalesce_dims((lg_tensor*[]){
+        &tape->outputs[i],
+        &tape->inputs_a[i],
+        &tape->inputs_b[i],
+    }, 3);
     if (status != LG_STATUS_OK) {
         return status;
     }
