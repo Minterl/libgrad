@@ -54,6 +54,7 @@ typedef enum lg_status {
     LG_STATUS_NULL_POINTER,
     LG_STATUS_UNSUPPORTED_OPCODE,
     LG_STATUS_OUT_OF_MEMORY,
+    LG_STATUS_OUT_OF_BOUNDS,
     LG_STATUS_HARDWARE_FAULT,
     LG_STATUS_UNEXPECTED_NAN
 } lg_status;
@@ -139,6 +140,10 @@ typedef enum lg_opcode {
     LG_OPCODE_TRANSPOSE,
 } lg_opcode;
 
+/// Tracks the coordinates of LG_N_TRACKED_TENSORS tensors.
+///
+/// All tensors in a single tracker must be both broadcasted and
+/// have their dims sorted in descending order.
 typedef struct lg_tracker {
     lg_size coords[LG_MAX_RANK];
     lg_tensor tensors[LG_N_TRACKED_TENSORS];
@@ -146,7 +151,16 @@ typedef struct lg_tracker {
     lg_size n_tracked_dims;
 } lg_tracker;
 
-bool lg_tracker_increment(lg_tracker *tracker);
+/// Increment the coordinate `axis` on `tracker` and update offsets.
+/// 
+/// Does not perform any bounds checking.
+bool lg_tracker_increment(lg_tracker *tracker, lg_size axis);
+
+/// Recomputes the indices in `tracker` according to its `coords`.
+///
+/// If you want to "jump" to a specific coordinate in a tensor, this is the
+/// easiest way to do it.
+void lg_tracker_goto(lg_tracker *tracker, lg_size *coords);
 
 /// A tape used to record operations
 ///
@@ -305,7 +319,8 @@ static inline bool lg_tensor_is_isotropic(const lg_tensor tensor) {
     }
 }
 
-lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
+/// Returns the maximum rank of all of the tensors
+lg_size __lg_tensor_left_pad_dims(lg_tensor **tensors, lg_size n_tensors) {
     lg_size max_rank = 0;
     for (lg_size i = 0; i < n_tensors; i++) {
         if (tensors[i]->rank > max_rank) {
@@ -313,7 +328,6 @@ lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
         }
     }
 
-    /// Left-pad the rest of the views to be aligned by their trailing dims.
     for (lg_size i = 0; i < n_tensors; i++) {
         if (tensors[i]->rank < max_rank) {
             lg_size shift = max_rank - tensors[i]->rank;
@@ -330,6 +344,12 @@ lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
         }
     }
     
+    return max_rank;
+}
+    
+lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
+    const lg_size max_rank = __lg_tensor_left_pad_dims(tensors, n_tensors);
+
     // --- Validate that all tensors are broadcast-compatible ---
     // Every tensor participating in the tracking must be broadcast-compatible
     // with every other tensor.
@@ -403,13 +423,6 @@ lg_status lg_tensor_sort_dims(lg_tensor **tensors, lg_size n_tensors) {
         }
     }
 
-    // --- Bubble sort dimensions of the primary into descending order ---
-    // Mathematically, this is just a series of transpositions.
-    // This aligns the tensor such that the dimension with the unit stride
-    // is first in the arrays. 
-    // This is good because it forces the CPU to access the primary's memory sequentially 
-    // in the loop as opposed to constant indirection over a non-contiguous
-    // dimension, which destroys cache coherence.
     for (lg_size i = 0; i < max_rank; i++) {
         bool swapped = 0;
         for (lg_size j = 1; j < max_rank - i; j++) {
@@ -518,7 +531,7 @@ static inline lg_status lg_tape_push(
     return LG_STATUS_OK;
 }
 
-bool lg_tracker_increment(lg_tracker *tracker) {
+bool lg_tracker_increment(lg_tracker *tracker, lg_size axis) {
     const lg_size rank = tracker->tensors[0].rank;
     const lg_size first_tracked_dim = rank - tracker->n_tracked_dims;
     const lg_size *restrict dim = tracker->tensors[0].dim;
@@ -527,7 +540,7 @@ bool lg_tracker_increment(lg_tracker *tracker) {
         return false;
     }
 
-    lg_size axis = rank;
+    axis += 1;
     while (axis > first_tracked_dim) {
         axis--;
         tracker->coords[axis]++;
@@ -538,12 +551,25 @@ bool lg_tracker_increment(lg_tracker *tracker) {
             return true; 
         }
         tracker->coords[axis] = 0;
-       for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
+        for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
             tracker->indices[i] -= tracker->tensors[i].strides[axis] * (dim[axis] - 1);
         }
     }
 
     return false;
+}
+
+void lg_tracker_goto(lg_tracker *tracker, lg_size *coords) {
+    for(lg_size i = 0; i < tracker->n_tracked_dims; i++) {
+        tracker->coords[i] = coords[i];
+    }
+
+    for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
+        tracker->indices[i] = 0;
+        for (lg_size j = 0; j < tracker->n_tracked_dims; j++) {
+            tracker->indices[i] += tracker->tensors[i].strides[j] * coords[j];
+        }
+    }
 }
 
 lg_status lg_add(
@@ -585,4 +611,4 @@ lg_status lg_add(
     return LG_STATUS_OK;
 }
 
-#endif // LG_CORE_IMPLEMENTATION 
+#endif // LG_CORE_IMPLEMENTATION

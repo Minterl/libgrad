@@ -80,8 +80,6 @@ lg_status lg_cpu_add(
     lg_tracker tracker = {
         .tensors = {out, a, b},
         .n_tracked_dims = out.rank,
-        .coords = {0},
-        .indices = {0},
     };
 
     do {
@@ -90,7 +88,7 @@ lg_status lg_cpu_add(
         const lg_size b_idx = tracker.indices[2];
 
         out.data[out_idx] = a.data[a_idx] + b.data[b_idx];
-   } while (lg_tracker_increment(&tracker));
+   } while (lg_tracker_increment(&tracker, out.rank - 1));
 
     return LG_STATUS_OK;
 }
@@ -99,8 +97,6 @@ lg_status lg_cpu_add_back(const lg_tensor upstream, lg_tensor operand_a, lg_tens
     lg_tracker tracker = {
         .tensors = {upstream, operand_a, operand_b},
         .n_tracked_dims = upstream.rank,
-        .coords = {0},
-        .indices = {0},
     };
 
     do {
@@ -110,7 +106,7 @@ lg_status lg_cpu_add_back(const lg_tensor upstream, lg_tensor operand_a, lg_tens
 
         operand_a.grad[a_idx] += upstream.grad[upstream_idx];
         operand_b.grad[b_idx] += upstream.grad[upstream_idx];
-    } while (lg_tracker_increment(&tracker));
+    } while (lg_tracker_increment(&tracker, upstream.rank - 1));
 
     return LG_STATUS_OK;
 }
