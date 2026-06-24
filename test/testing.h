@@ -25,15 +25,15 @@ typedef enum test_status {
 
 #define test_assert_array_eq(want, got, len, fmtspec) do { \
     for (int __TEST_MACRO_ITER__ = 0; __TEST_MACRO_ITER__ < len; __TEST_MACRO_ITER__++) { \
-        if (want[__TEST_MACRO_ITER__] != got[__TEST_MACRO_ITER__]) { \
+        if ((want)[__TEST_MACRO_ITER__] != (got)[__TEST_MACRO_ITER__]) { \
             __test_assert_fail( \
                 #want" == "#got, \
                     __FILE__, \
                     __LINE__, \
                     "at index %d: wanted "fmtspec", got "fmtspec, \
                     __TEST_MACRO_ITER__, \
-                    want[__TEST_MACRO_ITER__], \
-                    got[__TEST_MACRO_ITER__] \
+                    (want)[__TEST_MACRO_ITER__], \
+                    (got)[__TEST_MACRO_ITER__] \
             ); \
             return TEST_STATUS_FAIL; \
         } \

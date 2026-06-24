@@ -189,6 +189,12 @@ typedef struct lg_tape {
 /// will be accessed sequentially in memory.
 lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors);
 
+/// Contracts the dimensions of `out`, inferring the contracted dimensions.
+///
+/// The contracted dimensions must be aligned at the beginning of `a`, and `b` with batch dimensions
+/// following.
+lg_status lg_tensor_compute_contracted_dims(lg_tensor *out, lg_tensor *a, lg_tensor *b, lg_size n_batch_axes);
+
 /// Sort dims such that the primary is unit stride first.
 /// Follows the same "primary" rule as `lg_tensor_broadcast`.
 ///
@@ -320,7 +326,7 @@ static inline bool lg_tensor_is_isotropic(const lg_tensor tensor) {
 }
 
 /// Returns the maximum rank of all of the tensors
-lg_size __lg_tensor_left_pad_dims(lg_tensor **tensors, lg_size n_tensors) {
+static inline lg_size __lg_tensor_left_pad_dims(lg_tensor **tensors, lg_size n_tensors) {
     lg_size max_rank = 0;
     for (lg_size i = 0; i < n_tensors; i++) {
         if (tensors[i]->rank > max_rank) {
@@ -367,18 +373,12 @@ lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
     }
 
     for (lg_size i = 0; i < n_tensors; i++) {
-        // Since all of the dims are already right-aligned, we can just iterate over the entire
-        // array.
         for (lg_size j = 0; j < max_rank; j++) {
             lg_size dim_current = (j < tensors[i]->rank) ? tensors[i]->dim[j] : 1;
             if (dim_current != 1) {
-                // If the master dimension is 1, it is compatible with anything.
-                // This now means, however, that all other tensors in the set
-                // must also be compatible with this new master dimension.
                 if (master_dim[j] == 1) {
                     master_dim[j] = dim_current;
                 } 
-                // If there was some other master dimension already present, then we cannot continue.
                 else if (master_dim[j] != dim_current) {
                     return LG_STATUS_SHAPE_MISMATCH;
                 }
@@ -411,6 +411,73 @@ lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
     // - All tensors have the exact same logical dims
     // - The only thing that changes between tensor views is
     //   striding.
+
+    return LG_STATUS_OK;
+}
+
+lg_status lg_tensor_compute_contracted_dims(lg_tensor *out, lg_tensor *a, lg_tensor *b, lg_size n_batch_axes) {
+    // The logical tensor axes will be laid out as follows:
+    // { [batch], [a_free], [b_free], [contracted] }
+    //    reg      reg       reg       0          | out strides
+    //    reg      reg       0         reg        | a strides
+    //    reg      0         reg       reg        | b strides
+
+    lg_tensor out_cpy = *out;
+    lg_tensor a_cpy = *a;
+    lg_tensor b_cpy = *b;
+    
+    // a.rank = n_batch + n_contracted + a_free
+    // b.rank = n_batch + n_contracted + b_free
+    // out.rank = n_batch + a_free + b_free
+    // ergo ...
+    const lg_size n_contracted_axes = (a->rank + b->rank - out->rank - n_batch_axes) / 2;
+    const lg_size a_first_contracted_axis = a->rank - n_contracted_axes;
+    const lg_size b_first_free_axis = n_contracted_axes + n_batch_axes;
+
+    // Batch axes are already in place
+    lg_size r = n_batch_axes;
+
+    // Free axes
+    for (lg_size i = n_batch_axes; i < a_first_contracted_axis; i++, r++) {
+        a->dim[r] = a_cpy.dim[i];
+        a->strides[r] = a_cpy.strides[i];
+        b->dim[r] = a_cpy.dim[i];
+        b->strides[r] = 0;
+        if (out->dim[r] != a_cpy.dim[i]) {
+            return LG_STATUS_SHAPE_MISMATCH;
+        }
+        out->strides[r] = out_cpy.strides[r];
+    }
+    for (lg_size i = b_first_free_axis; i < b_cpy.rank; i++, r++) {
+        a->dim[r] = b_cpy.dim[i];
+        a->strides[r] = 0;
+        b->dim[r] = b_cpy.dim[i];
+        b->strides[r] = b_cpy.strides[i];
+        if (out->dim[r] != b_cpy.dim[i]) {
+            return LG_STATUS_SHAPE_MISMATCH;
+        }
+        out->strides[r] = out_cpy.strides[r];
+    }
+
+    // Contracted axes
+    if (n_contracted_axes > 0) {
+        for (
+            lg_size a_ax = a_first_contracted_axis, b_ax = b_first_free_axis - 1;
+            a_ax < a_cpy.rank; // b_ax > 0
+            a_ax++, b_ax--, r++
+        ) {
+            a->dim[r] = a_cpy.dim[a_ax];
+            a->strides[r] = a_cpy.strides[a_ax];
+            b->dim[r] = a_cpy.dim[a_ax];
+            b->strides[r] = b_cpy.strides[b_ax];
+            out->dim[r] = a_cpy.dim[a_ax];
+            out->strides[r] = 0;
+        }
+    }
+
+    out->rank = r;
+    a->rank = r;
+    b->rank = r;
 
     return LG_STATUS_OK;
 }
