@@ -1,6 +1,5 @@
 #ifndef LG_CORE_IMPLEMENTATION
 #define LG_CORE_IMPLEMENTATION
-#include <asm-generic/errno-base.h>
 #endif // LG_CORE_IMPLEMENTATION
 #ifndef LG_ALLOC_IMPLEMENTATION
 #define LG_ALLOC_IMPLEMENTATION
@@ -379,7 +378,7 @@ test_status test_cpu_matmul() {
         lg_size a_expected_strides[] = {2, 0, 1};
         lg_size b_expected_strides[] = {0, 1, 2};
 
-        test_assert(out_cpy.rank == 3, "out rank: %lu", out.rank);
+        test_assert(out_cpy.rank == 3, "out rank: %lu", out_cpy.rank);
         test_assert(a.rank == 3, "a rank: %lu", a.rank);
         test_assert(bT.rank == 3, "b rank: %lu", bT.rank);
 
@@ -395,6 +394,73 @@ test_status test_cpu_matmul() {
 
     test_assert(lg_cpu_contract(out_cpy, a, bT) == LG_STATUS_OK, "failed to add");
     test_assert_array_eq(expected_out, out.data, 4, "%f");
+
+    return TEST_STATUS_OK;
+}
+
+test_status test_cpu_matmul_batch() {
+    lg_tensor out = { .dim = {2, 2, 2}, .rank = 3 },
+              a = { .dim = {2, 2, 2}, .rank = 3 },
+              bT = { .dim = {2, 2, 2}, .rank = 3 };
+
+    test_assert(lg_tensor_layout(&out, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&bT, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+
+    {
+        lg_size expected_dim[] = {2, 2, 2};
+        lg_size expected_strides[] = {4, 2, 1};
+        
+        test_assert_array_eq(expected_dim, out.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, out.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, a.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, a.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, bT.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, bT.strides, 3, "%lu");
+    }
+
+    lg_dtype a_data[8] = {
+        1, 2, 3, 4,
+        1, 2, 3, 4,
+    };
+    lg_dtype b_data[8] = {
+        5, 6, 7, 8,
+        5, 6, 7, 8,
+    };
+    lg_dtype out_data[8] = {0};
+
+    a.data = a_data;
+    bT.data = b_data;
+    out.data = out_data;
+    lg_tensor out_cpy = out;
+
+    test_assert(lg_tensor_compute_contracted_dims(&out_cpy, &a, &bT, 1) == LG_STATUS_OK, "failed to contract output dims");
+
+    {
+        lg_size expected_dim[] = {2, 2, 2, 2};
+        lg_size out_expected_strides[] = {4, 2, 1, 0};
+        lg_size a_expected_strides[] = {4, 2, 0, 1};
+        lg_size b_expected_strides[] = {4, 0, 1, 2};
+
+        test_assert(out_cpy.rank == 4, "out rank: %lu", out_cpy.rank);
+        test_assert(a.rank == 4, "a rank: %lu", a.rank);
+        test_assert(bT.rank == 4, "b rank: %lu", bT.rank);
+
+        test_assert_array_eq(expected_dim, out_cpy.dim, 4, "%lu");
+        test_assert_array_eq(out_expected_strides, out_cpy.strides, 4, "%lu");
+        test_assert_array_eq(expected_dim, a.dim, 4, "%lu");
+        test_assert_array_eq(a_expected_strides, a.strides, 4, "%lu");
+        test_assert_array_eq(expected_dim, bT.dim, 4, "%lu");
+        test_assert_array_eq(b_expected_strides, bT.strides, 4, "%lu");
+    }
+
+    lg_dtype expected_out[] = {
+        19, 22, 43, 50,
+        19, 22, 43, 50,
+    };
+
+    test_assert(lg_cpu_contract(out_cpy, a, bT) == LG_STATUS_OK, "failed to add");
+    test_assert_array_eq(expected_out, out.data, 8, "%f");
 
     return TEST_STATUS_OK;
 }
@@ -465,6 +531,7 @@ int main(void) {
     test_run(cpu_add_basic);
     test_run(cpu_add_vec);
     test_run(cpu_matmul);
+    test_run(cpu_matmul_batch);
     test_run(cpu_backward);
     return 0;
 }
