@@ -130,14 +130,6 @@ typedef enum lg_opcode {
     LG_OPCODE_SIGMOID,
     /// Element-wise natural log
     LG_OPCODE_LN,
-
-    /// The total number of opcodes
-    /// used in backend vtable construction
-    __LG_N_VIRTUAL_OPS,
-    
-    /// Metadata-only tensor transposition
-    /// NOT implemented by backends.
-    LG_OPCODE_TRANSPOSE,
 } lg_opcode;
 
 /// Tracks the coordinates of LG_N_TRACKED_TENSORS tensors.

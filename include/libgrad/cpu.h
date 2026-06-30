@@ -34,8 +34,7 @@ lg_status lg_cpu_forward(lg_tape tape) {
         case LG_OPCODE_STABLE_SOFTMAX:
         case LG_OPCODE_SIGMOID:
         case LG_OPCODE_LN:
-        case __LG_N_VIRTUAL_OPS: // TODO
-        case LG_OPCODE_TRANSPOSE:
+        default:
             return LG_STATUS_UNSUPPORTED_OPCODE;
         }
     }
@@ -63,8 +62,7 @@ lg_status lg_cpu_backward(lg_tape tape) {
         case LG_OPCODE_STABLE_SOFTMAX:
         case LG_OPCODE_SIGMOID:
         case LG_OPCODE_LN:
-        case __LG_N_VIRTUAL_OPS: // TODO
-        case LG_OPCODE_TRANSPOSE:
+        default:
             return LG_STATUS_UNSUPPORTED_OPCODE;
         }
     } while (i-- > 0);
