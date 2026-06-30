@@ -325,6 +325,15 @@ static inline bool lg_tensor_is_isotropic(const lg_tensor tensor) {
     }
 }
 
+void lg_tensor_tranpose(lg_tensor *tensor) {
+    for (lg_size i = 0; i < tensor->rank / 2; i++) {
+        const lg_size opp = tensor->rank - 1 - i;
+        lg_size temp = tensor->dim[i];
+        tensor->dim[i] = tensor->dim[opp];
+        tensor->dim[opp] = temp;
+    }
+}
+
 /// Returns the maximum rank of all of the tensors
 static inline lg_size __lg_tensor_left_pad_dims(lg_tensor **tensors, lg_size n_tensors) {
     lg_size max_rank = 0;
