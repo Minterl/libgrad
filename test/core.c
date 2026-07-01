@@ -179,12 +179,12 @@ test_status test_alloc_tensor() {
 
 test_status test_tensor_aligned_views_not_compatible() {
     // 4 != 5, so these should clash and not be compatible
-    lg_tensor a = { .dim =  {4, 4}, .rank = 2 };
-    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
-    lg_tensor b = { .dim =  {6, 5, 4}, .rank = 3 };
-    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    lg_tensor x0 = { .dim =  {4, 4}, .rank = 2 };
+    test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    lg_tensor x1 = { .dim =  {6, 5, 4}, .rank = 3 };
+    test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
 
-    lg_status status = lg_tensor_broadcast((lg_tensor*[]){&a, &b}, 2);
+    lg_status status = lg_tensor_broadcast((lg_tensor*[]){&x0, &x1}, 2);
     test_assert(status == LG_STATUS_SHAPE_MISMATCH, "failed to detect shape mismatch");
 
     return TEST_STATUS_OK;
@@ -199,28 +199,28 @@ test_status test_tensor_aligned_views() {
     //     (1, 0, 0), (1, 0, 1) ...
     //     (m-1, n-1, k-1)
     // }
-    lg_tensor a = { .dim = {6, 4, 4}, .rank = 3 };
-    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    lg_tensor x0 = { .dim = {6, 4, 4}, .rank = 3 };
+    test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     // This is a mat44.
     // In memory, with no alignment, this should be a contiguous
     // row-major 2d array (these are (x, y) pairs, not matrix coords):
     // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
-    lg_tensor b = { .dim = {4 ,4}, .rank = 2 };
-    test_assert(lg_tensor_layout(&b, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    lg_tensor x1 = { .dim = {4 ,4}, .rank = 2 };
+    test_assert(lg_tensor_layout(&x1, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
 
-    test_assert(b.strides[0] == 4, "got first stride of %lu", a.strides[0]);
-    test_assert(b.strides[1] == 1, "got second stride of %lu", a.strides[1]);
+    test_assert(x1.strides[0] == 4, "got first stride of %lu", x0.strides[0]);
+    test_assert(x1.strides[1] == 1, "got second stride of %lu", x0.strides[1]);
 
     // Coalesced dimensions
     lg_size expected_strides_a[] = {16, 4, 1};
     lg_size expected_strides_b[] = {0, 4, 1};
 
-    test_assert(lg_tensor_broadcast((lg_tensor*[]){&a, &b}, 2) == LG_STATUS_OK, "failed to broadcast tensors");
-    test_assert(lg_tensor_sort_dims((lg_tensor*[]){&a, &b}, 2) == LG_STATUS_OK, "failed to sort dmis");
-    test_assert_array_eq(expected_strides_a, a.strides, 3, "%llu");
-    test_assert_array_eq(expected_strides_b, b.strides, 3, "%llu");
-    test_assert(lg_tensor_coalesce_dims((lg_tensor*[]){&a, &b}, 2) == LG_STATUS_OK, "failed to coalesce dims");
-    test_assert(a.strides[0] == 1, "%lu");
+    test_assert(lg_tensor_broadcast((lg_tensor*[]){&x0, &x1}, 2) == LG_STATUS_OK, "failed to broadcast tensors");
+    test_assert(lg_tensor_sort_dims((lg_tensor*[]){&x0, &x1}, 2) == LG_STATUS_OK, "failed to sort dmis");
+    test_assert_array_eq(expected_strides_a, x0.strides, 3, "%llu");
+    test_assert_array_eq(expected_strides_b, x1.strides, 3, "%llu");
+    test_assert(lg_tensor_coalesce_dims((lg_tensor*[]){&x0, &x1}, 2) == LG_STATUS_OK, "failed to coalesce dims");
+    test_assert(x0.strides[0] == 1, "%lu");
     
     return TEST_STATUS_OK;
 }
@@ -236,38 +236,38 @@ void free_libc(void* _, void *ptr) {
 }
 
 test_status test_cpu_add_basic() {
-    lg_tensor out = { .dim = {4, 4, 12}, .rank = 3 },
-              a = { .dim = {4, 1, 12}, .rank = 3 },
-              b = { .dim = {1, 4, 12}, .rank = 3 };
+    lg_tensor y = { .dim = {4, 4, 12}, .rank = 3 },
+              x0 = { .dim = {4, 1, 12}, .rank = 3 },
+              x1 = { .dim = {1, 4, 12}, .rank = 3 };
     lg_allocator allocator = {
         .alloc = alloc_libc,
         .free = free_libc,
     };
 
-    test_assert(lg_tensor_layout(&out, LG_LAYOUT_ROW_MAJOR, 7) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&b, LG_LAYOUT_COL_MAJOR, 2) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&y, LG_LAYOUT_ROW_MAJOR, 7) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x1, LG_LAYOUT_COL_MAJOR, 2) == LG_STATUS_OK, "failed to lay out tensor");
 
-    test_assert(lg_alloc_tensor(&allocator, &out, false) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &a, false) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &b, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &y, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x0, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x1, false) == LG_STATUS_OK, "failed to allocate tensor");
 
-    test_assert(lg_tensor_broadcast(((lg_tensor*[]){&out, &a, &b}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
-    test_assert(lg_tensor_sort_dims(((lg_tensor*[]){&out, &a, &b}), 3) == LG_STATUS_OK, "failed to sort dims");
+    test_assert(lg_tensor_broadcast(((lg_tensor*[]){&y, &x0, &x1}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
+    test_assert(lg_tensor_sort_dims(((lg_tensor*[]){&y, &x0, &x1}), 3) == LG_STATUS_OK, "failed to sort dims");
 
     lg_size coords[LG_MAX_RANK] = {0};
     do {
-        lg_size a_idx = 0;
-        lg_size b_idx = 0;
-        for (lg_size i = 0; i < out.rank; i++) {
-            a_idx += a.strides[i] * coords[i];
-            b_idx += b.strides[i] * coords[i];
+        lg_size x0_idx = 0;
+        lg_size x1_idx = 0;
+        for (lg_size i = 0; i < y.rank; i++) {
+            x0_idx += x0.strides[i] * coords[i];
+            x1_idx += x1.strides[i] * coords[i];
         }
-        a.data[a_idx] = 1.0f;
-        b.data[b_idx] = 2.0f;
-    } while (increment_coords_rtl(coords, out.dim, out.rank));
+        x0.data[x0_idx] = 1.0f;
+        x1.data[x1_idx] = 2.0f;
+    } while (increment_coords_rtl(coords, y.dim, y.rank));
 
-    test_assert(lg_cpu_add(out, a, b) == LG_STATUS_OK, "failed to add");
+    test_assert(lg_cpu_add(y, x0, x1) == LG_STATUS_OK, "failed to add");
 
     for (lg_size i = 0; i < LG_MAX_RANK; i++) {
         coords[i] = 0;
@@ -275,51 +275,51 @@ test_status test_cpu_add_basic() {
 
     do {
         lg_size idx = 0;
-        for (lg_size i = 0; i < out.rank; i++) {
-            idx += out.strides[i] * coords[i];
+        for (lg_size i = 0; i < y.rank; i++) {
+            idx += y.strides[i] * coords[i];
         }
-        test_assert(out.data[idx] == 3.0f, "wanted 3, got %f", out.data[idx]);
-    } while (increment_coords_rtl(coords, out.dim, out.rank));;;
+        test_assert(y.data[idx] == 3.0f, "wanted 3, got %f", y.data[idx]);
+    } while (increment_coords_rtl(coords, y.dim, y.rank));;;
 
-    lg_free_tensor(&allocator, &out);
-    lg_free_tensor(&allocator, &a);
-    lg_free_tensor(&allocator, &b);
+    lg_free_tensor(&allocator, &y);
+    lg_free_tensor(&allocator, &x0);
+    lg_free_tensor(&allocator, &x1);
 
     return TEST_STATUS_OK;
 }
 
 test_status test_cpu_add_vec() {
-    lg_tensor out = { .dim = {3}, .rank = 1 },
-              a = { .dim = {3}, .rank = 1 },
-              b = { .dim = {3}, .rank = 1 };
+    lg_tensor y = { .dim = {3}, .rank = 1 },
+              x0 = { .dim = {3}, .rank = 1 },
+              x1 = { .dim = {3}, .rank = 1 };
     lg_allocator allocator = {
         .alloc = alloc_libc,
         .free = free_libc,
     };
 
-    test_assert(lg_tensor_layout(&out, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&b, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&y, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x1, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
-    test_assert(lg_alloc_tensor(&allocator, &out, false) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &a, false) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &b, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &y, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x0, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x1, false) == LG_STATUS_OK, "failed to allocate tensor");
 
-    test_assert(lg_tensor_broadcast(((lg_tensor*[]){&out, &a, &b}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
+    test_assert(lg_tensor_broadcast(((lg_tensor*[]){&y, &x0, &x1}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
 
     lg_size coords[LG_MAX_RANK] = {0};
     do {
-        lg_size a_idx = 0;
-        lg_size b_idx = 0;
-        for (lg_size i = 0; i < out.rank; i++) {
-            a_idx += a.strides[i] * coords[i];
-            b_idx += b.strides[i] * coords[i];
+        lg_size x0_idx = 0;
+        lg_size x1_idx = 0;
+        for (lg_size i = 0; i < y.rank; i++) {
+            x0_idx += x0.strides[i] * coords[i];
+            x1_idx += x1.strides[i] * coords[i];
         }
-        a.data[a_idx] = 1.0f;
-        b.data[b_idx] = 2.0f;
-    } while (increment_coords_rtl(coords, out.dim, out.rank));
+        x0.data[x0_idx] = 1.0f;
+        x1.data[x1_idx] = 2.0f;
+    } while (increment_coords_rtl(coords, y.dim, y.rank));
 
-    test_assert(lg_cpu_add(out, a, b) == LG_STATUS_OK, "failed to add");
+    test_assert(lg_cpu_add(y, x0, x1) == LG_STATUS_OK, "failed to add");
 
     for (lg_size i = 0; i < LG_MAX_RANK; i++) {
         coords[i] = 0;
@@ -327,131 +327,131 @@ test_status test_cpu_add_vec() {
 
     do {
         lg_size idx = 0;
-        for (lg_size i = 0; i < out.rank; i++) {
-            idx += out.strides[i] * coords[i];
+        for (lg_size i = 0; i < y.rank; i++) {
+            idx += y.strides[i] * coords[i];
         }
-        test_assert(out.data[idx] == 3.0f, "wanted 3, got %f", out.data[idx]);
-    } while (increment_coords_rtl(coords, out.dim, out.rank));;;
+        test_assert(y.data[idx] == 3.0f, "wanted 3, got %f", y.data[idx]);
+    } while (increment_coords_rtl(coords, y.dim, y.rank));;;
 
-    lg_free_tensor(&allocator, &out);
-    lg_free_tensor(&allocator, &a);
-    lg_free_tensor(&allocator, &b);
+    lg_free_tensor(&allocator, &y);
+    lg_free_tensor(&allocator, &x0);
+    lg_free_tensor(&allocator, &x1);
 
     return TEST_STATUS_OK;
 }
 
 test_status test_cpu_matmul() {
-    lg_tensor out = { .dim = {2, 2}, .rank = 2 },
-              a = { .dim = {2, 2}, .rank = 2 },
-              bT = { .dim = {2, 2}, .rank = 2 };
+    lg_tensor y = { .dim = {2, 2}, .rank = 2 },
+              x0 = { .dim = {2, 2}, .rank = 2 },
+              x1T = { .dim = {2, 2}, .rank = 2 };
 
-    test_assert(lg_tensor_layout(&out, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&bT, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&y, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x1T, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
     {
         lg_size expected_dim[] = {2, 2};
         lg_size expected_strides[] = {2, 1};
         
-        test_assert_array_eq(expected_dim, out.dim, 2, "%lu");
-        test_assert_array_eq(expected_strides, out.strides, 2, "%lu");
-        test_assert_array_eq(expected_dim, a.dim, 2, "%lu");
-        test_assert_array_eq(expected_strides, a.strides, 2, "%lu");
-        test_assert_array_eq(expected_dim, bT.dim, 2, "%lu");
-        test_assert_array_eq(expected_strides, bT.strides, 2, "%lu");
+        test_assert_array_eq(expected_dim, y.dim, 2, "%lu");
+        test_assert_array_eq(expected_strides, y.strides, 2, "%lu");
+        test_assert_array_eq(expected_dim, x0.dim, 2, "%lu");
+        test_assert_array_eq(expected_strides, x0.strides, 2, "%lu");
+        test_assert_array_eq(expected_dim, x1T.dim, 2, "%lu");
+        test_assert_array_eq(expected_strides, x1T.strides, 2, "%lu");
     }
 
-    lg_dtype a_data[4] = {1, 2, 3, 4};
-    lg_dtype b_data[4] = {5, 6, 7, 8};
-    lg_dtype out_data[4] = {0};
+    lg_dtype x0_data[4] = {1, 2, 3, 4};
+    lg_dtype x1_data[4] = {5, 6, 7, 8};
+    lg_dtype y_data[4] = {0};
 
-    a.data = a_data;
-    bT.data = b_data;
-    out.data = out_data;
-    lg_tensor out_cpy = out;
+    x0.data = x0_data;
+    x1T.data = x1_data;
+    y.data = y_data;
+    lg_tensor y_cpy = y;
 
-    test_assert(lg_tensor_compute_contracted_dims(&out_cpy, &a, &bT, 0) == LG_STATUS_OK, "failed to contract output dims");
+    test_assert(lg_tensor_compute_contracted_dims(&y_cpy, &x0, &x1T, 0) == LG_STATUS_OK, "failed to contract output dims");
 
     {
         lg_size expected_dim[] = {2, 2, 2};
-        lg_size out_expected_strides[] = {2, 1, 0};
-        lg_size a_expected_strides[] = {2, 0, 1};
-        lg_size b_expected_strides[] = {0, 1, 2};
+        lg_size y_expected_strides[] = {2, 1, 0};
+        lg_size x0_expected_strides[] = {2, 0, 1};
+        lg_size x1_expected_strides[] = {0, 1, 2};
 
-        test_assert(out_cpy.rank == 3, "out rank: %lu", out_cpy.rank);
-        test_assert(a.rank == 3, "a rank: %lu", a.rank);
-        test_assert(bT.rank == 3, "b rank: %lu", bT.rank);
+        test_assert(y_cpy.rank == 3, "y rank: %lu", y_cpy.rank);
+        test_assert(x0.rank == 3, "x0 rank: %lu", x0.rank);
+        test_assert(x1T.rank == 3, "x1T rank: %lu", x1T.rank);
 
-        test_assert_array_eq(expected_dim, out_cpy.dim, 3, "%lu");
-        test_assert_array_eq(out_expected_strides, out_cpy.strides, 3, "%lu");
-        test_assert_array_eq(expected_dim, a.dim, 3, "%lu");
-        test_assert_array_eq(a_expected_strides, a.strides, 3, "%lu");
-        test_assert_array_eq(expected_dim, bT.dim, 3, "%lu");
-        test_assert_array_eq(b_expected_strides, bT.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, y_cpy.dim, 3, "%lu");
+        test_assert_array_eq(y_expected_strides, y_cpy.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, x0.dim, 3, "%lu");
+        test_assert_array_eq(x0_expected_strides, x0.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, x1T.dim, 3, "%lu");
+        test_assert_array_eq(x1_expected_strides, x1T.strides, 3, "%lu");
     }
 
     lg_dtype expected_out[] = {19, 22, 43, 50};
 
-    test_assert(lg_cpu_contract(out_cpy, a, bT) == LG_STATUS_OK, "failed to add");
-    test_assert_array_eq(expected_out, out.data, 4, "%f");
+    test_assert(lg_cpu_contract(y_cpy, x0, x1T) == LG_STATUS_OK, "failed to add");
+    test_assert_array_eq(expected_out, y.data, 4, "%f");
 
     return TEST_STATUS_OK;
 }
 
 test_status test_cpu_matmul_batch() {
-    lg_tensor out = { .dim = {2, 2, 2}, .rank = 3 },
-              a = { .dim = {2, 2, 2}, .rank = 3 },
-              bT = { .dim = {2, 2, 2}, .rank = 3 };
+    lg_tensor y = { .dim = {2, 2, 2}, .rank = 3 },
+              x0 = { .dim = {2, 2, 2}, .rank = 3 },
+              x1T = { .dim = {2, 2, 2}, .rank = 3 };
 
-    test_assert(lg_tensor_layout(&out, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&bT, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&y, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x1T, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
     {
         lg_size expected_dim[] = {2, 2, 2};
         lg_size expected_strides[] = {4, 2, 1};
         
-        test_assert_array_eq(expected_dim, out.dim, 3, "%lu");
-        test_assert_array_eq(expected_strides, out.strides, 3, "%lu");
-        test_assert_array_eq(expected_dim, a.dim, 3, "%lu");
-        test_assert_array_eq(expected_strides, a.strides, 3, "%lu");
-        test_assert_array_eq(expected_dim, bT.dim, 3, "%lu");
-        test_assert_array_eq(expected_strides, bT.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, y.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, y.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, x0.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, x0.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, x1T.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, x1T.strides, 3, "%lu");
     }
 
-    lg_dtype a_data[8] = {
+    lg_dtype x0_data[8] = {
         1, 2, 3, 4,
         1, 2, 3, 4,
     };
-    lg_dtype b_data[8] = {
+    lg_dtype x1_data[8] = {
         5, 6, 7, 8,
         5, 6, 7, 8,
     };
-    lg_dtype out_data[8] = {0};
+    lg_dtype y_data[8] = {0};
 
-    a.data = a_data;
-    bT.data = b_data;
-    out.data = out_data;
-    lg_tensor out_cpy = out;
+    x0.data = x0_data;
+    x1T.data = x1_data;
+    y.data = y_data;
+    lg_tensor y_cpy = y;
 
-    test_assert(lg_tensor_compute_contracted_dims(&out_cpy, &a, &bT, 1) == LG_STATUS_OK, "failed to contract output dims");
+    test_assert(lg_tensor_compute_contracted_dims(&y_cpy, &x0, &x1T, 1) == LG_STATUS_OK, "failed to contract output dims");
 
     {
         lg_size expected_dim[] = {2, 2, 2, 2};
-        lg_size out_expected_strides[] = {4, 2, 1, 0};
-        lg_size a_expected_strides[] = {4, 2, 0, 1};
-        lg_size b_expected_strides[] = {4, 0, 1, 2};
+        lg_size y_expected_strides[] = {4, 2, 1, 0};
+        lg_size x0_expected_strides[] = {4, 2, 0, 1};
+        lg_size x1_expected_strides[] = {4, 0, 1, 2};
 
-        test_assert(out_cpy.rank == 4, "out rank: %lu", out_cpy.rank);
-        test_assert(a.rank == 4, "a rank: %lu", a.rank);
-        test_assert(bT.rank == 4, "b rank: %lu", bT.rank);
+        test_assert(y_cpy.rank == 4, "y rank: %lu", y_cpy.rank);
+        test_assert(x0.rank == 4, "x0 rank: %lu", x0.rank);
+        test_assert(x1T.rank == 4, "x1T rank: %lu", x1T.rank);
 
-        test_assert_array_eq(expected_dim, out_cpy.dim, 4, "%lu");
-        test_assert_array_eq(out_expected_strides, out_cpy.strides, 4, "%lu");
-        test_assert_array_eq(expected_dim, a.dim, 4, "%lu");
-        test_assert_array_eq(a_expected_strides, a.strides, 4, "%lu");
-        test_assert_array_eq(expected_dim, bT.dim, 4, "%lu");
-        test_assert_array_eq(b_expected_strides, bT.strides, 4, "%lu");
+        test_assert_array_eq(expected_dim, y_cpy.dim, 4, "%lu");
+        test_assert_array_eq(y_expected_strides, y_cpy.strides, 4, "%lu");
+        test_assert_array_eq(expected_dim, x0.dim, 4, "%lu");
+        test_assert_array_eq(x0_expected_strides, x0.strides, 4, "%lu");
+        test_assert_array_eq(expected_dim, x1T.dim, 4, "%lu");
+        test_assert_array_eq(x1_expected_strides, x1T.strides, 4, "%lu");
     }
 
     lg_dtype expected_out[] = {
@@ -459,8 +459,8 @@ test_status test_cpu_matmul_batch() {
         19, 22, 43, 50,
     };
 
-    test_assert(lg_cpu_contract(out_cpy, a, bT) == LG_STATUS_OK, "failed to add");
-    test_assert_array_eq(expected_out, out.data, 8, "%f");
+    test_assert(lg_cpu_contract(y_cpy, x0, x1T) == LG_STATUS_OK, "failed to add");
+    test_assert_array_eq(expected_out, y.data, 8, "%f");
 
     return TEST_STATUS_OK;
 }
@@ -469,54 +469,54 @@ test_status test_cpu_backward() {
     const lg_size cap = 32;
     lg_tape tape = {
         .cap = cap,
-        .inputs_a = malloc(cap * sizeof(lg_tensor)),
-        .inputs_b = malloc(cap * sizeof(lg_tensor)),
-        .outputs = malloc(cap * sizeof(lg_tensor)),
+        .x0 = malloc(cap * sizeof(lg_tensor)),
+        .x1 = malloc(cap * sizeof(lg_tensor)),
+        .y = malloc(cap * sizeof(lg_tensor)),
         .opcodes = malloc(cap * sizeof(lg_opcode)),
     };
 
-    lg_tensor a = { .rank = 1, .dim = {4} },
-              b = { .rank = 1, .dim = {4}  },
-              out = { .rank = 1, .dim = {4} };
+    lg_tensor x0 = { .rank = 1, .dim = {4} },
+              x1 = { .rank = 1, .dim = {4}  },
+              y = { .rank = 1, .dim = {4} };
 
-    test_assert(lg_tensor_layout(&a, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&b, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_tensor_layout(&out, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&x1, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(lg_tensor_layout(&y, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
-    lg_dtype a_vals[4] = {1, 2, 3, 4},
-             b_vals[4] = {3, 3, 1, 4},
-             out_grad[4] = {1, 1, 1, 1};
+    lg_dtype x0_vals[4] = {1, 2, 3, 4},
+             x1_vals[4] = {3, 3, 1, 4},
+             y_grad_vals[4] = {1, 1, 1, 1};
 
     lg_allocator allocator = {
         .alloc = alloc_libc,
         .free = free_libc,
     };
 
-    test_assert(lg_alloc_tensor(&allocator, &out, true) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &a, true) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &b, true) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &y, true) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x0, true) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x1, true) == LG_STATUS_OK, "failed to allocate tensor");
 
-    lg_tensor_copy_vector(a, a_vals, 0, false);
-    lg_tensor_copy_vector(b, b_vals, 0, false);
-    lg_tensor_copy_vector(out, out_grad, 0, true);
+    lg_tensor_copy_vector(x0, x0_vals, 0, false);
+    lg_tensor_copy_vector(x1, x1_vals, 0, false);
+    lg_tensor_copy_vector(y, y_grad_vals, 0, true);
 
-    test_assert(lg_add(&tape, out, a, b) == LG_STATUS_OK, "failed to append add node");
+    test_assert(lg_add(&tape, y, x0, x1) == LG_STATUS_OK, "failed to append add node");
 
     test_assert(lg_cpu_forward(tape) == LG_STATUS_OK, "failed to do forward pass");
     test_assert(lg_cpu_backward(tape) == LG_STATUS_OK, "failed to do backward pass");
 
     lg_dtype expected_data[4] = {4, 5, 4, 8};
     lg_dtype expected_grad[4] = {1, 1, 1, 1};
-    test_assert_array_eq(expected_data, out.data, 4, "%f");
-    test_assert_array_eq(expected_grad, a.grad, 4, "%f");
+    test_assert_array_eq(expected_data, y.data, 4, "%f");
+    test_assert_array_eq(expected_grad, x0.grad, 4, "%f");
 
-    lg_free_tensor(&allocator, &a);
-    lg_free_tensor(&allocator, &b);
-    lg_free_tensor(&allocator, &out);
+    lg_free_tensor(&allocator, &x0);
+    lg_free_tensor(&allocator, &x1);
+    lg_free_tensor(&allocator, &y);
 
-    free(tape.inputs_a);
-    free(tape.inputs_b);
-    free(tape.outputs);
+    free(tape.x0);
+    free(tape.x1);
+    free(tape.y);
     free(tape.opcodes);
 
     return TEST_STATUS_OK;

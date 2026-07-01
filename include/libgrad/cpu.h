@@ -6,8 +6,8 @@
 lg_status lg_cpu_backward(lg_tape tape);
 
 /// Tensors must be sorted & broadcasted
-lg_status lg_cpu_add(lg_tensor out, const lg_tensor a, const lg_tensor b);
-lg_status lg_cpu_add_back(const lg_tensor upstream, lg_tensor operand_a, lg_tensor operand_b);
+lg_status lg_cpu_add(lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_cpu_add_back(const lg_tensor dy, lg_tensor dx0, lg_tensor dx1);
 
 #endif // LG_CPU_H_
 
@@ -20,9 +20,9 @@ lg_status lg_cpu_forward(lg_tape tape) {
         switch (tape.opcodes[i]) {
         case LG_OPCODE_ADD:
             lg_cpu_add(
-                tape.outputs[i],
-                tape.inputs_a[i],
-                tape.inputs_b[i]
+                tape.y[i],
+                tape.x0[i],
+                tape.x1[i]
             );
             break;
         case LG_OPCODE_SUB:
@@ -51,7 +51,7 @@ lg_status lg_cpu_backward(lg_tape tape) {
     do {
         switch (tape.opcodes[i]) {
         case LG_OPCODE_ADD:
-            lg_cpu_add_back(tape.outputs[i], tape.inputs_a[i], tape.inputs_b[i]);
+            lg_cpu_add_back(tape.y[i], tape.x0[i], tape.x1[i]);
             break;
         case LG_OPCODE_SUB:
         case LG_OPCODE_CONTRACT:
@@ -70,54 +70,54 @@ lg_status lg_cpu_backward(lg_tape tape) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_cpu_add(lg_tensor out, const lg_tensor a, const lg_tensor b) {
+lg_status lg_cpu_add(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
     lg_tracker tracker = {
-        .tensors = {out, a, b},
-        .n_tracked_dims = out.rank,
+        .tensors = {y, x0, x1},
+        .n_tracked_dims = y.rank,
     };
 
     do {
-        const lg_size out_idx = tracker.indices[0];
-        const lg_size a_idx = tracker.indices[1];
-        const lg_size b_idx = tracker.indices[2];
+        const lg_size y_idx = tracker.indices[0];
+        const lg_size x0_idx = tracker.indices[1];
+        const lg_size x1_idx = tracker.indices[2];
 
-        out.data[out_idx] = a.data[a_idx] + b.data[b_idx];
-   } while (lg_tracker_increment(&tracker, out.rank - 1));
+        y.data[y_idx] = x0.data[x0_idx] + x1.data[x1_idx];
+   } while (lg_tracker_increment(&tracker, y.rank - 1));
 
     return LG_STATUS_OK;
 }
 
-lg_status lg_cpu_add_back(const lg_tensor upstream, lg_tensor operand_a, lg_tensor operand_b) {
+lg_status lg_cpu_add_back(const lg_tensor dy, lg_tensor dx0, lg_tensor dx1) {
     lg_tracker tracker = {
-        .tensors = {upstream, operand_a, operand_b},
-        .n_tracked_dims = upstream.rank,
+        .tensors = {dy, dx0, dx1},
+        .n_tracked_dims = dy.rank,
     };
 
     do {
-        const lg_size upstream_idx = tracker.indices[0];
-        const lg_size a_idx = tracker.indices[1];
-        const lg_size b_idx = tracker.indices[2];
+        const lg_size dy_idx = tracker.indices[0];
+        const lg_size x0_idx = tracker.indices[1];
+        const lg_size x1_idx = tracker.indices[2];
 
-        operand_a.grad[a_idx] += upstream.grad[upstream_idx];
-        operand_b.grad[b_idx] += upstream.grad[upstream_idx];
-    } while (lg_tracker_increment(&tracker, upstream.rank - 1));
+        dx0.grad[x0_idx] += dy.grad[dy_idx];
+        dx1.grad[x1_idx] += dy.grad[dy_idx];
+    } while (lg_tracker_increment(&tracker, dy.rank - 1));
 
     return LG_STATUS_OK;
 }
 
-lg_status lg_cpu_contract(lg_tensor out, const lg_tensor a, const lg_tensor b) {
+lg_status lg_cpu_contract(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
     lg_tracker tracker = {
-        .tensors = {out, a, b},
-        .n_tracked_dims = out.rank,
+        .tensors = {y, x0, x1},
+        .n_tracked_dims = y.rank,
     };
 
     do {
-        const lg_size out_idx = tracker.indices[0];
-        const lg_size a_idx = tracker.indices[1];
-        const lg_size b_idx = tracker.indices[2];
+        const lg_size y_idx = tracker.indices[0];
+        const lg_size x0_idx = tracker.indices[1];
+        const lg_size x1_idx = tracker.indices[2];
 
-        out.data[out_idx] += a.data[a_idx] * b.data[b_idx];
-    } while (lg_tracker_increment(&tracker, out.rank - 1));
+        y.data[y_idx] += x0.data[x0_idx] * x1.data[x1_idx];
+    } while (lg_tracker_increment(&tracker, y.rank - 1));
 
     return LG_STATUS_OK;
 }

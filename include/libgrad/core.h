@@ -158,7 +158,7 @@ void lg_tracker_goto(lg_tracker *tracker, lg_size *coords);
 ///
 /// A tape is represented in memory as a structure of arrays.
 ///
-/// If input_b.data == NULL, then the node represents a unary
+/// If x1.data == NULL, then the node represents a unary
 /// operation.
 /// Otherwise, it represents a binary operation as expected.
 typedef struct lg_tape {
@@ -166,9 +166,9 @@ typedef struct lg_tape {
     lg_size len;
     
     lg_opcode *opcodes  LG_CHECK_BOUNDS(len);
-    lg_tensor *inputs_a LG_CHECK_BOUNDS(len);
-    lg_tensor *inputs_b LG_CHECK_BOUNDS(len);
-    lg_tensor *outputs  LG_CHECK_BOUNDS(len);
+    lg_tensor *y        LG_CHECK_BOUNDS(len);
+    lg_tensor *x0       LG_CHECK_BOUNDS(len);
+    lg_tensor *x1       LG_CHECK_BOUNDS(len);
 } lg_tape;
 
 /// Broadcast tensor views.
@@ -181,11 +181,11 @@ typedef struct lg_tape {
 /// will be accessed sequentially in memory.
 lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors);
 
-/// Contracts the dimensions of `out`, inferring the contracted dimensions.
+/// Contracts the dimensions of `y`, inferring the contracted dimensions.
 ///
-/// The contracted dimensions must be aligned at the beginning of `a`, and `b` with batch dimensions
+/// The contracted dimensions must be aligned at the beginning of `x0`, and `x1` with batch dimensions
 /// following.
-lg_status lg_tensor_compute_contracted_dims(lg_tensor *out, lg_tensor *a, lg_tensor *b, lg_size n_batch_axes);
+lg_status lg_tensor_compute_contracted_dims(lg_tensor *y, lg_tensor *x0, lg_tensor *x1, lg_size n_batch_axes);
 
 /// Sort dims such that the primary is unit stride first.
 /// Follows the same "primary" rule as `lg_tensor_broadcast`.
@@ -223,18 +223,18 @@ lg_status lg_tensor_layout(lg_tensor *tensor, lg_layout layout, lg_size unit_ali
 /// while all vectors are considered anisotropic.
 static inline bool lg_tensor_is_isotropic(const lg_tensor tensor);
 
-lg_status lg_add(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
-lg_status lg_sub(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
-lg_status lg_contract(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
-lg_status lg_hadamard(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
+lg_status lg_add(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_sub(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_contract(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_hadamard(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
 
-lg_status lg_loss_mse(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
-lg_status lg_loss_cross_entropy(lg_tape *tape, lg_tensor out, const lg_tensor a, const lg_tensor b);
+lg_status lg_loss_mse(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_loss_cross_entropy(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
 
-lg_status lg_relu(lg_tape *tape, lg_tensor out, const lg_tensor in);
-lg_status lg_stable_softmax(lg_tape *tape, const lg_tensor out, const lg_tensor in);
-lg_status lg_sigmoid(lg_tape *tape, lg_tensor out, const lg_tensor in);
-lg_status lg_ln(lg_tape *tape, lg_tensor out, const lg_tensor in);
+lg_status lg_relu(lg_tape *tape, lg_tensor y, const lg_tensor in);
+lg_status lg_stable_softmax(lg_tape *tape, const lg_tensor y, const lg_tensor in);
+lg_status lg_sigmoid(lg_tape *tape, lg_tensor y, const lg_tensor in);
+lg_status lg_ln(lg_tape *tape, lg_tensor y, const lg_tensor in);
 
 lg_status lg_backward(lg_tape *tape);
 lg_tensor lg_transpose(lg_tape *tape, const lg_tensor in);
@@ -416,69 +416,69 @@ lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_tensor_compute_contracted_dims(lg_tensor *out, lg_tensor *a, lg_tensor *b, lg_size n_batch_axes) {
+lg_status lg_tensor_compute_contracted_dims(lg_tensor *y, lg_tensor *x0, lg_tensor *x1, lg_size n_batch_axes) {
     // The logical tensor axes will be laid out as follows:
-    // { [batch], [a_free], [b_free], [contracted] }
-    //    reg      reg       reg       0          | out strides
-    //    reg      reg       0         reg        | a strides
-    //    reg      0         reg       reg        | b strides
+    // { [batch], [x0_free], [x1_free], [contracted] }
+    //    reg      reg       reg       0          | y strides
+    //    reg      reg       0         reg        | x0 strides
+    //    reg      0         reg       reg        | x1 strides
 
-    lg_tensor out_cpy = *out;
-    lg_tensor a_cpy = *a;
-    lg_tensor b_cpy = *b;
+    lg_tensor y_cpy = *y;
+    lg_tensor x0_cpy = *x0;
+    lg_tensor x1_cpy = *x1;
     
-    // a.rank = n_batch + n_contracted + a_free
-    // b.rank = n_batch + n_contracted + b_free
-    // out.rank = n_batch + a_free + b_free
+    // x0.rank = n_batch + n_contracted + x0_free
+    // x1.rank = n_batch + n_contracted + x1_free
+    // y.rank = n_batch + x0_free + x1_free
     // ergo ...
-    const lg_size n_contracted_axes = (a->rank + b->rank - out->rank - n_batch_axes) / 2;
-    const lg_size a_first_contracted_axis = a->rank - n_contracted_axes;
-    const lg_size b_first_free_axis = n_contracted_axes + n_batch_axes;
+    const lg_size n_contracted_axes = (x0->rank + x1->rank - y->rank - n_batch_axes) / 2;
+    const lg_size x0_first_contracted_axis = x0->rank - n_contracted_axes;
+    const lg_size x1_first_free_axis = n_contracted_axes + n_batch_axes;
 
     // Batch axes are already in place
     lg_size r = n_batch_axes;
 
     // Free axes
-    for (lg_size i = n_batch_axes; i < a_first_contracted_axis; i++, r++) {
-        a->dim[r] = a_cpy.dim[i];
-        a->strides[r] = a_cpy.strides[i];
-        b->dim[r] = a_cpy.dim[i];
-        b->strides[r] = 0;
-        if (out->dim[r] != a_cpy.dim[i]) {
+    for (lg_size i = n_batch_axes; i < x0_first_contracted_axis; i++, r++) {
+        x0->dim[r] = x0_cpy.dim[i];
+        x0->strides[r] = x0_cpy.strides[i];
+        x1->dim[r] = x0_cpy.dim[i];
+        x1->strides[r] = 0;
+        if (y->dim[r] != x0_cpy.dim[i]) {
             return LG_STATUS_SHAPE_MISMATCH;
         }
-        out->strides[r] = out_cpy.strides[r];
+        y->strides[r] = y_cpy.strides[r];
     }
-    for (lg_size i = b_first_free_axis; i < b_cpy.rank; i++, r++) {
-        a->dim[r] = b_cpy.dim[i];
-        a->strides[r] = 0;
-        b->dim[r] = b_cpy.dim[i];
-        b->strides[r] = b_cpy.strides[i];
-        if (out->dim[r] != b_cpy.dim[i]) {
+    for (lg_size i = x1_first_free_axis; i < x1_cpy.rank; i++, r++) {
+        x0->dim[r] = x1_cpy.dim[i];
+        x0->strides[r] = 0;
+        x1->dim[r] = x1_cpy.dim[i];
+        x1->strides[r] = x1_cpy.strides[i];
+        if (y->dim[r] != x1_cpy.dim[i]) {
             return LG_STATUS_SHAPE_MISMATCH;
         }
-        out->strides[r] = out_cpy.strides[r];
+        y->strides[r] = y_cpy.strides[r];
     }
 
     // Contracted axes
     if (n_contracted_axes > 0) {
         for (
-            lg_size a_ax = a_first_contracted_axis, b_ax = b_first_free_axis - 1;
-            a_ax < a_cpy.rank; // b_ax > 0
-            a_ax++, b_ax--, r++
+            lg_size x0_ax = x0_first_contracted_axis, x1_ax = x1_first_free_axis - 1;
+            x0_ax < x0_cpy.rank; // x1_ax > 0
+            x0_ax++, x1_ax--, r++
         ) {
-            a->dim[r] = a_cpy.dim[a_ax];
-            a->strides[r] = a_cpy.strides[a_ax];
-            b->dim[r] = a_cpy.dim[a_ax];
-            b->strides[r] = b_cpy.strides[b_ax];
-            out->dim[r] = a_cpy.dim[a_ax];
-            out->strides[r] = 0;
+            x0->dim[r] = x0_cpy.dim[x0_ax];
+            x0->strides[r] = x0_cpy.strides[x0_ax];
+            x1->dim[r] = x0_cpy.dim[x0_ax];
+            x1->strides[r] = x1_cpy.strides[x1_ax];
+            y->dim[r] = x0_cpy.dim[x0_ax];
+            y->strides[r] = 0;
         }
     }
 
-    out->rank = r;
-    a->rank = r;
-    b->rank = r;
+    y->rank = r;
+    x0->rank = r;
+    x1->rank = r;
 
     return LG_STATUS_OK;
 }
@@ -579,9 +579,9 @@ lg_status lg_tensor_coalesce_dims(lg_tensor **tensors, lg_size n_tensors) {
 static inline lg_status lg_tape_push(
     lg_tape *tape,
     const lg_opcode opcode,
-    const lg_tensor a,
-    const lg_tensor b,
-    const lg_tensor output
+    const lg_tensor x0,
+    const lg_tensor x1,
+    const lg_tensor y
 ) {
 #ifdef LG_SAFE
     if (tape->len >= tape->cap) {
@@ -592,9 +592,9 @@ static inline lg_status lg_tape_push(
     lg_size next_idx = tape->len;
     tape->len += 1;
     tape->opcodes[next_idx] = opcode;
-    tape->inputs_a[next_idx] = a;
-    tape->inputs_b [next_idx] = b;
-    tape->outputs[next_idx] = output;
+    tape->x0[next_idx] = x0;
+    tape->x1[next_idx] = x1;
+    tape->y[next_idx] = y;
 
     return LG_STATUS_OK;
 }
@@ -642,36 +642,36 @@ void lg_tracker_goto(lg_tracker *tracker, lg_size *coords) {
 
 lg_status lg_add(
     lg_tape *tape,
-    lg_tensor out,
-    const lg_tensor a,
-    const lg_tensor b
+    lg_tensor y,
+    const lg_tensor x0,
+    const lg_tensor x1
 ) {
     lg_status status;
-    status = lg_tape_push(tape, LG_OPCODE_ADD, a, b, out);
+    status = lg_tape_push(tape, LG_OPCODE_ADD, x0, x1, y);
     if (status != LG_STATUS_OK) {
         return status;
     }
     const lg_size i = tape->len - 1;
     status = lg_tensor_broadcast((lg_tensor*[]){
-        &tape->outputs[i],
-        &tape->inputs_a[i],
-        &tape->inputs_b[i],
+        &tape->y[i],
+        &tape->x0[i],
+        &tape->x1[i],
     }, 3);
     if (status != LG_STATUS_OK) {
         return status;
     }
     status = lg_tensor_sort_dims((lg_tensor*[]){
-        &tape->outputs[i],
-        &tape->inputs_a[i],
-        &tape->inputs_b[i],
+        &tape->y[i],
+        &tape->x0[i],
+        &tape->x1[i],
     }, 3);
     if (status != LG_STATUS_OK) {
         return status;
     }
     status = lg_tensor_coalesce_dims((lg_tensor*[]){
-        &tape->outputs[i],
-        &tape->inputs_a[i],
-        &tape->inputs_b[i],
+        &tape->y[i],
+        &tape->x0[i],
+        &tape->x1[i],
     }, 3);
     if (status != LG_STATUS_OK) {
         return status;
