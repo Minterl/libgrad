@@ -68,6 +68,20 @@ typedef enum lg_layout {
 /// literal.
 #define LG_TENSOR_ID_8 LG_HASH_LITERAL_8
 
+/// Tensor shape descriptor
+typedef struct lg_desc {
+    /// The rank of the tensor.
+    /// Must be less than LG_MAX_RANK.
+    lg_size rank;
+
+    /// The dimensionality of the tensor.
+    lg_size dim[LG_MAX_RANK];
+
+    /// The strides of the tensor.
+    /// The order of this array must match that of `dim`.
+    lg_size strides[LG_MAX_RANK];
+} lg_desc;
+
 /// Represents a single Tensor backed by `data`
 /// and `grad`.
 ///
@@ -79,16 +93,8 @@ typedef enum lg_layout {
 ///
 /// Backing buffers are stored stride-major.
 typedef struct lg_tensor {
-    /// The rank of the tensor.
-    /// Must be less than LG_MAX_RANK.
-    lg_size rank;
-
-    /// The dimensionality of the tensor.
-    lg_size dim[LG_MAX_RANK];
-
-    /// The strides of the tensor.
-    /// The order of this array must match that of `dim`.
-    lg_size strides[LG_MAX_RANK];
+    /// The shape descriptor of the tensor.
+    lg_desc desc;
     
     /// The tensor's primary backing buffer.
     lg_dtype *data;
@@ -248,14 +254,14 @@ lg_tensor lg_transpose(lg_tape *tape, const lg_tensor in);
 #include <libgrad/internal/debug.h>
 
 static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor) {
-    if (tensor.rank == 0) {
+    if (tensor.desc.rank == 0) {
         return 0;
     }
 
     lg_size max_offset = 0;
-    for (lg_size i = 0; i < tensor.rank; i++) {
-        if (tensor.dim[i] > 0) {
-            max_offset += (tensor.dim[i] - 1) * tensor.strides[i];
+    for (lg_size i = 0; i < tensor.desc.rank; i++) {
+        if (tensor.desc.dim[i] > 0) {
+            max_offset += (tensor.desc.dim[i] - 1) * tensor.desc.strides[i];
         }
     }
 
@@ -265,9 +271,9 @@ static inline lg_size lg_tensor_size_bytes(const lg_tensor tensor) {
 void lg_tensor_copy_vector(lg_tensor tensor, const lg_dtype *vector, lg_size copy_to_dim, bool grad) {
     lg_size dim_offset = 0;
     for (lg_size i = 0; i < copy_to_dim; i++) {
-        dim_offset += tensor.dim[i];
+        dim_offset += tensor.desc.dim[i];
     }
-    const lg_size n_values = tensor.dim[copy_to_dim];
+    const lg_size n_values = tensor.desc.dim[copy_to_dim];
     lg_dtype *const restrict dest = grad ? tensor.grad : tensor.data;
     for (lg_size i = 0; i < n_values; i++) {
         dest[dim_offset + i] = vector[i];
@@ -276,15 +282,15 @@ void lg_tensor_copy_vector(lg_tensor tensor, const lg_dtype *vector, lg_size cop
 
 lg_status lg_tensor_layout(lg_tensor *tensor, lg_layout layout, lg_size unit_align) {
 #ifdef LG_SAFE
-    if (tensor->rank > LG_MAX_RANK) {
+    if (tensor->desc.rank > LG_MAX_RANK) {
         return LG_STATUS_INVALID_RANK;
     }
 #endif // LG_SAFE
     lg_size last_stride = 1;
-    for (lg_size i = 1; i <= tensor->rank; i++) {
-        lg_size axis = layout == LG_LAYOUT_ROW_MAJOR ? tensor->rank - i : i - 1;
-        tensor->strides[axis] = last_stride;
-        last_stride *= tensor->dim[tensor->rank - i];
+    for (lg_size i = 1; i <= tensor->desc.rank; i++) {
+        lg_size axis = layout == LG_LAYOUT_ROW_MAJOR ? tensor->desc.rank - i : i - 1;
+        tensor->desc.strides[axis] = last_stride;
+        last_stride *= tensor->desc.dim[tensor->desc.rank - i];
         // Conceptually, we only pad the rightmost dimension.
         // However, this affects the stride of the second-rightmost dimension first
         // (and then all subsequent dimensions).
@@ -297,7 +303,7 @@ lg_status lg_tensor_layout(lg_tensor *tensor, lg_layout layout, lg_size unit_ali
 }
 
 static inline bool lg_tensor_is_isotropic(const lg_tensor tensor) {
-    switch (tensor.rank) {
+    switch (tensor.desc.rank) {
     // All vectors are anisotropic.
     case 2:
         return 0;
@@ -306,9 +312,9 @@ static inline bool lg_tensor_is_isotropic(const lg_tensor tensor) {
     case 0:
         return 1;
     default: {
-        lg_size last_dim = tensor.dim[0];
-        for (lg_size i = 0; i < tensor.rank; i++) {
-            if (last_dim != tensor.dim[i]) {
+        lg_size last_dim = tensor.desc.dim[0];
+        for (lg_size i = 0; i < tensor.desc.rank; i++) {
+            if (last_dim != tensor.desc.dim[i]) {
                 return 0;
             }
         }
@@ -318,11 +324,11 @@ static inline bool lg_tensor_is_isotropic(const lg_tensor tensor) {
 }
 
 void lg_tensor_tranpose(lg_tensor *tensor) {
-    for (lg_size i = 0; i < tensor->rank / 2; i++) {
-        const lg_size opp = tensor->rank - 1 - i;
-        lg_size temp = tensor->dim[i];
-        tensor->dim[i] = tensor->dim[opp];
-        tensor->dim[opp] = temp;
+    for (lg_size i = 0; i < tensor->desc.rank / 2; i++) {
+        const lg_size opp = tensor->desc.rank - 1 - i;
+        lg_size temp = tensor->desc.dim[i];
+        tensor->desc.dim[i] = tensor->desc.dim[opp];
+        tensor->desc.dim[opp] = temp;
     }
 }
 
@@ -330,24 +336,24 @@ void lg_tensor_tranpose(lg_tensor *tensor) {
 static inline lg_size __lg_tensor_left_pad_dims(lg_tensor **tensors, lg_size n_tensors) {
     lg_size max_rank = 0;
     for (lg_size i = 0; i < n_tensors; i++) {
-        if (tensors[i]->rank > max_rank) {
-            max_rank = tensors[i]->rank;
+        if (tensors[i]->desc.rank > max_rank) {
+            max_rank = tensors[i]->desc.rank;
         }
     }
 
     for (lg_size i = 0; i < n_tensors; i++) {
-        if (tensors[i]->rank < max_rank) {
-            lg_size shift = max_rank - tensors[i]->rank;
-            for (lg_size j = tensors[i]->rank; j > 0; j--) {
+        if (tensors[i]->desc.rank < max_rank) {
+            lg_size shift = max_rank - tensors[i]->desc.rank;
+            for (lg_size j = tensors[i]->desc.rank; j > 0; j--) {
                 lg_size src_idx = j - 1;
-                tensors[i]->dim[src_idx + shift] = tensors[i]->dim[src_idx];
-                tensors[i]->strides[src_idx + shift] = tensors[i]->strides[src_idx];
+                tensors[i]->desc.dim[src_idx + shift] = tensors[i]->desc.dim[src_idx];
+                tensors[i]->desc.strides[src_idx + shift] = tensors[i]->desc.strides[src_idx];
             }
             for (lg_size j = 0; j < shift; j++) {
-                tensors[i]->dim[j] = 1;
-                tensors[i]->strides[j] = 0;
+                tensors[i]->desc.dim[j] = 1;
+                tensors[i]->desc.strides[j] = 0;
             }
-            tensors[i]->rank = max_rank;
+            tensors[i]->desc.rank = max_rank;
         }
     }
     
@@ -375,7 +381,7 @@ lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
 
     for (lg_size i = 0; i < n_tensors; i++) {
         for (lg_size j = 0; j < max_rank; j++) {
-            lg_size dim_current = (j < tensors[i]->rank) ? tensors[i]->dim[j] : 1;
+            lg_size dim_current = (j < tensors[i]->desc.rank) ? tensors[i]->desc.dim[j] : 1;
             if (dim_current != 1) {
                 if (master_dim[j] == 1) {
                     master_dim[j] = dim_current;
@@ -400,9 +406,9 @@ lg_status lg_tensor_broadcast(lg_tensor **tensors, lg_size n_tensors) {
     // 2) Aligning the logical dimensions of the tensor with the master.
     for (lg_size i = 0; i < n_tensors; i++) {
         for (lg_size j = 1; j <= max_rank; j++) {
-            if (tensors[i]->dim[max_rank - j] < master_dim[max_rank - j]) {
-                tensors[i]->strides[max_rank - j] = 0;
-                tensors[i]->dim[max_rank - j] = master_dim[max_rank - j];
+            if (tensors[i]->desc.dim[max_rank - j] < master_dim[max_rank - j]) {
+                tensors[i]->desc.strides[max_rank - j] = 0;
+                tensors[i]->desc.dim[max_rank - j] = master_dim[max_rank - j];
             }
         }
     }
@@ -431,8 +437,8 @@ lg_status lg_tensor_compute_contracted_dims(lg_tensor *y, lg_tensor *x0, lg_tens
     // x1.rank = n_batch + n_contracted + x1_free
     // y.rank = n_batch + x0_free + x1_free
     // ergo ...
-    const lg_size n_contracted_axes = (x0->rank + x1->rank - y->rank - n_batch_axes) / 2;
-    const lg_size x0_first_contracted_axis = x0->rank - n_contracted_axes;
+    const lg_size n_contracted_axes = (x0->desc.rank + x1->desc.rank - y->desc.rank - n_batch_axes) / 2;
+    const lg_size x0_first_contracted_axis = x0->desc.rank - n_contracted_axes;
     const lg_size x1_first_free_axis = n_contracted_axes + n_batch_axes;
 
     // Batch axes are already in place
@@ -440,45 +446,45 @@ lg_status lg_tensor_compute_contracted_dims(lg_tensor *y, lg_tensor *x0, lg_tens
 
     // Free axes
     for (lg_size i = n_batch_axes; i < x0_first_contracted_axis; i++, r++) {
-        x0->dim[r] = x0_cpy.dim[i];
-        x0->strides[r] = x0_cpy.strides[i];
-        x1->dim[r] = x0_cpy.dim[i];
-        x1->strides[r] = 0;
-        if (y->dim[r] != x0_cpy.dim[i]) {
+        x0->desc.dim[r] = x0_cpy.desc.dim[i];
+        x0->desc.strides[r] = x0_cpy.desc.strides[i];
+        x1->desc.dim[r] = x0_cpy.desc.dim[i];
+        x1->desc.strides[r] = 0;
+        if (y->desc.dim[r] != x0_cpy.desc.dim[i]) {
             return LG_STATUS_SHAPE_MISMATCH;
         }
-        y->strides[r] = y_cpy.strides[r];
+        y->desc.strides[r] = y_cpy.desc.strides[r];
     }
-    for (lg_size i = x1_first_free_axis; i < x1_cpy.rank; i++, r++) {
-        x0->dim[r] = x1_cpy.dim[i];
-        x0->strides[r] = 0;
-        x1->dim[r] = x1_cpy.dim[i];
-        x1->strides[r] = x1_cpy.strides[i];
-        if (y->dim[r] != x1_cpy.dim[i]) {
+    for (lg_size i = x1_first_free_axis; i < x1_cpy.desc.rank; i++, r++) {
+        x0->desc.dim[r] = x1_cpy.desc.dim[i];
+        x0->desc.strides[r] = 0;
+        x1->desc.dim[r] = x1_cpy.desc.dim[i];
+        x1->desc.strides[r] = x1_cpy.desc.strides[i];
+        if (y->desc.dim[r] != x1_cpy.desc.dim[i]) {
             return LG_STATUS_SHAPE_MISMATCH;
         }
-        y->strides[r] = y_cpy.strides[r];
+        y->desc.strides[r] = y_cpy.desc.strides[r];
     }
 
     // Contracted axes
     if (n_contracted_axes > 0) {
         for (
             lg_size x0_ax = x0_first_contracted_axis, x1_ax = x1_first_free_axis - 1;
-            x0_ax < x0_cpy.rank; // x1_ax > 0
+            x0_ax < x0_cpy.desc.rank; // x1_ax > 0
             x0_ax++, x1_ax--, r++
         ) {
-            x0->dim[r] = x0_cpy.dim[x0_ax];
-            x0->strides[r] = x0_cpy.strides[x0_ax];
-            x1->dim[r] = x0_cpy.dim[x0_ax];
-            x1->strides[r] = x1_cpy.strides[x1_ax];
-            y->dim[r] = x0_cpy.dim[x0_ax];
-            y->strides[r] = 0;
+            x0->desc.dim[r] = x0_cpy.desc.dim[x0_ax];
+            x0->desc.strides[r] = x0_cpy.desc.strides[x0_ax];
+            x1->desc.dim[r] = x0_cpy.desc.dim[x0_ax];
+            x1->desc.strides[r] = x1_cpy.desc.strides[x1_ax];
+            y->desc.dim[r] = x0_cpy.desc.dim[x0_ax];
+            y->desc.strides[r] = 0;
         }
     }
 
-    y->rank = r;
-    x0->rank = r;
-    x1->rank = r;
+    y->desc.rank = r;
+    x0->desc.rank = r;
+    x1->desc.rank = r;
 
     return LG_STATUS_OK;
 }
@@ -486,25 +492,25 @@ lg_status lg_tensor_compute_contracted_dims(lg_tensor *y, lg_tensor *x0, lg_tens
 lg_status lg_tensor_sort_dims(lg_tensor **tensors, lg_size n_tensors) {
     lg_size max_rank = 0;
     for (lg_size i = 0; i < n_tensors; i++) {
-        if (tensors[i]->rank > max_rank) {
-            max_rank = tensors[i]->rank;
+        if (tensors[i]->desc.rank > max_rank) {
+            max_rank = tensors[i]->desc.rank;
         }
     }
 
     for (lg_size i = 0; i < max_rank; i++) {
         bool swapped = 0;
         for (lg_size j = 1; j < max_rank - i; j++) {
-            const lg_size prev_dim = tensors[0]->strides[j - 1];
-            const lg_size cur_dim = tensors[0]->strides[j];
+            const lg_size prev_dim = tensors[0]->desc.strides[j - 1];
+            const lg_size cur_dim = tensors[0]->desc.strides[j];
             if (prev_dim < cur_dim) {
                 // Swap the dimensions and strides for all of the tensors
                 for (lg_size k = 0; k < n_tensors; k++) {
-                    lg_size temp = tensors[k]->dim[j - 1];
-                    tensors[k]->dim[j - 1] = tensors[k]->dim[j];
-                    tensors[k]->dim[j] = temp;
-                    temp = tensors[k]->strides[j - 1];
-                    tensors[k]->strides[j - 1] = tensors[k]->strides[j];
-                    tensors[k]->strides[j] = temp;
+                    lg_size temp = tensors[k]->desc.dim[j - 1];
+                    tensors[k]->desc.dim[j - 1] = tensors[k]->desc.dim[j];
+                    tensors[k]->desc.dim[j] = temp;
+                    temp = tensors[k]->desc.strides[j - 1];
+                    tensors[k]->desc.strides[j - 1] = tensors[k]->desc.strides[j];
+                    tensors[k]->desc.strides[j] = temp;
                 }
                 swapped = 1;
             }
@@ -520,8 +526,8 @@ lg_status lg_tensor_sort_dims(lg_tensor **tensors, lg_size n_tensors) {
 lg_status lg_tensor_coalesce_dims(lg_tensor **tensors, lg_size n_tensors) {
     lg_size max_rank = 0;
     for (lg_size i = 0; i < n_tensors; i++) {
-        if (tensors[i]->rank > max_rank) {
-            max_rank = tensors[i]->rank;
+        if (tensors[i]->desc.rank > max_rank) {
+            max_rank = tensors[i]->desc.rank;
         }
     }
 
@@ -538,10 +544,10 @@ lg_status lg_tensor_coalesce_dims(lg_tensor **tensors, lg_size n_tensors) {
         while (i + 1 < max_rank) {
             bool can_coalesce = 1;
             for (lg_size j = 0; j < n_tensors; j++) {
-                const lg_size d0 = tensors[j]->dim[i];
-                const lg_size d1 = tensors[j]->dim[i + 1];
-                const lg_size s0 = tensors[j]->strides[i];
-                const lg_size s1 = tensors[j]->strides[i + 1];
+                const lg_size d0 = tensors[j]->desc.dim[i];
+                const lg_size d1 = tensors[j]->desc.dim[i + 1];
+                const lg_size s0 = tensors[j]->desc.strides[i];
+                const lg_size s1 = tensors[j]->desc.strides[i + 1];
 
                 const bool is_broadcasted = s0 == 0 || s1 == 0;
                 const bool has_unit = d0 == 1 || d1 == 1;
@@ -557,17 +563,17 @@ lg_status lg_tensor_coalesce_dims(lg_tensor **tensors, lg_size n_tensors) {
                 break;
             }
 
-            const lg_size new_dim = tensors[0]->dim[i] * tensors[0]->dim[i + 1];
+            const lg_size new_dim = tensors[0]->desc.dim[i] * tensors[0]->desc.dim[i + 1];
             max_rank--;
             for (lg_size j = 0; j < n_tensors; j++) {
-                tensors[j]->rank = max_rank;
-                tensors[j]->dim[i] = new_dim;
-                if (tensors[j]->strides[i + 1] != 0) {
-                    tensors[j]->strides[i] = tensors[j]->strides[i + 1];
+                tensors[j]->desc.rank = max_rank;
+                tensors[j]->desc.dim[i] = new_dim;
+                if (tensors[j]->desc.strides[i + 1] != 0) {
+                    tensors[j]->desc.strides[i] = tensors[j]->desc.strides[i + 1];
                 }
                 for (lg_size k = i + 1; k < max_rank; k++) {
-                    tensors[j]->dim[k] = tensors[j]->dim[k + 1];
-                    tensors[j]->strides[k] = tensors[j]->strides[k + 1];
+                    tensors[j]->desc.dim[k] = tensors[j]->desc.dim[k + 1];
+                    tensors[j]->desc.strides[k] = tensors[j]->desc.strides[k + 1];
                 }
             }
         }
@@ -600,9 +606,9 @@ static inline lg_status lg_tape_push(
 }
 
 bool lg_tracker_increment(lg_tracker *tracker, lg_size axis) {
-    const lg_size rank = tracker->tensors[0].rank;
+    const lg_size rank = tracker->tensors[0].desc.rank;
     const lg_size first_tracked_dim = rank - tracker->n_tracked_dims;
-    const lg_size *restrict dim = tracker->tensors[0].dim;
+    const lg_size *restrict dim = tracker->tensors[0].desc.dim;
 
     if (rank == 0) {
         return false;
@@ -614,13 +620,13 @@ bool lg_tracker_increment(lg_tracker *tracker, lg_size axis) {
         tracker->coords[axis]++;
         if (tracker->coords[axis] < dim[axis]) {
             for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
-                tracker->indices[i] += tracker->tensors[i].strides[axis];
+                tracker->indices[i] += tracker->tensors[i].desc.strides[axis];
             }
             return true; 
         }
         tracker->coords[axis] = 0;
         for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
-            tracker->indices[i] -= tracker->tensors[i].strides[axis] * (dim[axis] - 1);
+            tracker->indices[i] -= tracker->tensors[i].desc.strides[axis] * (dim[axis] - 1);
         }
     }
 
@@ -635,7 +641,7 @@ void lg_tracker_goto(lg_tracker *tracker, lg_size *coords) {
     for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
         tracker->indices[i] = 0;
         for (lg_size j = 0; j < tracker->n_tracked_dims; j++) {
-            tracker->indices[i] += tracker->tensors[i].strides[j] * coords[j];
+            tracker->indices[i] += tracker->tensors[i].desc.strides[j] * coords[j];
         }
     }
 }

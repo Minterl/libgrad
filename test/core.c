@@ -60,37 +60,37 @@ test_status test_tensor_layout() {
     // --- w/o padding ---
     {
         lg_size expected_strides[] = {8, 4, 1};
-        lg_tensor ten = { .dim = {3, 2, 4}, .rank = 3 };
+        lg_tensor ten = { .desc.dim = {3, 2, 4}, .desc.rank = 3 };
         test_assert(lg_tensor_layout(&ten, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
-        test_assert(ten.rank == 3, "got tensor rank %lu", ten.rank);
-        test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
+        test_assert(ten.desc.rank == 3, "got tensor rank %lu", ten.desc.rank);
+        test_assert_array_eq(expected_strides, ten.desc.strides, 3, "%lu");
     }
 
     // --- w/ padding ---
     {
         lg_size expected_strides[4] = {224, 32, 8, 1};
-        lg_tensor ten = { .dim = {2, 7, 4, 3}, .rank = 4 };
+        lg_tensor ten = { .desc.dim = {2, 7, 4, 3}, .desc.rank = 4 };
         test_assert(lg_tensor_layout(&ten, LG_LAYOUT_ROW_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
-        test_assert(ten.rank == 4, "got tensor rank %lu", ten.rank);
-        test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
+        test_assert(ten.desc.rank == 4, "got tensor rank %lu", ten.desc.rank);
+        test_assert_array_eq(expected_strides, ten.desc.strides, 3, "%lu");
     }
     
     // --- w/o padding ---
     {
         lg_size expected_strides[] = {1, 4, 8};
-        lg_tensor ten = { .dim = {3, 2, 4}, .rank = 3 };
+        lg_tensor ten = { .desc.dim = {3, 2, 4}, .desc.rank = 3 };
         test_assert(lg_tensor_layout(&ten, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
-        test_assert(ten.rank == 3, "got tensor rank %lu", ten.rank);
-        test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
+        test_assert(ten.desc.rank == 3, "got tensor rank %lu", ten.desc.rank);
+        test_assert_array_eq(expected_strides, ten.desc.strides, 3, "%lu");
     }
 
     // --- w/ padding ---
     {
         lg_size expected_strides[] = {1, 8, 32, 224};
-        lg_tensor ten = { .dim = {2, 7, 4, 3}, .rank = 4 };
+        lg_tensor ten = { .desc.dim = {2, 7, 4, 3}, .desc.rank = 4 };
         test_assert(lg_tensor_layout(&ten, LG_LAYOUT_COL_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
-        test_assert(ten.rank == 4, "got tensor rank %lu", ten.rank);
-        test_assert_array_eq(expected_strides, ten.strides, 3, "%lu");
+        test_assert(ten.desc.rank == 4, "got tensor rank %lu", ten.desc.rank);
+        test_assert_array_eq(expected_strides, ten.desc.strides, 3, "%lu");
     }
 
     return TEST_STATUS_OK;
@@ -98,9 +98,9 @@ test_status test_tensor_layout() {
 
 test_status test_tensor_size() {
     lg_tensor _36 = {
-        .rank = 2, 
-        .dim = {6, 6},
-        .strides = {6, 1},
+        .desc.rank = 2, 
+        .desc.dim = {6, 6},
+        .desc.strides = {6, 1},
         .data = NULL,
         .grad = NULL,
     };
@@ -108,16 +108,16 @@ test_status test_tensor_size() {
     test_assert(_36_size == 36 * sizeof(lg_dtype), "tensor size was %lu", _36_size);
 
     lg_tensor also_36 = {
-        .rank = 3,
-        .dim = {6, 2, 3},
-        .strides = {6, 3, 1},
+        .desc.rank = 3,
+        .desc.dim = {6, 2, 3},
+        .desc.strides = {6, 3, 1},
         .data = NULL,
         .grad = NULL,
     };
     lg_size also_36_size = lg_tensor_size_bytes(also_36);
     test_assert(also_36_size == 36 * sizeof(lg_dtype), "tensor size was %lu", also_36_size);
 
-    lg_tensor padded = { .dim = {3, 3, 3}, .rank = 3 };
+    lg_tensor padded = { .desc.dim = {3, 3, 3}, .desc.rank = 3 };
     test_assert(lg_tensor_layout(&padded, LG_LAYOUT_ROW_MAJOR, 4) == LG_STATUS_OK, "failed to initialize tensor");
     lg_size calculated_bytes = lg_tensor_size_bytes(padded);
     // Strides should be (12, 4, 1), meaning the maximum offset at (2, 2, 2) is
@@ -135,7 +135,7 @@ test_status test_tensor_size() {
     calculated_bytes = lg_tensor_size_bytes(zero_ten);
     test_assert(calculated_bytes == 0, "tensor size calculated to be %lu bytes", calculated_bytes);
 
-    lg_tensor scalar = { .dim = {1}, .rank = 1 };
+    lg_tensor scalar = { .desc.dim = {1}, .desc.rank = 1 };
     test_assert(lg_tensor_layout(&scalar, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     calculated_bytes = lg_tensor_size_bytes(scalar);
     test_assert(calculated_bytes == sizeof(lg_dtype), "tensor size calculated to be %lu bytes", calculated_bytes);
@@ -152,9 +152,9 @@ test_status test_alloc_tensor() {
         .align_hint = mock_align_hint,
     }; 
     lg_tensor ten = {
-        .rank = 2, 
-        .dim = {6, 6},
-        .strides = {6, 1},
+        .desc.rank = 2, 
+        .desc.dim = {6, 6},
+        .desc.strides = {6, 1},
         .data = NULL,
         .grad = NULL,
     };
@@ -179,9 +179,9 @@ test_status test_alloc_tensor() {
 
 test_status test_tensor_aligned_views_not_compatible() {
     // 4 != 5, so these should clash and not be compatible
-    lg_tensor x0 = { .dim =  {4, 4}, .rank = 2 };
+    lg_tensor x0 = { .desc.dim =  {4, 4}, .desc.rank = 2 };
     test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
-    lg_tensor x1 = { .dim =  {6, 5, 4}, .rank = 3 };
+    lg_tensor x1 = { .desc.dim =  {6, 5, 4}, .desc.rank = 3 };
     test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
 
     lg_status status = lg_tensor_broadcast((lg_tensor*[]){&x0, &x1}, 2);
@@ -199,17 +199,17 @@ test_status test_tensor_aligned_views() {
     //     (1, 0, 0), (1, 0, 1) ...
     //     (m-1, n-1, k-1)
     // }
-    lg_tensor x0 = { .dim = {6, 4, 4}, .rank = 3 };
+    lg_tensor x0 = { .desc.dim = {6, 4, 4}, .desc.rank = 3 };
     test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     // This is a mat44.
     // In memory, with no alignment, this should be a contiguous
     // row-major 2d array (these are (x, y) pairs, not matrix coords):
     // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
-    lg_tensor x1 = { .dim = {4 ,4}, .rank = 2 };
+    lg_tensor x1 = { .desc.dim = {4 ,4}, .desc.rank = 2 };
     test_assert(lg_tensor_layout(&x1, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
 
-    test_assert(x1.strides[0] == 4, "got first stride of %lu", x0.strides[0]);
-    test_assert(x1.strides[1] == 1, "got second stride of %lu", x0.strides[1]);
+    test_assert(x1.desc.strides[0] == 4, "got first stride of %lu", x0.desc.strides[0]);
+    test_assert(x1.desc.strides[1] == 1, "got second stride of %lu", x0.desc.strides[1]);
 
     // Coalesced dimensions
     lg_size expected_strides_a[] = {16, 4, 1};
@@ -217,10 +217,10 @@ test_status test_tensor_aligned_views() {
 
     test_assert(lg_tensor_broadcast((lg_tensor*[]){&x0, &x1}, 2) == LG_STATUS_OK, "failed to broadcast tensors");
     test_assert(lg_tensor_sort_dims((lg_tensor*[]){&x0, &x1}, 2) == LG_STATUS_OK, "failed to sort dmis");
-    test_assert_array_eq(expected_strides_a, x0.strides, 3, "%llu");
-    test_assert_array_eq(expected_strides_b, x1.strides, 3, "%llu");
+    test_assert_array_eq(expected_strides_a, x0.desc.strides, 3, "%llu");
+    test_assert_array_eq(expected_strides_b, x1.desc.strides, 3, "%llu");
     test_assert(lg_tensor_coalesce_dims((lg_tensor*[]){&x0, &x1}, 2) == LG_STATUS_OK, "failed to coalesce dims");
-    test_assert(x0.strides[0] == 1, "%lu");
+    test_assert(x0.desc.strides[0] == 1, "%lu");
     
     return TEST_STATUS_OK;
 }
@@ -236,9 +236,9 @@ void free_libc(void* _, void *ptr) {
 }
 
 test_status test_cpu_add_basic() {
-    lg_tensor y = { .dim = {4, 4, 12}, .rank = 3 },
-              x0 = { .dim = {4, 1, 12}, .rank = 3 },
-              x1 = { .dim = {1, 4, 12}, .rank = 3 };
+    lg_tensor y = { .desc.dim = {4, 4, 12}, .desc.rank = 3 },
+              x0 = { .desc.dim = {4, 1, 12}, .desc.rank = 3 },
+              x1 = { .desc.dim = {1, 4, 12}, .desc.rank = 3 };
     lg_allocator allocator = {
         .alloc = alloc_libc,
         .free = free_libc,
@@ -259,13 +259,13 @@ test_status test_cpu_add_basic() {
     do {
         lg_size x0_idx = 0;
         lg_size x1_idx = 0;
-        for (lg_size i = 0; i < y.rank; i++) {
-            x0_idx += x0.strides[i] * coords[i];
-            x1_idx += x1.strides[i] * coords[i];
+        for (lg_size i = 0; i < y.desc.rank; i++) {
+            x0_idx += x0.desc.strides[i] * coords[i];
+            x1_idx += x1.desc.strides[i] * coords[i];
         }
         x0.data[x0_idx] = 1.0f;
         x1.data[x1_idx] = 2.0f;
-    } while (increment_coords_rtl(coords, y.dim, y.rank));
+    } while (increment_coords_rtl(coords, y.desc.dim, y.desc.rank));
 
     test_assert(lg_cpu_add(y, x0, x1) == LG_STATUS_OK, "failed to add");
 
@@ -275,11 +275,11 @@ test_status test_cpu_add_basic() {
 
     do {
         lg_size idx = 0;
-        for (lg_size i = 0; i < y.rank; i++) {
-            idx += y.strides[i] * coords[i];
+        for (lg_size i = 0; i < y.desc.rank; i++) {
+            idx += y.desc.strides[i] * coords[i];
         }
         test_assert(y.data[idx] == 3.0f, "wanted 3, got %f", y.data[idx]);
-    } while (increment_coords_rtl(coords, y.dim, y.rank));;;
+    } while (increment_coords_rtl(coords, y.desc.dim, y.desc.rank));;;
 
     lg_free_tensor(&allocator, &y);
     lg_free_tensor(&allocator, &x0);
@@ -289,9 +289,9 @@ test_status test_cpu_add_basic() {
 }
 
 test_status test_cpu_add_vec() {
-    lg_tensor y = { .dim = {3}, .rank = 1 },
-              x0 = { .dim = {3}, .rank = 1 },
-              x1 = { .dim = {3}, .rank = 1 };
+    lg_tensor y = { .desc.dim = {3}, .desc.rank = 1 },
+              x0 = { .desc.dim = {3}, .desc.rank = 1 },
+              x1 = { .desc.dim = {3}, .desc.rank = 1 };
     lg_allocator allocator = {
         .alloc = alloc_libc,
         .free = free_libc,
@@ -311,13 +311,13 @@ test_status test_cpu_add_vec() {
     do {
         lg_size x0_idx = 0;
         lg_size x1_idx = 0;
-        for (lg_size i = 0; i < y.rank; i++) {
-            x0_idx += x0.strides[i] * coords[i];
-            x1_idx += x1.strides[i] * coords[i];
+        for (lg_size i = 0; i < y.desc.rank; i++) {
+            x0_idx += x0.desc.strides[i] * coords[i];
+            x1_idx += x1.desc.strides[i] * coords[i];
         }
         x0.data[x0_idx] = 1.0f;
         x1.data[x1_idx] = 2.0f;
-    } while (increment_coords_rtl(coords, y.dim, y.rank));
+    } while (increment_coords_rtl(coords, y.desc.dim, y.desc.rank));
 
     test_assert(lg_cpu_add(y, x0, x1) == LG_STATUS_OK, "failed to add");
 
@@ -327,11 +327,11 @@ test_status test_cpu_add_vec() {
 
     do {
         lg_size idx = 0;
-        for (lg_size i = 0; i < y.rank; i++) {
-            idx += y.strides[i] * coords[i];
+        for (lg_size i = 0; i < y.desc.rank; i++) {
+            idx += y.desc.strides[i] * coords[i];
         }
         test_assert(y.data[idx] == 3.0f, "wanted 3, got %f", y.data[idx]);
-    } while (increment_coords_rtl(coords, y.dim, y.rank));;;
+    } while (increment_coords_rtl(coords, y.desc.dim, y.desc.rank));;;
 
     lg_free_tensor(&allocator, &y);
     lg_free_tensor(&allocator, &x0);
@@ -341,9 +341,9 @@ test_status test_cpu_add_vec() {
 }
 
 test_status test_cpu_matmul() {
-    lg_tensor y = { .dim = {2, 2}, .rank = 2 },
-              x0 = { .dim = {2, 2}, .rank = 2 },
-              x1T = { .dim = {2, 2}, .rank = 2 };
+    lg_tensor y = { .desc.dim = {2, 2}, .desc.rank = 2 },
+              x0 = { .desc.dim = {2, 2}, .desc.rank = 2 },
+              x1T = { .desc.dim = {2, 2}, .desc.rank = 2 };
 
     test_assert(lg_tensor_layout(&y, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
     test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
@@ -353,12 +353,12 @@ test_status test_cpu_matmul() {
         lg_size expected_dim[] = {2, 2};
         lg_size expected_strides[] = {2, 1};
         
-        test_assert_array_eq(expected_dim, y.dim, 2, "%lu");
-        test_assert_array_eq(expected_strides, y.strides, 2, "%lu");
-        test_assert_array_eq(expected_dim, x0.dim, 2, "%lu");
-        test_assert_array_eq(expected_strides, x0.strides, 2, "%lu");
-        test_assert_array_eq(expected_dim, x1T.dim, 2, "%lu");
-        test_assert_array_eq(expected_strides, x1T.strides, 2, "%lu");
+        test_assert_array_eq(expected_dim, y.desc.dim, 2, "%lu");
+        test_assert_array_eq(expected_strides, y.desc.strides, 2, "%lu");
+        test_assert_array_eq(expected_dim, x0.desc.dim, 2, "%lu");
+        test_assert_array_eq(expected_strides, x0.desc.strides, 2, "%lu");
+        test_assert_array_eq(expected_dim, x1T.desc.dim, 2, "%lu");
+        test_assert_array_eq(expected_strides, x1T.desc.strides, 2, "%lu");
     }
 
     lg_dtype x0_data[4] = {1, 2, 3, 4};
@@ -378,16 +378,16 @@ test_status test_cpu_matmul() {
         lg_size x0_expected_strides[] = {2, 0, 1};
         lg_size x1_expected_strides[] = {0, 1, 2};
 
-        test_assert(y_cpy.rank == 3, "y rank: %lu", y_cpy.rank);
-        test_assert(x0.rank == 3, "x0 rank: %lu", x0.rank);
-        test_assert(x1T.rank == 3, "x1T rank: %lu", x1T.rank);
+        test_assert(y_cpy.desc.rank == 3, "y rank: %lu", y_cpy.desc.rank);
+        test_assert(x0.desc.rank == 3, "x0 rank: %lu", x0.desc.rank);
+        test_assert(x1T.desc.rank == 3, "x1T rank: %lu", x1T.desc.rank);
 
-        test_assert_array_eq(expected_dim, y_cpy.dim, 3, "%lu");
-        test_assert_array_eq(y_expected_strides, y_cpy.strides, 3, "%lu");
-        test_assert_array_eq(expected_dim, x0.dim, 3, "%lu");
-        test_assert_array_eq(x0_expected_strides, x0.strides, 3, "%lu");
-        test_assert_array_eq(expected_dim, x1T.dim, 3, "%lu");
-        test_assert_array_eq(x1_expected_strides, x1T.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, y_cpy.desc.dim, 3, "%lu");
+        test_assert_array_eq(y_expected_strides, y_cpy.desc.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, x0.desc.dim, 3, "%lu");
+        test_assert_array_eq(x0_expected_strides, x0.desc.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, x1T.desc.dim, 3, "%lu");
+        test_assert_array_eq(x1_expected_strides, x1T.desc.strides, 3, "%lu");
     }
 
     lg_dtype expected_out[] = {19, 22, 43, 50};
@@ -399,9 +399,9 @@ test_status test_cpu_matmul() {
 }
 
 test_status test_cpu_matmul_batch() {
-    lg_tensor y = { .dim = {2, 2, 2}, .rank = 3 },
-              x0 = { .dim = {2, 2, 2}, .rank = 3 },
-              x1T = { .dim = {2, 2, 2}, .rank = 3 };
+    lg_tensor y = { .desc.dim = {2, 2, 2}, .desc.rank = 3 },
+              x0 = { .desc.dim = {2, 2, 2}, .desc.rank = 3 },
+              x1T = { .desc.dim = {2, 2, 2}, .desc.rank = 3 };
 
     test_assert(lg_tensor_layout(&y, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
     test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
@@ -411,12 +411,12 @@ test_status test_cpu_matmul_batch() {
         lg_size expected_dim[] = {2, 2, 2};
         lg_size expected_strides[] = {4, 2, 1};
         
-        test_assert_array_eq(expected_dim, y.dim, 3, "%lu");
-        test_assert_array_eq(expected_strides, y.strides, 3, "%lu");
-        test_assert_array_eq(expected_dim, x0.dim, 3, "%lu");
-        test_assert_array_eq(expected_strides, x0.strides, 3, "%lu");
-        test_assert_array_eq(expected_dim, x1T.dim, 3, "%lu");
-        test_assert_array_eq(expected_strides, x1T.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, y.desc.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, y.desc.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, x0.desc.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, x0.desc.strides, 3, "%lu");
+        test_assert_array_eq(expected_dim, x1T.desc.dim, 3, "%lu");
+        test_assert_array_eq(expected_strides, x1T.desc.strides, 3, "%lu");
     }
 
     lg_dtype x0_data[8] = {
@@ -442,16 +442,16 @@ test_status test_cpu_matmul_batch() {
         lg_size x0_expected_strides[] = {4, 2, 0, 1};
         lg_size x1_expected_strides[] = {4, 0, 1, 2};
 
-        test_assert(y_cpy.rank == 4, "y rank: %lu", y_cpy.rank);
-        test_assert(x0.rank == 4, "x0 rank: %lu", x0.rank);
-        test_assert(x1T.rank == 4, "x1T rank: %lu", x1T.rank);
+        test_assert(y_cpy.desc.rank == 4, "y rank: %lu", y_cpy.desc.rank);
+        test_assert(x0.desc.rank == 4, "x0 rank: %lu", x0.desc.rank);
+        test_assert(x1T.desc.rank == 4, "x1T rank: %lu", x1T.desc.rank);
 
-        test_assert_array_eq(expected_dim, y_cpy.dim, 4, "%lu");
-        test_assert_array_eq(y_expected_strides, y_cpy.strides, 4, "%lu");
-        test_assert_array_eq(expected_dim, x0.dim, 4, "%lu");
-        test_assert_array_eq(x0_expected_strides, x0.strides, 4, "%lu");
-        test_assert_array_eq(expected_dim, x1T.dim, 4, "%lu");
-        test_assert_array_eq(x1_expected_strides, x1T.strides, 4, "%lu");
+        test_assert_array_eq(expected_dim, y_cpy.desc.dim, 4, "%lu");
+        test_assert_array_eq(y_expected_strides, y_cpy.desc.strides, 4, "%lu");
+        test_assert_array_eq(expected_dim, x0.desc.dim, 4, "%lu");
+        test_assert_array_eq(x0_expected_strides, x0.desc.strides, 4, "%lu");
+        test_assert_array_eq(expected_dim, x1T.desc.dim, 4, "%lu");
+        test_assert_array_eq(x1_expected_strides, x1T.desc.strides, 4, "%lu");
     }
 
     lg_dtype expected_out[] = {
@@ -475,9 +475,9 @@ test_status test_cpu_backward() {
         .opcodes = malloc(cap * sizeof(lg_opcode)),
     };
 
-    lg_tensor x0 = { .rank = 1, .dim = {4} },
-              x1 = { .rank = 1, .dim = {4}  },
-              y = { .rank = 1, .dim = {4} };
+    lg_tensor x0 = { .desc.rank = 1, .desc.dim = {4} },
+              x1 = { .desc.rank = 1, .desc.dim = {4}  },
+              y = { .desc.rank = 1, .desc.dim = {4} };
 
     test_assert(lg_tensor_layout(&x0, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
     test_assert(lg_tensor_layout(&x1, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
