@@ -6,8 +6,21 @@
 lg_status lg_cpu_backward(lg_tape tape);
 
 /// Tensors must be sorted & broadcasted
-lg_status lg_cpu_add(lg_tensor y, const lg_tensor x0, const lg_tensor x1);
-lg_status lg_cpu_add_back(const lg_tensor dy, lg_tensor dx0, lg_tensor dx1);
+lg_status lg_cpu_add(
+    const lg_desc y_desc, lg_dtype *restrict y,
+    const lg_desc x0_desc, const lg_dtype *restrict x0,
+    const lg_desc x1_desc, const lg_dtype *restrict x1
+);
+lg_status lg_cpu_add_back(
+    const lg_desc dy_desc, const lg_dtype *restrict dy,
+    const lg_desc x0_desc, lg_dtype *restrict dx0,
+    const lg_desc x1_desc, lg_dtype *restrict dx1
+);
+lg_status lg_cpu_contract(
+    const lg_desc y_desc, lg_dtype *restrict y,
+    const lg_desc x0_desc, const lg_dtype *restrict x0,
+    const lg_desc x1_desc, const lg_dtype *restrict x1
+);
 
 #endif // LG_CPU_H_
 
@@ -20,9 +33,9 @@ lg_status lg_cpu_forward(lg_tape tape) {
         switch (tape.opcodes[i]) {
         case LG_OPCODE_ADD:
             lg_cpu_add(
-                tape.y[i],
-                tape.x0[i],
-                tape.x1[i]
+                tape.y[i].desc, tape.y[i].data,
+                tape.x0[i].desc, tape.x0[i].data,
+                tape.x1[i].desc, tape.x1[i].data
             );
             break;
         case LG_OPCODE_SUB:
@@ -51,7 +64,11 @@ lg_status lg_cpu_backward(lg_tape tape) {
     do {
         switch (tape.opcodes[i]) {
         case LG_OPCODE_ADD:
-            lg_cpu_add_back(tape.y[i], tape.x0[i], tape.x1[i]);
+            lg_cpu_add_back(
+                tape.y[i].desc, tape.y[i].grad,
+                tape.x0[i].desc, tape.x0[i].grad,
+                tape.x1[i].desc, tape.x1[i].grad
+            );
             break;
         case LG_OPCODE_SUB:
         case LG_OPCODE_CONTRACT:
@@ -70,10 +87,14 @@ lg_status lg_cpu_backward(lg_tape tape) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_cpu_add(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
+lg_status lg_cpu_add(
+    const lg_desc y_desc, lg_dtype *restrict y,
+    const lg_desc x0_desc, const lg_dtype *restrict x0,
+    const lg_desc x1_desc, const lg_dtype *restrict x1
+) {
     lg_nditer iter = {
-        .descs = {y.desc, x0.desc, x1.desc},
-        .n_tracked_dims = y.desc.rank,
+        .descs = {y_desc, x0_desc, x1_desc},
+        .n_tracked_dims = y_desc.rank,
     };
 
     do {
@@ -81,16 +102,20 @@ lg_status lg_cpu_add(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
         const lg_size x0_idx = iter.indices[1];
         const lg_size x1_idx = iter.indices[2];
 
-        y.data[y_idx] = x0.data[x0_idx] + x1.data[x1_idx];
-   } while (lg_nditer_increment(&iter, y.desc.rank - 1));
+        y[y_idx] = x0[x0_idx] + x1[x1_idx];
+   } while (lg_nditer_increment(&iter, y_desc.rank - 1));
 
     return LG_STATUS_OK;
 }
 
-lg_status lg_cpu_add_back(const lg_tensor dy, lg_tensor dx0, lg_tensor dx1) {
+lg_status lg_cpu_add_back(
+    const lg_desc dy_desc, const lg_dtype *restrict dy,
+    const lg_desc dx0_desc, lg_dtype *restrict dx0,
+    const lg_desc dx1_desc, lg_dtype *restrict dx1
+) {
     lg_nditer iter = {
-        .descs = {dy.desc, dx0.desc, dx1.desc},
-        .n_tracked_dims = dy.desc.rank,
+        .descs = {dy_desc, dx0_desc, dx1_desc},
+        .n_tracked_dims = dy_desc.rank,
     };
 
     do {
@@ -98,17 +123,21 @@ lg_status lg_cpu_add_back(const lg_tensor dy, lg_tensor dx0, lg_tensor dx1) {
         const lg_size x0_idx = iter.indices[1];
         const lg_size x1_idx = iter.indices[2];
 
-        dx0.grad[x0_idx] += dy.grad[dy_idx];
-        dx1.grad[x1_idx] += dy.grad[dy_idx];
-    } while (lg_nditer_increment(&iter, dy.desc.rank - 1));
+        dx0[x0_idx] += dy[dy_idx];
+        dx1[x1_idx] += dy[dy_idx];
+    } while (lg_nditer_increment(&iter, dy_desc.rank - 1));
 
     return LG_STATUS_OK;
 }
 
-lg_status lg_cpu_contract(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
+lg_status lg_cpu_contract(
+    const lg_desc y_desc, lg_dtype *restrict y,
+    const lg_desc x0_desc, const lg_dtype *restrict x0,
+    const lg_desc x1_desc, const lg_dtype *restrict x1
+) {
     lg_nditer iter = {
-        .descs = {y.desc, x0.desc, x1.desc},
-        .n_tracked_dims = y.desc.rank,
+        .descs = {y_desc, x0_desc, x1_desc},
+        .n_tracked_dims = y_desc.rank,
     };
 
     do {
@@ -116,8 +145,8 @@ lg_status lg_cpu_contract(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
         const lg_size x0_idx = iter.indices[1];
         const lg_size x1_idx = iter.indices[2];
 
-        y.data[y_idx] += x0.data[x0_idx] * x1.data[x1_idx];
-    } while (lg_nditer_increment(&iter, y.desc.rank - 1));
+        y[y_idx] += x0[x0_idx] * x1[x1_idx];
+    } while (lg_nditer_increment(&iter, y_desc.rank - 1));
 
     return LG_STATUS_OK;
 }
