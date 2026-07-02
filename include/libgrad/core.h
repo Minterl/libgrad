@@ -144,7 +144,7 @@ typedef enum lg_opcode {
 /// have their dims sorted in descending order.
 typedef struct lg_nditer {
     lg_size coords[LG_MAX_RANK];
-    lg_tensor tensors[LG_N_TRACKED_TENSORS];
+    lg_desc descs[LG_N_TRACKED_TENSORS];
     lg_size indices[LG_N_TRACKED_TENSORS];
     lg_size n_tracked_dims;
 } lg_nditer;
@@ -606,9 +606,9 @@ static inline lg_status lg_tape_push(
 }
 
 bool lg_nditer_increment(lg_nditer *iter, lg_size axis) {
-    const lg_size rank = iter->tensors[0].desc.rank;
+    const lg_size rank = iter->descs[0].rank;
     const lg_size first_tracked_dim = rank - iter->n_tracked_dims;
-    const lg_size *restrict dim = iter->tensors[0].desc.dim;
+    const lg_size *restrict dim = iter->descs[0].dim;
 
     if (rank == 0) {
         return false;
@@ -620,13 +620,13 @@ bool lg_nditer_increment(lg_nditer *iter, lg_size axis) {
         iter->coords[axis]++;
         if (iter->coords[axis] < dim[axis]) {
             for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
-                iter->indices[i] += iter->tensors[i].desc.strides[axis];
+                iter->indices[i] += iter->descs[i].strides[axis];
             }
             return true; 
         }
         iter->coords[axis] = 0;
         for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
-            iter->indices[i] -= iter->tensors[i].desc.strides[axis] * (dim[axis] - 1);
+            iter->indices[i] -= iter->descs[i].strides[axis] * (dim[axis] - 1);
         }
     }
 
@@ -641,7 +641,7 @@ void lg_nditer_goto(lg_nditer *iter, lg_size *coords) {
     for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
         iter->indices[i] = 0;
         for (lg_size j = 0; j < iter->n_tracked_dims; j++) {
-            iter->indices[i] += iter->tensors[i].desc.strides[j] * coords[j];
+            iter->indices[i] += iter->descs[i].strides[j] * coords[j];
         }
     }
 }

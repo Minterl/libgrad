@@ -72,7 +72,7 @@ lg_status lg_cpu_backward(lg_tape tape) {
 
 lg_status lg_cpu_add(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
     lg_nditer iter = {
-        .tensors = {y, x0, x1},
+        .descs = {y.desc, x0.desc, x1.desc},
         .n_tracked_dims = y.desc.rank,
     };
 
@@ -89,7 +89,7 @@ lg_status lg_cpu_add(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
 
 lg_status lg_cpu_add_back(const lg_tensor dy, lg_tensor dx0, lg_tensor dx1) {
     lg_nditer iter = {
-        .tensors = {dy, dx0, dx1},
+        .descs = {dy.desc, dx0.desc, dx1.desc},
         .n_tracked_dims = dy.desc.rank,
     };
 
@@ -107,7 +107,7 @@ lg_status lg_cpu_add_back(const lg_tensor dy, lg_tensor dx0, lg_tensor dx1) {
 
 lg_status lg_cpu_contract(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
     lg_nditer iter = {
-        .tensors = {y, x0, x1},
+        .descs = {y.desc, x0.desc, x1.desc},
         .n_tracked_dims = y.desc.rank,
     };
 
