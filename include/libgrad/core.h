@@ -210,8 +210,7 @@ lg_status lg_desc_coalesce_dims(lg_desc **descs, lg_size n_descs);
 static inline lg_size lg_desc_size_bytes(lg_desc desc);
 
 /// Copy a vector value to the dim `copy_to_dim`.
-/// If `grad` is true, copies to the grad buffer instead of the data buffer.
-void lg_tensor_copy_vector(lg_tensor tensor, const lg_dtype *vector, lg_size copy_to_dim, bool grad);
+void lg_copy_vector(lg_desc desc, lg_dtype *restrict dest, const lg_dtype *vector, lg_size copy_to_dim);
 
 /// Lays out a tensor with pre-populated `dim` and `rank` with the strides to be stored in
 /// the order in `layout`. In this layout, the rightmost dimension has the unit stride.
@@ -268,13 +267,12 @@ static inline lg_size lg_desc_size_bytes(lg_desc desc) {
     return (max_offset + 1) * sizeof(lg_dtype);
 }
 
-void lg_tensor_copy_vector(lg_tensor tensor, const lg_dtype *vector, lg_size copy_to_dim, bool grad) {
+void lg_copy_vector(lg_desc desc, lg_dtype *restrict dest, const lg_dtype *vector, lg_size copy_to_dim) {
     lg_size dim_offset = 0;
     for (lg_size i = 0; i < copy_to_dim; i++) {
-        dim_offset += tensor.desc.dim[i];
+        dim_offset += desc.dim[i];
     }
-    const lg_size n_values = tensor.desc.dim[copy_to_dim];
-    lg_dtype *const restrict dest = grad ? tensor.grad : tensor.data;
+    const lg_size n_values = desc.dim[copy_to_dim];
     for (lg_size i = 0; i < n_values; i++) {
         dest[dim_offset + i] = vector[i];
     }

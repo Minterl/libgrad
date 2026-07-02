@@ -496,9 +496,9 @@ test_status test_cpu_backward() {
     test_assert(lg_alloc_tensor(&allocator, &x0, true) == LG_STATUS_OK, "failed to allocate tensor");
     test_assert(lg_alloc_tensor(&allocator, &x1, true) == LG_STATUS_OK, "failed to allocate tensor");
 
-    lg_tensor_copy_vector(x0, x0_vals, 0, false);
-    lg_tensor_copy_vector(x1, x1_vals, 0, false);
-    lg_tensor_copy_vector(y, y_grad_vals, 0, true);
+    lg_copy_vector(x0.desc, x0.data, x0_vals, 0);
+    lg_copy_vector(x1.desc, x1.data, x1_vals, 0);
+    lg_copy_vector(y.desc, y.grad, y_grad_vals, 0);
 
     test_assert(lg_add(&tape, y, x0, x1) == LG_STATUS_OK, "failed to append add node");
 
