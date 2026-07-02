@@ -61,7 +61,7 @@ lg_status lg_free_tensor_many(lg_allocator *allocator, const lg_tensor *tensors,
 #undef LG_ALLOC_IMPLEMENTATION
 
 lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, bool with_grad) {
-    lg_size one_size = lg_tensor_size_bytes(*tensor);
+    lg_size one_size = lg_desc_size_bytes(tensor->desc);
     if (one_size == 0) {
         return LG_STATUS_OK;
     }
