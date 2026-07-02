@@ -13,7 +13,7 @@
 #define LG_MAX_RANK 8
 #endif // LG_MAX_RANK
 
-/// The number of tensors tracked by `lg_tracker`.
+/// The number of tensors tracked by `lg_nditer`.
 #ifndef LG_N_TRACKED_TENSORS
 #define LG_N_TRACKED_TENSORS 4
 #endif // LG_N_TRACKED_TENSORS 4
@@ -140,25 +140,25 @@ typedef enum lg_opcode {
 
 /// Tracks the coordinates of LG_N_TRACKED_TENSORS tensors.
 ///
-/// All tensors in a single tracker must be both broadcasted and
+/// All tensors in a single iter must be both broadcasted and
 /// have their dims sorted in descending order.
-typedef struct lg_tracker {
+typedef struct lg_nditer {
     lg_size coords[LG_MAX_RANK];
     lg_tensor tensors[LG_N_TRACKED_TENSORS];
     lg_size indices[LG_N_TRACKED_TENSORS];
     lg_size n_tracked_dims;
-} lg_tracker;
+} lg_nditer;
 
-/// Increment the coordinate `axis` on `tracker` and update offsets.
+/// Increment the coordinate `axis` on `iter` and update offsets.
 /// 
 /// Does not perform any bounds checking.
-bool lg_tracker_increment(lg_tracker *tracker, lg_size axis);
+bool lg_nditer_increment(lg_nditer *iter, lg_size axis);
 
-/// Recomputes the indices in `tracker` according to its `coords`.
+/// Recomputes the indices in `iter` according to its `coords`.
 ///
 /// If you want to "jump" to a specific coordinate in a tensor, this is the
 /// easiest way to do it.
-void lg_tracker_goto(lg_tracker *tracker, lg_size *coords);
+void lg_nditer_goto(lg_nditer *iter, lg_size *coords);
 
 /// A tape used to record operations
 ///
@@ -605,10 +605,10 @@ static inline lg_status lg_tape_push(
     return LG_STATUS_OK;
 }
 
-bool lg_tracker_increment(lg_tracker *tracker, lg_size axis) {
-    const lg_size rank = tracker->tensors[0].desc.rank;
-    const lg_size first_tracked_dim = rank - tracker->n_tracked_dims;
-    const lg_size *restrict dim = tracker->tensors[0].desc.dim;
+bool lg_nditer_increment(lg_nditer *iter, lg_size axis) {
+    const lg_size rank = iter->tensors[0].desc.rank;
+    const lg_size first_tracked_dim = rank - iter->n_tracked_dims;
+    const lg_size *restrict dim = iter->tensors[0].desc.dim;
 
     if (rank == 0) {
         return false;
@@ -617,31 +617,31 @@ bool lg_tracker_increment(lg_tracker *tracker, lg_size axis) {
     axis += 1;
     while (axis > first_tracked_dim) {
         axis--;
-        tracker->coords[axis]++;
-        if (tracker->coords[axis] < dim[axis]) {
+        iter->coords[axis]++;
+        if (iter->coords[axis] < dim[axis]) {
             for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
-                tracker->indices[i] += tracker->tensors[i].desc.strides[axis];
+                iter->indices[i] += iter->tensors[i].desc.strides[axis];
             }
             return true; 
         }
-        tracker->coords[axis] = 0;
+        iter->coords[axis] = 0;
         for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
-            tracker->indices[i] -= tracker->tensors[i].desc.strides[axis] * (dim[axis] - 1);
+            iter->indices[i] -= iter->tensors[i].desc.strides[axis] * (dim[axis] - 1);
         }
     }
 
     return false;
 }
 
-void lg_tracker_goto(lg_tracker *tracker, lg_size *coords) {
-    for(lg_size i = 0; i < tracker->n_tracked_dims; i++) {
-        tracker->coords[i] = coords[i];
+void lg_nditer_goto(lg_nditer *iter, lg_size *coords) {
+    for(lg_size i = 0; i < iter->n_tracked_dims; i++) {
+        iter->coords[i] = coords[i];
     }
 
     for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
-        tracker->indices[i] = 0;
-        for (lg_size j = 0; j < tracker->n_tracked_dims; j++) {
-            tracker->indices[i] += tracker->tensors[i].desc.strides[j] * coords[j];
+        iter->indices[i] = 0;
+        for (lg_size j = 0; j < iter->n_tracked_dims; j++) {
+            iter->indices[i] += iter->tensors[i].desc.strides[j] * coords[j];
         }
     }
 }

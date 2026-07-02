@@ -71,53 +71,53 @@ lg_status lg_cpu_backward(lg_tape tape) {
 }
 
 lg_status lg_cpu_add(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
-    lg_tracker tracker = {
+    lg_nditer iter = {
         .tensors = {y, x0, x1},
         .n_tracked_dims = y.desc.rank,
     };
 
     do {
-        const lg_size y_idx = tracker.indices[0];
-        const lg_size x0_idx = tracker.indices[1];
-        const lg_size x1_idx = tracker.indices[2];
+        const lg_size y_idx = iter.indices[0];
+        const lg_size x0_idx = iter.indices[1];
+        const lg_size x1_idx = iter.indices[2];
 
         y.data[y_idx] = x0.data[x0_idx] + x1.data[x1_idx];
-   } while (lg_tracker_increment(&tracker, y.desc.rank - 1));
+   } while (lg_nditer_increment(&iter, y.desc.rank - 1));
 
     return LG_STATUS_OK;
 }
 
 lg_status lg_cpu_add_back(const lg_tensor dy, lg_tensor dx0, lg_tensor dx1) {
-    lg_tracker tracker = {
+    lg_nditer iter = {
         .tensors = {dy, dx0, dx1},
         .n_tracked_dims = dy.desc.rank,
     };
 
     do {
-        const lg_size dy_idx = tracker.indices[0];
-        const lg_size x0_idx = tracker.indices[1];
-        const lg_size x1_idx = tracker.indices[2];
+        const lg_size dy_idx = iter.indices[0];
+        const lg_size x0_idx = iter.indices[1];
+        const lg_size x1_idx = iter.indices[2];
 
         dx0.grad[x0_idx] += dy.grad[dy_idx];
         dx1.grad[x1_idx] += dy.grad[dy_idx];
-    } while (lg_tracker_increment(&tracker, dy.desc.rank - 1));
+    } while (lg_nditer_increment(&iter, dy.desc.rank - 1));
 
     return LG_STATUS_OK;
 }
 
 lg_status lg_cpu_contract(lg_tensor y, const lg_tensor x0, const lg_tensor x1) {
-    lg_tracker tracker = {
+    lg_nditer iter = {
         .tensors = {y, x0, x1},
         .n_tracked_dims = y.desc.rank,
     };
 
     do {
-        const lg_size y_idx = tracker.indices[0];
-        const lg_size x0_idx = tracker.indices[1];
-        const lg_size x1_idx = tracker.indices[2];
+        const lg_size y_idx = iter.indices[0];
+        const lg_size x0_idx = iter.indices[1];
+        const lg_size x1_idx = iter.indices[2];
 
         y.data[y_idx] += x0.data[x0_idx] * x1.data[x1_idx];
-    } while (lg_tracker_increment(&tracker, y.desc.rank - 1));
+    } while (lg_nditer_increment(&iter, y.desc.rank - 1));
 
     return LG_STATUS_OK;
 }
