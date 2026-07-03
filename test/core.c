@@ -467,7 +467,7 @@ test_status test_cpu_matmul_batch() {
 
 test_status test_cpu_backward() {
     const lg_size cap = 32;
-    lg_tape tape = {
+    lg_expr expr = {
         .cap = cap,
         .x0 = malloc(cap * sizeof(lg_tensor)),
         .x1 = malloc(cap * sizeof(lg_tensor)),
@@ -500,10 +500,10 @@ test_status test_cpu_backward() {
     lg_copy_vector(x1.desc, x1.data, x1_vals, 0);
     lg_copy_vector(y.desc, y.grad, y_grad_vals, 0);
 
-    test_assert(lg_add(&tape, y, x0, x1) == LG_STATUS_OK, "failed to append add node");
+    test_assert(lg_add(&expr, y, x0, x1) == LG_STATUS_OK, "failed to append add node");
 
-    test_assert(lg_cpu_forward(tape) == LG_STATUS_OK, "failed to do forward pass");
-    test_assert(lg_cpu_backward(tape) == LG_STATUS_OK, "failed to do backward pass");
+    test_assert(lg_cpu_forward(expr) == LG_STATUS_OK, "failed to do forward pass");
+    test_assert(lg_cpu_backward(expr) == LG_STATUS_OK, "failed to do backward pass");
 
     lg_dtype expected_data[4] = {4, 5, 4, 8};
     lg_dtype expected_grad[4] = {1, 1, 1, 1};
@@ -514,10 +514,10 @@ test_status test_cpu_backward() {
     lg_free_tensor(&allocator, &x1);
     lg_free_tensor(&allocator, &y);
 
-    free(tape.x0);
-    free(tape.x1);
-    free(tape.y);
-    free(tape.opcodes);
+    free(expr.x0);
+    free(expr.x1);
+    free(expr.y);
+    free(expr.opcodes);
 
     return TEST_STATUS_OK;
 }

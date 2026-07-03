@@ -3,7 +3,7 @@
 
 #include <libgrad/core.h>
 
-lg_status lg_cpu_backward(lg_tape tape);
+lg_status lg_cpu_backward(lg_expr expr);
 
 /// Tensors must be sorted & broadcasted
 lg_status lg_cpu_add(
@@ -28,14 +28,14 @@ lg_status lg_cpu_contract(
 #ifdef LG_CPU_IMPLEMENTATION
 #undef LG_CPU_IMPLEMENTATION
 
-lg_status lg_cpu_forward(lg_tape tape) {
-    for (lg_size i = 0; i < tape.len; i++) {
-        switch (tape.opcodes[i]) {
+lg_status lg_cpu_forward(lg_expr expr) {
+    for (lg_size i = 0; i < expr.len; i++) {
+        switch (expr.opcodes[i]) {
         case LG_OPCODE_ADD:
             lg_cpu_add(
-                tape.y[i].desc, tape.y[i].data,
-                tape.x0[i].desc, tape.x0[i].data,
-                tape.x1[i].desc, tape.x1[i].data
+                expr.y[i].desc, expr.y[i].data,
+                expr.x0[i].desc, expr.x0[i].data,
+                expr.x1[i].desc, expr.x1[i].data
             );
             break;
         case LG_OPCODE_SUB:
@@ -55,19 +55,19 @@ lg_status lg_cpu_forward(lg_tape tape) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_cpu_backward(lg_tape tape) {
-    if (tape.len == 0) {
+lg_status lg_cpu_backward(lg_expr expr) {
+    if (expr.len == 0) {
         return LG_STATUS_OK;
     }
     
-    lg_size i = tape.len - 1;
+    lg_size i = expr.len - 1;
     do {
-        switch (tape.opcodes[i]) {
+        switch (expr.opcodes[i]) {
         case LG_OPCODE_ADD:
             lg_cpu_add_back(
-                tape.y[i].desc, tape.y[i].grad,
-                tape.x0[i].desc, tape.x0[i].grad,
-                tape.x1[i].desc, tape.x1[i].grad
+                expr.y[i].desc, expr.y[i].grad,
+                expr.x0[i].desc, expr.x0[i].grad,
+                expr.x1[i].desc, expr.x1[i].grad
             );
             break;
         case LG_OPCODE_SUB:

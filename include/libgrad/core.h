@@ -50,7 +50,7 @@ typedef enum lg_status {
     LG_STATUS_INVALID_RANK,
     LG_STATUS_SHAPE_MISMATCH,
     LG_STATUS_STRIDE_MISMATCH,
-    LG_STATUS_TAPE_OVERFLOW,
+    LG_STATUS_EXPR_OVERFLOW,
     LG_STATUS_NULL_POINTER,
     LG_STATUS_UNSUPPORTED_OPCODE,
     LG_STATUS_OUT_OF_MEMORY,
@@ -160,14 +160,14 @@ bool lg_nditer_increment(lg_nditer *iter, lg_size axis);
 /// easiest way to do it.
 void lg_nditer_goto(lg_nditer *iter, lg_size *coords);
 
-/// A tape used to record operations
+/// An expression graph used to record operations
 ///
-/// A tape is represented in memory as a structure of arrays.
+/// An expression is represented in memory as a structure of arrays.
 ///
 /// If x1.data == NULL, then the node represents a unary
 /// operation.
 /// Otherwise, it represents a binary operation as expected.
-typedef struct lg_tape {
+typedef struct lg_expr {
     lg_size cap;
     lg_size len;
     
@@ -175,7 +175,7 @@ typedef struct lg_tape {
     lg_tensor *y        LG_CHECK_BOUNDS(len);
     lg_tensor *x0       LG_CHECK_BOUNDS(len);
     lg_tensor *x1       LG_CHECK_BOUNDS(len);
-} lg_tape;
+} lg_expr;
 
 /// Broadcast tensor views.
 ///
@@ -228,21 +228,21 @@ lg_status lg_desc_layout(lg_desc *desc, lg_layout layout, lg_size unit_align);
 /// while all vectors are considered anisotropic.
 static inline bool lg_desc_is_isotropic(lg_desc desc);
 
-lg_status lg_add(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
-lg_status lg_sub(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
-lg_status lg_contract(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
-lg_status lg_hadamard(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_add(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_sub(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_contract(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_hadamard(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
 
-lg_status lg_loss_mse(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
-lg_status lg_loss_cross_entropy(lg_tape *tape, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_loss_mse(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_loss_cross_entropy(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
 
-lg_status lg_relu(lg_tape *tape, lg_tensor y, const lg_tensor in);
-lg_status lg_stable_softmax(lg_tape *tape, const lg_tensor y, const lg_tensor in);
-lg_status lg_sigmoid(lg_tape *tape, lg_tensor y, const lg_tensor in);
-lg_status lg_ln(lg_tape *tape, lg_tensor y, const lg_tensor in);
+lg_status lg_relu(lg_expr *expr, lg_tensor y, const lg_tensor in);
+lg_status lg_stable_softmax(lg_expr *expr, const lg_tensor y, const lg_tensor in);
+lg_status lg_sigmoid(lg_expr *expr, lg_tensor y, const lg_tensor in);
+lg_status lg_ln(lg_expr *expr, lg_tensor y, const lg_tensor in);
 
-lg_status lg_backward(lg_tape *tape);
-lg_tensor lg_transpose(lg_tape *tape, const lg_tensor in);
+lg_status lg_backward(lg_expr *expr);
+lg_tensor lg_transpose(lg_expr *expr, const lg_tensor in);
 
 #endif // LG_CORE_H_
 
@@ -580,25 +580,25 @@ lg_status lg_desc_coalesce_dims(lg_desc **descs, lg_size n_descs) {
     return LG_STATUS_OK;
 }
 
-static inline lg_status lg_tape_push(
-    lg_tape *tape,
+static inline lg_status lg_expr_append(
+    lg_expr *expr,
     const lg_opcode opcode,
     const lg_tensor x0,
     const lg_tensor x1,
     const lg_tensor y
 ) {
 #ifdef LG_SAFE
-    if (tape->len >= tape->cap) {
-        return LG_STATUS_TAPE_OVERFLOW;
+    if (expr->len >= expr->cap) {
+        return LG_STATUS_EXPR_OVERFLOW;
     }
 #endif // LG_SAFE
 
-    lg_size next_idx = tape->len;
-    tape->len += 1;
-    tape->opcodes[next_idx] = opcode;
-    tape->x0[next_idx] = x0;
-    tape->x1[next_idx] = x1;
-    tape->y[next_idx] = y;
+    lg_size next_idx = expr->len;
+    expr->len += 1;
+    expr->opcodes[next_idx] = opcode;
+    expr->x0[next_idx] = x0;
+    expr->x1[next_idx] = x1;
+    expr->y[next_idx] = y;
 
     return LG_STATUS_OK;
 }
@@ -645,37 +645,37 @@ void lg_nditer_goto(lg_nditer *iter, lg_size *coords) {
 }
 
 lg_status lg_add(
-    lg_tape *tape,
+    lg_expr *expr,
     lg_tensor y,
     const lg_tensor x0,
     const lg_tensor x1
 ) {
     lg_status status;
-    status = lg_tape_push(tape, LG_OPCODE_ADD, x0, x1, y);
+    status = lg_expr_append(expr, LG_OPCODE_ADD, x0, x1, y);
     if (status != LG_STATUS_OK) {
         return status;
     }
-    const lg_size i = tape->len - 1;
+    const lg_size i = expr->len - 1;
     status = lg_desc_broadcast((lg_desc*[]){
-        &tape->y[i].desc,
-        &tape->x0[i].desc,
-        &tape->x1[i].desc,
+        &expr->y[i].desc,
+        &expr->x0[i].desc,
+        &expr->x1[i].desc,
     }, 3);
     if (status != LG_STATUS_OK) {
         return status;
     }
     status = lg_desc_sort_dims((lg_desc*[]){
-        &tape->y[i].desc,
-        &tape->x0[i].desc,
-        &tape->x1[i].desc,
+        &expr->y[i].desc,
+        &expr->x0[i].desc,
+        &expr->x1[i].desc,
     }, 3);
     if (status != LG_STATUS_OK) {
         return status;
     }
     status = lg_desc_coalesce_dims((lg_desc*[]){
-        &tape->y[i].desc,
-        &tape->x0[i].desc,
-        &tape->x1[i].desc,
+        &expr->y[i].desc,
+        &expr->x0[i].desc,
+        &expr->x1[i].desc,
     }, 3);
     if (status != LG_STATUS_OK) {
         return status;
