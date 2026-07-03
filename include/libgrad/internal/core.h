@@ -10,39 +10,39 @@
 /// All tensors will have an array of this size to store
 /// dims, so  keep this to a minimum.
 #ifndef LG_MAX_RANK
-#define LG_MAX_RANK 8
+#   define LG_MAX_RANK 8
 #endif // LG_MAX_RANK
 
 /// The number of tensors tracked by `lg_nditer`.
 #ifndef LG_N_TRACKED_TENSORS
-#define LG_N_TRACKED_TENSORS 4
+#   define LG_N_TRACKED_TENSORS 4
 #endif // LG_N_TRACKED_TENSORS 4
 
 /// Type to back Tensor data
 #ifndef lg_dtype
-#define lg_dtype float
+#   define lg_dtype float
 #endif // lg_dtype
 
 /// Pointer-sized integer
 #ifndef lg_size
-#define lg_size size_t
+#   define lg_size size_t
 #endif // lg_size
 
 /// Bounds checking
 #ifdef __cplusplus
-    #define LG_CHECK_BOUNDS(x) /* nothing */
-    #define LG_CHECK_BOUNDS_NULLABLE(x) /* nothing */
+#   define LG_CHECK_BOUNDS(x) /* nothing */
+#   define LG_CHECK_BOUNDS_NULLABLE(x) /* nothing */
 #else
-    #if defined(__clang__) && __has_attribute(counted_by)
-        #define LG_CHECK_BOUNDS(x) __attribute__((counted_by(x)))
-        #define LG_CHECK_BOUNDS_NULLABLE(x) __attribute__((counted_by_or_null(x)))
-    #elif defined(__GNUC__) && (__GNUC__ >= 16) // Pointer support introduced in GCC 16
-        #define LG_CHECK_BOUNDS(x) __attribute__((counted_by(x)))
-        #define LG_CHECK_BOUNDS_NULLABLE(x) __attribute__((counted_by_or_null(x)))
-    #else
-        #define LG_CHECK_BOUNDS(x) /* nothing */
-        #define LG_CHECK_BOUNDS_NULLABLE(x) /* nothing */
-    #endif
+#   if defined(__clang__) && __has_attribute(counted_by)
+#       define LG_CHECK_BOUNDS(x) __attribute__((counted_by(x)))
+#       define LG_CHECK_BOUNDS_NULLABLE(x) __attribute__((counted_by_or_null(x)))
+#   elif defined(__GNUC__) && (__GNUC__ >= 16) // Pointer support introduced in GCC 16
+#       define LG_CHECK_BOUNDS(x) __attribute__((counted_by(x)))
+#       define LG_CHECK_BOUNDS_NULLABLE(x) __attribute__((counted_by_or_null(x)))
+#   else
+#       define LG_CHECK_BOUNDS(x) /* nothing */
+#       define LG_CHECK_BOUNDS_NULLABLE(x) /* nothing */
+#   endif
 #endif
 
 typedef enum lg_status {

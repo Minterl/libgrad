@@ -1,7 +1,7 @@
 #ifndef LG_CPU_H_
 #define LG_CPU_H_
 
-#include <libgrad/core.h>
+#include <libgrad/internal/core.h>
 
 lg_status lg_cpu_backward(lg_expr expr);
 

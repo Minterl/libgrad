@@ -1,23 +1,16 @@
-#ifndef LG_CORE_IMPLEMENTATION
-#define LG_CORE_IMPLEMENTATION
-#endif // LG_CORE_IMPLEMENTATION
-#ifndef LG_ALLOC_IMPLEMENTATION
-#define LG_ALLOC_IMPLEMENTATION
-#endif // LG_ALLOC_IMPLEMENTATION
+#ifndef LIBGRAD_IMPLEMENTATION
+#define LIBGRAD_IMPLEMENTATION
+#endif // LIBGRAD_IMPLEMENTATION
 #ifndef LG_CPU_IMPLEMENTATION
 #define LG_CPU_IMPLEMENTATION
 #endif // LG_CPU_IMPLEMENTATION
 #ifndef TEST_IMPLEMENTATION
 #define TEST_IMPLEMENTATION
 #endif // TEST_IMPLEMENTATION
-#ifndef LG_INTERNAL_DEBUG_IMPLEMENTATION
-#define LG_INTERNAL_DEBUG_IMPLEMENTATION
-#endif // LG_INTERNAL_DEBUG_IMPLEMENTATION
  
 #include <stdbool.h>
 #include <stdlib.h>
-#include <libgrad/core.h>
-#include <libgrad/alloc.h>
+#include <libgrad/libgrad.h>
 #include <libgrad/cpu.h>
 #include "testing.h"
 

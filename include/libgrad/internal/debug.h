@@ -1,6 +1,6 @@
-#ifndef LG_INTERNAL_DEBUG_H_
-#define LG_INTERNAL_DEBUG_H_
-#endif // LG_INTERNAL_DEBUG_H_
+#ifndef LG_DEBUG_H_
+#define LG_DEBUG_H_
+#endif // LG_DEBUG_H_
 
 #ifdef LG_DEBUG
 #define lg_dbgf(fmt, ...) __lg_dbgf(__FILE__, __LINE__, fmt, __VA_ARGS__)
@@ -10,8 +10,8 @@
 
 static inline void __lg_dbgf(const char *file, int line, const char* fmt, ...);
 
-#if defined(LG_INTERNAL_DEBUG_IMPLEMENTATION) && defined(LG_DEBUG)
-#undef LG_INTERNAL_DEBUG_IMPLEMENTATION
+#if defined(LG_DEBUG_IMPLEMENTATION) && defined(LG_DEBUG)
+#undef LG_DEBUG_IMPLEMENTATION
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -25,4 +25,4 @@ static inline void __lg_dbgf(const char *file, int line, const char* fmt, ...) {
     fprintf(stderr, "\n");
 }
 
-#endif // LG_INTERNAL_DEBUG_IMPLEMENTATION
+#endif // LG_DEBUG_IMPLEMENTATION

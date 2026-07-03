@@ -1,7 +1,7 @@
 #ifndef LG_ALLOC_H_
 #define LG_ALLOC_H_
 
-#include <libgrad/core.h>
+#include <libgrad/internal/core.h>
 
 /// Helper interface for allocating tensors
 ///
