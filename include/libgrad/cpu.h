@@ -7,19 +7,19 @@ lg_status lg_cpu_backward(lg_expr expr);
 
 /// Tensors must be sorted & broadcasted
 lg_status lg_cpu_add(
-    const lg_desc y_desc, lg_dtype *restrict y,
-    const lg_desc x0_desc, const lg_dtype *restrict x0,
-    const lg_desc x1_desc, const lg_dtype *restrict x1
+    const lg_desc y_desc, lg_scalar *restrict y,
+    const lg_desc x0_desc, const lg_scalar *restrict x0,
+    const lg_desc x1_desc, const lg_scalar *restrict x1
 );
 lg_status lg_cpu_add_back(
-    const lg_desc dy_desc, const lg_dtype *restrict dy,
-    const lg_desc x0_desc, lg_dtype *restrict dx0,
-    const lg_desc x1_desc, lg_dtype *restrict dx1
+    const lg_desc dy_desc, const lg_scalar *restrict dy,
+    const lg_desc x0_desc, lg_scalar *restrict dx0,
+    const lg_desc x1_desc, lg_scalar *restrict dx1
 );
 lg_status lg_cpu_contract(
-    const lg_desc y_desc, lg_dtype *restrict y,
-    const lg_desc x0_desc, const lg_dtype *restrict x0,
-    const lg_desc x1_desc, const lg_dtype *restrict x1
+    const lg_desc y_desc, lg_scalar *restrict y,
+    const lg_desc x0_desc, const lg_scalar *restrict x0,
+    const lg_desc x1_desc, const lg_scalar *restrict x1
 );
 
 #endif // LG_CPU_H_
@@ -88,9 +88,9 @@ lg_status lg_cpu_backward(lg_expr expr) {
 }
 
 lg_status lg_cpu_add(
-    const lg_desc y_desc, lg_dtype *restrict y,
-    const lg_desc x0_desc, const lg_dtype *restrict x0,
-    const lg_desc x1_desc, const lg_dtype *restrict x1
+    const lg_desc y_desc, lg_scalar *restrict y,
+    const lg_desc x0_desc, const lg_scalar *restrict x0,
+    const lg_desc x1_desc, const lg_scalar *restrict x1
 ) {
     lg_nditer iter = {
         .descs = {y_desc, x0_desc, x1_desc},
@@ -109,9 +109,9 @@ lg_status lg_cpu_add(
 }
 
 lg_status lg_cpu_add_back(
-    const lg_desc dy_desc, const lg_dtype *restrict dy,
-    const lg_desc dx0_desc, lg_dtype *restrict dx0,
-    const lg_desc dx1_desc, lg_dtype *restrict dx1
+    const lg_desc dy_desc, const lg_scalar *restrict dy,
+    const lg_desc dx0_desc, lg_scalar *restrict dx0,
+    const lg_desc dx1_desc, lg_scalar *restrict dx1
 ) {
     lg_nditer iter = {
         .descs = {dy_desc, dx0_desc, dx1_desc},
@@ -131,9 +131,9 @@ lg_status lg_cpu_add_back(
 }
 
 lg_status lg_cpu_contract(
-    const lg_desc y_desc, lg_dtype *restrict y,
-    const lg_desc x0_desc, const lg_dtype *restrict x0,
-    const lg_desc x1_desc, const lg_dtype *restrict x1
+    const lg_desc y_desc, lg_scalar *restrict y,
+    const lg_desc x0_desc, const lg_scalar *restrict x0,
+    const lg_desc x1_desc, const lg_scalar *restrict x1
 ) {
     lg_nditer iter = {
         .descs = {y_desc, x0_desc, x1_desc},

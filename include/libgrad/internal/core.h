@@ -19,9 +19,9 @@
 #endif // LG_N_TRACKED_TENSORS 4
 
 /// Type to back Tensor data
-#ifndef lg_dtype
-#   define lg_dtype float
-#endif // lg_dtype
+#ifndef lg_scalar
+#   define lg_scalar float
+#endif // lg_scalar
 
 /// Pointer-sized integer
 #ifndef lg_size
@@ -97,13 +97,13 @@ typedef struct lg_tensor {
     lg_desc desc;
     
     /// The tensor's primary backing buffer.
-    lg_dtype *data;
+    lg_scalar *data;
     
     /// The tensors intermediate gradient values during backprop.
     /// If this value is NULL, then no gradients are tracked.
     /// This is the means by which a tensor can be used purely for
     /// inference.
-    lg_dtype *grad;
+    lg_scalar *grad;
 } lg_tensor;
 
 /// Discriminator for an operation.
@@ -210,7 +210,7 @@ lg_status lg_desc_coalesce_dims(lg_desc **descs, lg_size n_descs);
 static inline lg_size lg_desc_size_bytes(lg_desc desc);
 
 /// Copy a vector value to the dim `copy_to_dim`.
-void lg_copy_vector(lg_desc desc, lg_dtype *restrict dest, const lg_dtype *vector, lg_size copy_to_dim);
+void lg_copy_vector(lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, lg_size copy_to_dim);
 
 /// Lays out a tensor with pre-populated `dim` and `rank` with the strides to be stored in
 /// the order in `layout`. In this layout, the rightmost dimension has the unit stride.
@@ -264,10 +264,10 @@ static inline lg_size lg_desc_size_bytes(lg_desc desc) {
         }
     }
 
-    return (max_offset + 1) * sizeof(lg_dtype);
+    return (max_offset + 1) * sizeof(lg_scalar);
 }
 
-void lg_copy_vector(lg_desc desc, lg_dtype *restrict dest, const lg_dtype *vector, lg_size copy_to_dim) {
+void lg_copy_vector(lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, lg_size copy_to_dim) {
     lg_size dim_offset = 0;
     for (lg_size i = 0; i < copy_to_dim; i++) {
         dim_offset += desc.dim[i];

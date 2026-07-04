@@ -81,10 +81,10 @@ lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, bool with_
 
     if (with_grad) {
         uint8_t *grad_offset = ptr + one_size + padding;
-        tensor->data = (lg_dtype*)ptr;
-        tensor->grad = (lg_dtype*)grad_offset;
+        tensor->data = (lg_scalar*)ptr;
+        tensor->grad = (lg_scalar*)grad_offset;
     } else {
-        tensor->data = (lg_dtype*)ptr;
+        tensor->data = (lg_scalar*)ptr;
         tensor->grad = NULL;
     }
 

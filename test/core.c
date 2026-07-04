@@ -15,8 +15,8 @@
 #include "testing.h"
 
 // Using unusual memory alignment of 5 for testing purposes
-#define ALLOC_ADDR (void*)(5 * sizeof(lg_dtype))
-#define ALLOC_ALIGN 5 * sizeof(lg_dtype)
+#define ALLOC_ADDR (void*)(5 * sizeof(lg_scalar))
+#define ALLOC_ALIGN 5 * sizeof(lg_scalar)
 
 typedef struct mock_allocator_context {
     lg_size bytes_allocated;
@@ -98,7 +98,7 @@ test_status test_tensor_size() {
         .grad = NULL,
     };
     lg_size _36_size = lg_desc_size_bytes(_36.desc);
-    test_assert(_36_size == 36 * sizeof(lg_dtype), "tensor size was %lu", _36_size);
+    test_assert(_36_size == 36 * sizeof(lg_scalar), "tensor size was %lu", _36_size);
 
     lg_tensor also_36 = {
         .desc.rank = 3,
@@ -108,14 +108,14 @@ test_status test_tensor_size() {
         .grad = NULL,
     };
     lg_size also_36_size = lg_desc_size_bytes(also_36.desc);
-    test_assert(also_36_size == 36 * sizeof(lg_dtype), "tensor size was %lu", also_36_size);
+    test_assert(also_36_size == 36 * sizeof(lg_scalar), "tensor size was %lu", also_36_size);
 
     lg_tensor padded = { .desc.dim = {3, 3, 3}, .desc.rank = 3 };
     test_assert(lg_desc_layout(&padded.desc, LG_LAYOUT_ROW_MAJOR, 4) == LG_STATUS_OK, "failed to initialize tensor");
     lg_size calculated_bytes = lg_desc_size_bytes(padded.desc);
     // Strides should be (12, 4, 1), meaning the maximum offset at (2, 2, 2) is
     // (12 + 4 + 1) * 2, so the max size is one more than that.
-    lg_size expected_bytes = ((12 + 4 + 1) * 2 + 1) * sizeof(lg_dtype);
+    lg_size expected_bytes = ((12 + 4 + 1) * 2 + 1) * sizeof(lg_scalar);
     test_assert(
         calculated_bytes == expected_bytes,
         "tensor size calculated to be %lu bytes, wanted %lu",
@@ -131,7 +131,7 @@ test_status test_tensor_size() {
     lg_tensor scalar = { .desc.dim = {1}, .desc.rank = 1 };
     test_assert(lg_desc_layout(&scalar.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     calculated_bytes = lg_desc_size_bytes(scalar.desc);
-    test_assert(calculated_bytes == sizeof(lg_dtype), "tensor size calculated to be %lu bytes", calculated_bytes);
+    test_assert(calculated_bytes == sizeof(lg_scalar), "tensor size calculated to be %lu bytes", calculated_bytes);
 
     return TEST_STATUS_OK;
 }
@@ -152,18 +152,18 @@ test_status test_alloc_tensor() {
         .grad = NULL,
     };
 
-    // If we're aligning to a 5 * sizeof(lg_dtype)-byte boundary and starting at 5, then
-    // the data allocation should end at 41 * sizeof(lg_dtype),
+    // If we're aligning to a 5 * sizeof(lg_scalar)-byte boundary and starting at 5, then
+    // the data allocation should end at 41 * sizeof(lg_scalar),
     // and the gradient allocation should start at the nearest multiple of 5,
-    // which is 40 * sizeof(lg_dtype) if lg_dtype is float, yielding 4 * sizeof(lg_dtype) bytes of padding.
-    lg_size expected_one_bytes = 36 * sizeof(lg_dtype);
-    lg_size expected_total_bytes = expected_one_bytes * 2 + 4 * sizeof(lg_dtype);
-    lg_dtype *expected_grad_addr = (lg_dtype*)ALLOC_ADDR + 40;
+    // which is 40 * sizeof(lg_scalar) if lg_scalar is float, yielding 4 * sizeof(lg_scalar) bytes of padding.
+    lg_size expected_one_bytes = 36 * sizeof(lg_scalar);
+    lg_size expected_total_bytes = expected_one_bytes * 2 + 4 * sizeof(lg_scalar);
+    lg_scalar *expected_grad_addr = (lg_scalar*)ALLOC_ADDR + 40;
 
     lg_size calculated_one_bytes = lg_desc_size_bytes(ten.desc);
     test_assert(calculated_one_bytes == expected_one_bytes, "tensor size calculated to be %lu bytes", calculated_one_bytes);
     test_assert(lg_alloc_tensor(&allocator, &ten, 1) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(ten.data == (lg_dtype*)ALLOC_ADDR, "allocated data at address %lu, expected %lu", ten.data, (lg_dtype*)ALLOC_ADDR);
+    test_assert(ten.data == (lg_scalar*)ALLOC_ADDR, "allocated data at address %lu, expected %lu", ten.data, (lg_scalar*)ALLOC_ADDR);
     test_assert(ten.grad == expected_grad_addr, "allocated grad at address %lu, expected %lu", ten.grad, expected_grad_addr);
     test_assert(ctx.bytes_allocated == expected_total_bytes, "allocated %lu bytes, wanted %lu bytes" , ctx.bytes_allocated, expected_total_bytes);
 
@@ -354,9 +354,9 @@ test_status test_cpu_matmul() {
         test_assert_array_eq(expected_strides, x1T.desc.strides, 2, "%lu");
     }
 
-    lg_dtype x0_data[4] = {1, 2, 3, 4};
-    lg_dtype x1_data[4] = {5, 6, 7, 8};
-    lg_dtype y_data[4] = {0};
+    lg_scalar x0_data[4] = {1, 2, 3, 4};
+    lg_scalar x1_data[4] = {5, 6, 7, 8};
+    lg_scalar y_data[4] = {0};
 
     x0.data = x0_data;
     x1T.data = x1_data;
@@ -383,7 +383,7 @@ test_status test_cpu_matmul() {
         test_assert_array_eq(x1_expected_strides, x1T.desc.strides, 3, "%lu");
     }
 
-    lg_dtype expected_out[] = {19, 22, 43, 50};
+    lg_scalar expected_out[] = {19, 22, 43, 50};
 
     test_assert(lg_cpu_contract(y_cpy.desc, y_cpy.data, x0.desc, x0.data, x1T.desc, x1T.data) == LG_STATUS_OK, "failed to contract");
     test_assert_array_eq(expected_out, y.data, 4, "%f");
@@ -412,15 +412,15 @@ test_status test_cpu_matmul_batch() {
         test_assert_array_eq(expected_strides, x1T.desc.strides, 3, "%lu");
     }
 
-    lg_dtype x0_data[8] = {
+    lg_scalar x0_data[8] = {
         1, 2, 3, 4,
         1, 2, 3, 4,
     };
-    lg_dtype x1_data[8] = {
+    lg_scalar x1_data[8] = {
         5, 6, 7, 8,
         5, 6, 7, 8,
     };
-    lg_dtype y_data[8] = {0};
+    lg_scalar y_data[8] = {0};
 
     x0.data = x0_data;
     x1T.data = x1_data;
@@ -447,7 +447,7 @@ test_status test_cpu_matmul_batch() {
         test_assert_array_eq(x1_expected_strides, x1T.desc.strides, 4, "%lu");
     }
 
-    lg_dtype expected_out[] = {
+    lg_scalar expected_out[] = {
         19, 22, 43, 50,
         19, 22, 43, 50,
     };
@@ -476,7 +476,7 @@ test_status test_cpu_backward() {
     test_assert(lg_desc_layout(&x1.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
     test_assert(lg_desc_layout(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
-    lg_dtype x0_vals[4] = {1, 2, 3, 4},
+    lg_scalar x0_vals[4] = {1, 2, 3, 4},
              x1_vals[4] = {3, 3, 1, 4},
              y_grad_vals[4] = {1, 1, 1, 1};
 
@@ -498,8 +498,8 @@ test_status test_cpu_backward() {
     test_assert(lg_cpu_forward(expr) == LG_STATUS_OK, "failed to do forward pass");
     test_assert(lg_cpu_backward(expr) == LG_STATUS_OK, "failed to do backward pass");
 
-    lg_dtype expected_data[4] = {4, 5, 4, 8};
-    lg_dtype expected_grad[4] = {1, 1, 1, 1};
+    lg_scalar expected_data[4] = {4, 5, 4, 8};
+    lg_scalar expected_grad[4] = {1, 1, 1, 1};
     test_assert_array_eq(expected_data, y.data, 4, "%f");
     test_assert_array_eq(expected_grad, x0.grad, 4, "%f");
 
