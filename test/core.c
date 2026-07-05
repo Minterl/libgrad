@@ -209,10 +209,10 @@ test_status test_tensor_aligned_views() {
     lg_size expected_strides_b[] = {0, 4, 1};
 
     test_assert(lg_desc_broadcast((lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to broadcast tensors");
-    test_assert(lg_desc_sort_dims((lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to sort dmis");
+    test_assert(lg_desc_sort_axes((lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to sort dmis");
     test_assert_array_eq(expected_strides_a, x0.desc.strides, 3, "%llu");
     test_assert_array_eq(expected_strides_b, x1.desc.strides, 3, "%llu");
-    test_assert(lg_desc_coalesce_dims((lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to coalesce dims");
+    test_assert(lg_desc_coalesce_axes((lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to coalesce dims");
     test_assert(x0.desc.strides[0] == 1, "%lu");
     
     return TEST_STATUS_OK;
@@ -246,7 +246,7 @@ test_status test_cpu_add_basic() {
     test_assert(lg_alloc_tensor(&allocator, &x1, false) == LG_STATUS_OK, "failed to allocate tensor");
 
     test_assert(lg_desc_broadcast(((lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
-    test_assert(lg_desc_sort_dims(((lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to sort dims");
+    test_assert(lg_desc_sort_axes(((lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to sort dims");
 
     lg_size coords[LG_MAX_RANK] = {0};
     do {
@@ -459,13 +459,12 @@ test_status test_cpu_matmul_batch() {
 }
 
 test_status test_cpu_backward() {
-    const lg_size cap = 32;
     lg_expr expr = {
-        .cap = cap,
-        .x0 = malloc(cap * sizeof(lg_tensor)),
-        .x1 = malloc(cap * sizeof(lg_tensor)),
-        .y = malloc(cap * sizeof(lg_tensor)),
-        .opcodes = malloc(cap * sizeof(lg_opcode)),
+        .cap = 32,
+        .x0 = (lg_tensor[32]){},
+        .x1 = (lg_tensor[32]){},
+        .y = (lg_tensor[32]){},
+        .opcodes = (lg_opcode[32]){},
     };
 
     lg_tensor x0 = { .desc.rank = 1, .desc.dim = {4} },
@@ -477,24 +476,32 @@ test_status test_cpu_backward() {
     test_assert(lg_desc_layout(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
     lg_scalar x0_vals[4] = {1, 2, 3, 4},
-             x1_vals[4] = {3, 3, 1, 4},
-             y_grad_vals[4] = {1, 1, 1, 1};
+              x1_vals[4] = {3, 3, 1, 4},
+              y_grad_vals[4] = {1, 1, 1, 1};
 
     lg_allocator allocator = {
         .alloc = alloc_libc,
         .free = free_libc,
     };
 
-    test_assert(lg_alloc_tensor(&allocator, &y, true) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &x0, true) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &x1, true) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_add(&expr, &y, x0, x1) == LG_STATUS_OK, "failed to append add node");
+
+    // TODO: global expr allocation
+    test_assert(lg_alloc_tensor(&allocator, &expr.y[0], true) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &expr.x0[0], true) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &expr.x1[0], true) == LG_STATUS_OK, "failed to allocate tensor");
+    y.data = expr.y[0].data;
+    y.grad = expr.y[0].grad;
+    x0.data = expr.x0[0].data;
+    x0.grad = expr.x0[0].grad;
+    x1.data = expr.x1[0].data;
+    x1.grad = expr.x1[0].grad;
 
     lg_copy_vector(x0.desc, x0.data, x0_vals, 0);
     lg_copy_vector(x1.desc, x1.data, x1_vals, 0);
     lg_copy_vector(y.desc, y.grad, y_grad_vals, 0);
 
-    test_assert(lg_add(&expr, y, x0, x1) == LG_STATUS_OK, "failed to append add node");
-
+    test_assert(lg_expr_compile(&expr) == LG_STATUS_OK, "failed to compile opcode");
     test_assert(lg_cpu_forward(expr) == LG_STATUS_OK, "failed to do forward pass");
     test_assert(lg_cpu_backward(expr) == LG_STATUS_OK, "failed to do backward pass");
 
@@ -506,11 +513,6 @@ test_status test_cpu_backward() {
     lg_free_tensor(&allocator, &x0);
     lg_free_tensor(&allocator, &x1);
     lg_free_tensor(&allocator, &y);
-
-    free(expr.x0);
-    free(expr.x1);
-    free(expr.y);
-    free(expr.opcodes);
 
     return TEST_STATUS_OK;
 }

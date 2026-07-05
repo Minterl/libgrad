@@ -93,6 +93,9 @@ typedef struct lg_desc {
 ///
 /// Backing buffers are stored stride-major.
 typedef struct lg_tensor {
+    /// An expression-unique id
+    uint32_t uid;
+    
     /// The shape descriptor of the tensor.
     lg_desc desc;
     
@@ -179,12 +182,6 @@ typedef struct lg_expr {
 
 /// Broadcast tensor views.
 ///
-/// The first tensor in the set is considered the 
-/// "primary."
-/// The primary tensor is the one that dictates the optimized plan
-/// plan for the other tensors. In that, this is the tensor where it is 
-/// guaranteed that the contiguous dimension (the dimension with the unit stride)
-/// will be accessed sequentially in memory.
 lg_status lg_desc_broadcast(lg_desc **descs, lg_size n_descs);
 
 /// Contracts the dimensions of `y`, inferring the contracted dimensions.
@@ -193,21 +190,26 @@ lg_status lg_desc_broadcast(lg_desc **descs, lg_size n_descs);
 /// following.
 lg_status lg_desc_compute_contracted_dims(lg_desc *y, lg_desc *x0, lg_desc *x1, lg_size n_batch_axes);
 
-/// Sort dims such that the primary is unit stride first.
-/// Follows the same "primary" rule as `lg_desc_broadcast`.
+/// Sort axes such that the primary is unit stride first.
 ///
 /// Inputs to this function MUST be broadcasted.
-lg_status lg_desc_sort_dims(lg_desc **descs, lg_size n_descs);
+///
+/// The first tensor in the set is considered the 
+/// "primary."
+/// The primary tensor is the one that dictates the optimized plan
+/// plan for the other tensors. In that, this is the tensor where it is 
+/// guaranteed that the contiguous dimension (the dimension with the unit stride)
+/// will be accessed sequentially in memory.
+lg_status lg_desc_sort_axes(lg_desc **descs, lg_size n_descs);
 
-/// Coalesce tensor dims to be as flat as possible.
-/// Follows the same "primary" rule as `lg_desc_broadcast`.
+/// Coalesce tensor axes to be as flat as possible.
 ///
 /// Inputs to this function MUST be broadcasted AND sorted from least to greatest
 /// using `lg_desc_sort_dims`.
-lg_status lg_desc_coalesce_dims(lg_desc **descs, lg_size n_descs);
+lg_status lg_desc_coalesce_axes(lg_desc **descs, lg_size n_descs);
 
 /// Compute the size in bytes of a tensor's data buffer.
-static inline lg_size lg_desc_size_bytes(lg_desc desc);
+lg_size lg_desc_size_bytes(lg_desc desc);
 
 /// Copy a vector value to the dim `copy_to_dim`.
 void lg_copy_vector(lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, lg_size copy_to_dim);
@@ -228,7 +230,7 @@ lg_status lg_desc_layout(lg_desc *desc, lg_layout layout, lg_size unit_align);
 /// while all vectors are considered anisotropic.
 static inline bool lg_desc_is_isotropic(lg_desc desc);
 
-lg_status lg_add(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_add(lg_expr *expr, lg_tensor *y, const lg_tensor x0, const lg_tensor x1);
 lg_status lg_sub(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
 lg_status lg_contract(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
 lg_status lg_hadamard(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
@@ -241,8 +243,7 @@ lg_status lg_stable_softmax(lg_expr *expr, const lg_tensor y, const lg_tensor in
 lg_status lg_sigmoid(lg_expr *expr, lg_tensor y, const lg_tensor in);
 lg_status lg_ln(lg_expr *expr, lg_tensor y, const lg_tensor in);
 
-lg_status lg_backward(lg_expr *expr);
-lg_tensor lg_transpose(lg_expr *expr, const lg_tensor in);
+lg_status lg_expr_compile(lg_expr *expr);
 
 #endif // LG_CORE_H_
 
@@ -252,7 +253,7 @@ lg_tensor lg_transpose(lg_expr *expr, const lg_tensor in);
 
 #include <libgrad/internal/debug.h>
 
-static inline lg_size lg_desc_size_bytes(lg_desc desc) {
+lg_size lg_desc_size_bytes(lg_desc desc) {
     if (desc.rank == 0) {
         return 0;
     }
@@ -487,7 +488,7 @@ lg_status lg_desc_compute_contracted_dims(lg_desc *y, lg_desc *x0, lg_desc *x1, 
     return LG_STATUS_OK;
 }
 
-lg_status lg_desc_sort_dims(lg_desc **descs, lg_size n_descs) {
+lg_status lg_desc_sort_axes(lg_desc **descs, lg_size n_descs) {
     lg_size max_rank = 0;
     for (lg_size i = 0; i < n_descs; i++) {
         if (descs[i]->rank > max_rank) {
@@ -521,7 +522,7 @@ lg_status lg_desc_sort_dims(lg_desc **descs, lg_size n_descs) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_desc_coalesce_dims(lg_desc **descs, lg_size n_descs) {
+lg_status lg_desc_coalesce_axes(lg_desc **descs, lg_size n_descs) {
     lg_size max_rank = 0;
     for (lg_size i = 0; i < n_descs; i++) {
         if (descs[i]->rank > max_rank) {
@@ -583,9 +584,9 @@ lg_status lg_desc_coalesce_dims(lg_desc **descs, lg_size n_descs) {
 static inline lg_status lg_expr_append(
     lg_expr *expr,
     const lg_opcode opcode,
+    const lg_tensor y,
     const lg_tensor x0,
-    const lg_tensor x1,
-    const lg_tensor y
+    const lg_tensor x1
 ) {
 #ifdef LG_SAFE
     if (expr->len >= expr->cap) {
@@ -596,9 +597,9 @@ static inline lg_status lg_expr_append(
     lg_size next_idx = expr->len;
     expr->len += 1;
     expr->opcodes[next_idx] = opcode;
+    expr->y[next_idx] = y;
     expr->x0[next_idx] = x0;
     expr->x1[next_idx] = x1;
-    expr->y[next_idx] = y;
 
     return LG_STATUS_OK;
 }
@@ -646,37 +647,77 @@ void lg_nditer_goto(lg_nditer *iter, lg_size *coords) {
 
 lg_status lg_add(
     lg_expr *expr,
-    lg_tensor y,
+    lg_tensor *y,
     const lg_tensor x0,
     const lg_tensor x1
 ) {
+    const lg_size expr_idx = expr->len;
     lg_status status;
-    status = lg_expr_append(expr, LG_OPCODE_ADD, x0, x1, y);
+
+    y->uid = expr_idx;
+    for (lg_size i = 0; i < x0.desc.rank; i++) {
+        y->desc.dim[i] = x0.desc.dim[i];
+    }
+    // TODO: naive layout
+    status = lg_desc_layout(&y->desc, LG_LAYOUT_ROW_MAJOR, 1 /* TODO */);
     if (status != LG_STATUS_OK) {
         return status;
     }
-    const lg_size i = expr->len - 1;
+
+    status = lg_expr_append(expr, LG_OPCODE_ADD, *y, x0, x1);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+
     status = lg_desc_broadcast((lg_desc*[]){
-        &expr->y[i].desc,
-        &expr->x0[i].desc,
-        &expr->x1[i].desc,
+        &y->desc,
+        &expr->x0[expr_idx].desc,
+        &expr->x1[expr_idx].desc,
     }, 3);
     if (status != LG_STATUS_OK) {
         return status;
     }
-    status = lg_desc_sort_dims((lg_desc*[]){
-        &expr->y[i].desc,
-        &expr->x0[i].desc,
-        &expr->x1[i].desc,
-    }, 3);
+
+    return LG_STATUS_OK;
+}
+
+lg_status __lg_expr_pass_sort_axes(lg_expr *expr) {
+    lg_status status;
+    for (lg_size i = 0; i < expr->len; i++) {
+        status = lg_desc_sort_axes((lg_desc*[]){
+            &expr->y[i].desc,
+            &expr->x0[i].desc,
+            &expr->x1[i].desc,
+        }, 3);
+        if (status != LG_STATUS_OK) {
+            return status;
+        }
+    }
+    return LG_STATUS_OK;
+}
+
+lg_status __lg_expr_pass_coalesce_axes(lg_expr *expr) {
+    lg_status status;
+    for (lg_size i = 0; i < expr->len; i++) {
+        status = lg_desc_coalesce_axes((lg_desc*[]){
+            &expr->y[i].desc,
+            &expr->x0[i].desc,
+            &expr->x1[i].desc,
+        }, 3);
+        if (status != LG_STATUS_OK) {
+            return status;
+        }
+    }
+    return LG_STATUS_OK;
+}
+
+lg_status lg_expr_compile(lg_expr *expr) {
+    lg_status status;
+    status = __lg_expr_pass_sort_axes(expr);
     if (status != LG_STATUS_OK) {
         return status;
     }
-    status = lg_desc_coalesce_dims((lg_desc*[]){
-        &expr->y[i].desc,
-        &expr->x0[i].desc,
-        &expr->x1[i].desc,
-    }, 3);
+    status = __lg_expr_pass_coalesce_axes(expr);
     if (status != LG_STATUS_OK) {
         return status;
     }
