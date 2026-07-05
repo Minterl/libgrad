@@ -83,12 +83,11 @@ typedef struct lg_desc {
 } lg_desc;
 
 /// Represents a single Tensor backed by `data`
-/// and `grad`.
 ///
 /// Generally, these are thin handles that should 
 /// live on the stack and be shallow copied as necessary.
 ///
-/// The size `data` and `grad`, respectively, should product of the
+/// The size `data`, respectively, should product of the
 /// non-zero values in `dim`.
 ///
 /// Backing buffers are stored stride-major.
@@ -101,12 +100,6 @@ typedef struct lg_tensor {
     
     /// The tensor's primary backing buffer.
     lg_scalar *data;
-    
-    /// The tensors intermediate gradient values during backprop.
-    /// If this value is NULL, then no gradients are tracked.
-    /// This is the means by which a tensor can be used purely for
-    /// inference.
-    lg_scalar *grad;
 } lg_tensor;
 
 /// Discriminator for an operation.

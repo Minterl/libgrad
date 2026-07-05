@@ -95,7 +95,6 @@ test_status test_tensor_size() {
         .desc.dim = {6, 6},
         .desc.strides = {6, 1},
         .data = NULL,
-        .grad = NULL,
     };
     lg_size _36_size = lg_desc_size_bytes(_36.desc);
     test_assert(_36_size == 36 * sizeof(lg_scalar), "tensor size was %lu", _36_size);
@@ -105,7 +104,6 @@ test_status test_tensor_size() {
         .desc.dim = {6, 2, 3},
         .desc.strides = {6, 3, 1},
         .data = NULL,
-        .grad = NULL,
     };
     lg_size also_36_size = lg_desc_size_bytes(also_36.desc);
     test_assert(also_36_size == 36 * sizeof(lg_scalar), "tensor size was %lu", also_36_size);
@@ -149,23 +147,19 @@ test_status test_alloc_tensor() {
         .desc.dim = {6, 6},
         .desc.strides = {6, 1},
         .data = NULL,
-        .grad = NULL,
     };
 
     // If we're aligning to a 5 * sizeof(lg_scalar)-byte boundary and starting at 5, then
     // the data allocation should end at 41 * sizeof(lg_scalar),
     // and the gradient allocation should start at the nearest multiple of 5,
     // which is 40 * sizeof(lg_scalar) if lg_scalar is float, yielding 4 * sizeof(lg_scalar) bytes of padding.
-    lg_size expected_one_bytes = 36 * sizeof(lg_scalar);
-    lg_size expected_total_bytes = expected_one_bytes * 2 + 4 * sizeof(lg_scalar);
-    lg_scalar *expected_grad_addr = (lg_scalar*)ALLOC_ADDR + 40;
+    lg_size expected_bytes = 36 * sizeof(lg_scalar);
 
     lg_size calculated_one_bytes = lg_desc_size_bytes(ten.desc);
-    test_assert(calculated_one_bytes == expected_one_bytes, "tensor size calculated to be %lu bytes", calculated_one_bytes);
-    test_assert(lg_alloc_tensor(&allocator, &ten, 1) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(calculated_one_bytes == expected_bytes, "tensor size calculated to be %lu bytes", calculated_one_bytes);
+    test_assert(lg_alloc_tensor(&allocator, &ten) == LG_STATUS_OK, "failed to allocate tensor");
     test_assert(ten.data == (lg_scalar*)ALLOC_ADDR, "allocated data at address %lu, expected %lu", ten.data, (lg_scalar*)ALLOC_ADDR);
-    test_assert(ten.grad == expected_grad_addr, "allocated grad at address %lu, expected %lu", ten.grad, expected_grad_addr);
-    test_assert(ctx.bytes_allocated == expected_total_bytes, "allocated %lu bytes, wanted %lu bytes" , ctx.bytes_allocated, expected_total_bytes);
+    test_assert(ctx.bytes_allocated == expected_bytes, "allocated %lu bytes, wanted %lu bytes" , ctx.bytes_allocated, expected_bytes);
 
     return TEST_STATUS_OK;
 }
@@ -241,9 +235,9 @@ test_status test_cpu_add_basic() {
     test_assert(lg_desc_layout(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
     test_assert(lg_desc_layout(&x1.desc, LG_LAYOUT_COL_MAJOR, 2) == LG_STATUS_OK, "failed to lay out tensor");
 
-    test_assert(lg_alloc_tensor(&allocator, &y, false) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &x0, false) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &x1, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &y) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x0) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x1) == LG_STATUS_OK, "failed to allocate tensor");
 
     test_assert(lg_desc_broadcast(((lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
     test_assert(lg_desc_sort_axes(((lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to sort dims");
@@ -294,9 +288,9 @@ test_status test_cpu_add_vec() {
     test_assert(lg_desc_layout(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
     test_assert(lg_desc_layout(&x1.desc, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
-    test_assert(lg_alloc_tensor(&allocator, &y, false) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &x0, false) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &x1, false) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &y) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x0) == LG_STATUS_OK, "failed to allocate tensor");
+    test_assert(lg_alloc_tensor(&allocator, &x1) == LG_STATUS_OK, "failed to allocate tensor");
 
     test_assert(lg_desc_broadcast(((lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
 
@@ -458,64 +452,62 @@ test_status test_cpu_matmul_batch() {
     return TEST_STATUS_OK;
 }
 
-test_status test_cpu_backward() {
-    lg_expr expr = {
-        .cap = 32,
-        .x0 = (lg_tensor[32]){},
-        .x1 = (lg_tensor[32]){},
-        .y = (lg_tensor[32]){},
-        .opcodes = (lg_opcode[32]){},
-    };
+// TODO: graph compilation
+// test_status test_cpu_backward() {
+//     lg_expr expr = {
+//         .cap = 32,
+//         .x0 = (lg_tensor[32]){},
+//         .x1 = (lg_tensor[32]){},
+//         .y = (lg_tensor[32]){},
+//         .opcodes = (lg_opcode[32]){},
+//     };
 
-    lg_tensor x0 = { .desc.rank = 1, .desc.dim = {4} },
-              x1 = { .desc.rank = 1, .desc.dim = {4}  },
-              y = { .desc.rank = 1, .desc.dim = {4} };
+//     lg_tensor x0 = { .desc.rank = 1, .desc.dim = {4} },
+//               x1 = { .desc.rank = 1, .desc.dim = {4}  },
+//               y = { .desc.rank = 1, .desc.dim = {4} };
 
-    test_assert(lg_desc_layout(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_desc_layout(&x1.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(lg_desc_layout(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+//     test_assert(lg_desc_layout(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+//     test_assert(lg_desc_layout(&x1.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+//     test_assert(lg_desc_layout(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
-    lg_scalar x0_vals[4] = {1, 2, 3, 4},
-              x1_vals[4] = {3, 3, 1, 4},
-              y_grad_vals[4] = {1, 1, 1, 1};
+//     lg_scalar x0_vals[4] = {1, 2, 3, 4},
+//               x1_vals[4] = {3, 3, 1, 4},
+//               y_grad_vals[4] = {1, 1, 1, 1};
 
-    lg_allocator allocator = {
-        .alloc = alloc_libc,
-        .free = free_libc,
-    };
+//     lg_allocator allocator = {
+//         .alloc = alloc_libc,
+//         .free = free_libc,
+//     };
 
-    test_assert(lg_add(&expr, &y, x0, x1) == LG_STATUS_OK, "failed to append add node");
+//     test_assert(lg_add(&expr, &y, x0, x1) == LG_STATUS_OK, "failed to append add node");
 
-    // TODO: global expr allocation
-    test_assert(lg_alloc_tensor(&allocator, &expr.y[0], true) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &expr.x0[0], true) == LG_STATUS_OK, "failed to allocate tensor");
-    test_assert(lg_alloc_tensor(&allocator, &expr.x1[0], true) == LG_STATUS_OK, "failed to allocate tensor");
-    y.data = expr.y[0].data;
-    y.grad = expr.y[0].grad;
-    x0.data = expr.x0[0].data;
-    x0.grad = expr.x0[0].grad;
-    x1.data = expr.x1[0].data;
-    x1.grad = expr.x1[0].grad;
+//     // TODO: global expr allocation
+//     test_assert(lg_alloc_tensor(&allocator, &expr.y[0], true) == LG_STATUS_OK, "failed to allocate tensor");
+//     test_assert(lg_alloc_tensor(&allocator, &expr.x0[0], true) == LG_STATUS_OK, "failed to allocate tensor");
+//     test_assert(lg_alloc_tensor(&allocator, &expr.x1[0], true) == LG_STATUS_OK, "failed to allocate tensor");
+//     y.data = expr.y[0].data;
+//     x0.data = expr.x0[0].data;
+//     x1.data = expr.x1[0].data;
 
-    lg_copy_vector(x0.desc, x0.data, x0_vals, 0);
-    lg_copy_vector(x1.desc, x1.data, x1_vals, 0);
-    lg_copy_vector(y.desc, y.grad, y_grad_vals, 0);
+//     lg_copy_vector(x0.desc, x0.data, x0_vals, 0);
+//     lg_copy_vector(x1.desc, x1.data, x1_vals, 0);
+//     lg_copy_vector(y.desc, y.grad, y_grad_vals, 0);
 
-    test_assert(lg_expr_compile(&expr) == LG_STATUS_OK, "failed to compile opcode");
-    test_assert(lg_cpu_forward(expr) == LG_STATUS_OK, "failed to do forward pass");
-    test_assert(lg_cpu_backward(expr) == LG_STATUS_OK, "failed to do backward pass");
+//     test_assert(lg_expr_compile(&expr) == LG_STATUS_OK, "failed to compile opcode");
+//     test_assert(lg_cpu_forward(expr) == LG_STATUS_OK, "failed to do forward pass");
+//     test_assert(lg_cpu_backward(expr) == LG_STATUS_OK, "failed to do backward pass");
 
-    lg_scalar expected_data[4] = {4, 5, 4, 8};
-    lg_scalar expected_grad[4] = {1, 1, 1, 1};
-    test_assert_array_eq(expected_data, y.data, 4, "%f");
-    test_assert_array_eq(expected_grad, x0.grad, 4, "%f");
+//     lg_scalar expected_data[4] = {4, 5, 4, 8};
+//     lg_scalar expected_grad[4] = {1, 1, 1, 1};
+//     test_assert_array_eq(expected_data, y.data, 4, "%f");
+//     test_assert_array_eq(expected_grad, x0.grad, 4, "%f");
 
-    lg_free_tensor(&allocator, &x0);
-    lg_free_tensor(&allocator, &x1);
-    lg_free_tensor(&allocator, &y);
+//     lg_free_tensor(&allocator, &x0);
+//     lg_free_tensor(&allocator, &x1);
+//     lg_free_tensor(&allocator, &y);
 
-    return TEST_STATUS_OK;
-}
+//     return TEST_STATUS_OK;
+// }
 
 int main(void) {
     test_run(tensor_layout);
@@ -527,6 +519,5 @@ int main(void) {
     test_run(cpu_add_vec);
     test_run(cpu_matmul);
     test_run(cpu_matmul_batch);
-    test_run(cpu_backward);
     return 0;
 }

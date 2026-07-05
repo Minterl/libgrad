@@ -35,58 +35,36 @@ typedef struct lg_allocator {
     lg_size (*align_hint)(void *ctx);
 } lg_allocator;
 
-/// Allocate necessary memory for `tensor`, and mutate the `data`
-/// and `grad` pointers, the latter iff `with_grad` == true.
-///
-/// Uses a single allocation for `data` and `grad` buffers.
-///
-/// If allocator.align_hint != NULL, then the gradient buffer will be aligned
-/// with the result.
+/// Allocate necessary memory for `tensor`, and mutate the `data` pointer.
 /// 
 /// If a tensor is zero-sized, returns early without mutating `tensor`.
-lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, bool with_grad);
+lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor);
 
 /// Frees the buffers backing `tensor`.
-///
-/// Assumes `tensor` was allocated using `lg_alloc_tensor`, which uses a single allocation
-/// for both the `data` and `grad` buffers.
 lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor);
 
-lg_status lg_alloc_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len, bool with_grad);
-lg_status lg_free_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len, bool with_grad);
+lg_status lg_alloc_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len);
+lg_status lg_free_tensor_many(lg_allocator *allocator, const lg_tensor *tensors, lg_size len);
 
 #endif // LG_ALLOC_H_
 
 #ifdef LG_ALLOC_IMPLEMENTATION
 #undef LG_ALLOC_IMPLEMENTATION
 
-lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor, bool with_grad) {
+lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor) {
     lg_size one_size = lg_desc_size_bytes(tensor->desc);
     if (one_size == 0) {
         return LG_STATUS_OK;
     }
 
     lg_size total_size = one_size;
-    lg_size padding = 0;
-    if (with_grad) {
-        lg_size alignment = allocator->align_hint ? allocator->align_hint(allocator->ctx) : 1;
-        padding = ((one_size + alignment - 1) & ~(alignment - 1)) - one_size;
-        total_size += padding + one_size;
-    }
 
     uint8_t *ptr = allocator->alloc(allocator->ctx, total_size);
     if (ptr == NULL) {
         return LG_STATUS_OUT_OF_MEMORY;
     }
 
-    if (with_grad) {
-        uint8_t *grad_offset = ptr + one_size + padding;
-        tensor->data = (lg_scalar*)ptr;
-        tensor->grad = (lg_scalar*)grad_offset;
-    } else {
-        tensor->data = (lg_scalar*)ptr;
-        tensor->grad = NULL;
-    }
+    tensor->data = (lg_scalar*)ptr;
 
     return LG_STATUS_OK;
 }
@@ -99,7 +77,6 @@ lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor) {
 #endif // LG_SAFE
     allocator->free(allocator->ctx, tensor->data);
     tensor->data = NULL;
-    tensor->grad = NULL;
     return LG_STATUS_OK;
 }
 
