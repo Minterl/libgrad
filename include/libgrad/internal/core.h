@@ -84,6 +84,8 @@ typedef struct lg_desc {
 
 /// Represents a single Tensor backed by `data`
 ///
+/// Expressed in pure SSA form.
+///
 /// Generally, these are thin handles that should 
 /// live on the stack and be shallow copied as necessary.
 ///
@@ -92,8 +94,9 @@ typedef struct lg_desc {
 ///
 /// Backing buffers are stored stride-major.
 typedef struct lg_tensor {
-    /// An expression-unique id
-    uint32_t uid;
+    /// Since the exprs are pure SSA, the time the (y) value is born at
+    /// functions as a globally unique identifier.
+    uint32_t born_at;
     
     /// The shape descriptor of the tensor.
     lg_desc desc;
@@ -124,6 +127,7 @@ typedef enum lg_opcode {
     LG_OPCODE_LOSS_CROSS_ENTROPY,
 
     /// --- UNARY OPERATIONS ---
+    LG_OPCODE_NOP,
     /// Element-wise ReLU
     LG_OPCODE_RELU,
     /// Element-wise stable softmax
@@ -222,6 +226,8 @@ lg_status lg_desc_layout(lg_desc *desc, lg_layout layout, lg_size unit_align);
 /// Tensors with a rank of zero, and all scalars are considered isotropic,
 /// while all vectors are considered anisotropic.
 static inline bool lg_desc_is_isotropic(lg_desc desc);
+
+lg_status lg_nop(lg_expr *expr, lg_tensor x);
 
 lg_status lg_add(lg_expr *expr, lg_tensor *y, const lg_tensor x0, const lg_tensor x1);
 lg_status lg_sub(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
@@ -647,10 +653,11 @@ lg_status lg_add(
     const lg_size expr_idx = expr->len;
     lg_status status;
 
-    y->uid = expr_idx;
+    y->born_at = expr_idx;
     for (lg_size i = 0; i < x0.desc.rank; i++) {
         y->desc.dim[i] = x0.desc.dim[i];
     }
+    y->desc.rank = x0.desc.rank;
     // TODO: naive layout
     status = lg_desc_layout(&y->desc, LG_LAYOUT_ROW_MAJOR, 1 /* TODO */);
     if (status != LG_STATUS_OK) {
@@ -672,6 +679,10 @@ lg_status lg_add(
     }
 
     return LG_STATUS_OK;
+}
+
+lg_status lg_nop(lg_expr *expr, lg_tensor x) {
+    return lg_expr_append(expr, LG_OPCODE_NOP, (lg_tensor){ .born_at = expr->len }, x, (lg_tensor){0});
 }
 
 lg_status __lg_expr_pass_sort_axes(lg_expr *expr) {

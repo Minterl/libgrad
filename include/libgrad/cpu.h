@@ -3,7 +3,7 @@
 
 #include <libgrad/internal/core.h>
 
-lg_status lg_cpu_backward(lg_expr expr);
+lg_status lg_cpu_exec(lg_expr expr);
 
 /// Tensors must be sorted & broadcasted
 lg_status lg_cpu_add(
@@ -23,9 +23,11 @@ lg_status lg_cpu_contract(
 #ifdef LG_CPU_IMPLEMENTATION
 #undef LG_CPU_IMPLEMENTATION
 
-lg_status lg_cpu_forward(lg_expr expr) {
+lg_status lg_cpu_exec(lg_expr expr) {
     for (lg_size i = 0; i < expr.len; i++) {
         switch (expr.opcodes[i]) {
+        case LG_OPCODE_NOP:
+            break;
         case LG_OPCODE_ADD:
             lg_cpu_add(
                 expr.y[i].desc, expr.y[i].data,
