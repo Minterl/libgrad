@@ -2,6 +2,7 @@
 #define LG_ALLOC_H_
 
 #include <libgrad/internal/core.h>
+#include <libgrad/internal/vm.h>
 
 /// Helper interface for allocating tensors
 ///
