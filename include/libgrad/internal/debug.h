@@ -8,10 +8,7 @@
 #define lg_dbgf(fmt, ...) /* nothing */
 #endif // LG_DEBUG
 
-static inline void __lg_dbgf(const char *file, int line, const char* fmt, ...);
-
-#if defined(LG_DEBUG_IMPLEMENTATION) && defined(LG_DEBUG)
-#undef LG_DEBUG_IMPLEMENTATION
+#ifdef LG_DEBUG
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -25,4 +22,4 @@ static inline void __lg_dbgf(const char *file, int line, const char* fmt, ...) {
     fprintf(stderr, "\n");
 }
 
-#endif // LG_DEBUG_IMPLEMENTATION
+#endif //  LG_DEBUG
