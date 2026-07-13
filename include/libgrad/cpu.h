@@ -1,6 +1,7 @@
 #ifndef LG_CPU_H_
 #define LG_CPU_H_
 
+#include <libgrad/internal/vm.h>
 #include <libgrad/internal/core.h>
 
 lg_status lg_cpu_exec(lg_expr expr);

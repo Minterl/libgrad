@@ -122,20 +122,20 @@ lg_status lg_desc_broadcast(lg_desc **descs, lg_size n_descs) {
     // 2) One of the dimensions is 1.
     // 3) One of the dimensions does not exist.
     lg_size master_dim[LG_MAX_RANK];
-    for (lg_size j = 0; j < max_rank; j++) {
-        master_dim[j] = 1;
+    for (lg_size i = 0; i < max_rank; i++) {
+        master_dim[i] = 1;
     }
 
-    for (lg_size i = 0; i < n_descs; i++) {
-        for (lg_size j = 0; j < max_rank; j++) {
-            lg_size dim_current = (j < descs[i]->rank) ? descs[i]->dim[j] : 1;
-            if (dim_current != 1) {
-                if (master_dim[j] == 1) {
-                    master_dim[j] = dim_current;
-                } 
-                else if (master_dim[j] != dim_current) {
-                    return LG_STATUS_SHAPE_MISMATCH;
-                }
+    for (lg_size i_desc = 0; i_desc < n_descs; i_desc++) {
+        for (lg_size i_axis = 0; i_axis < max_rank; i_axis++) {
+            lg_size dim_current = (i_axis < descs[i_desc]->rank) ? descs[i_desc]->dim[i_axis] : 1;
+            if (dim_current == 1) {
+                continue;
+            }
+            if (master_dim[i_axis] == 1) {
+                master_dim[i_axis] = dim_current;
+            } else if (master_dim[i_axis] != dim_current) {
+                return LG_STATUS_SHAPE_MISMATCH;
             }
         }
     }
@@ -151,11 +151,11 @@ lg_status lg_desc_broadcast(lg_desc **descs, lg_size n_descs) {
     // 1) Setting all strides less than the master to zero, causing the actual
     //    offsets to never move.
     // 2) Aligning the logical dimensions of the tensor with the master.
-    for (lg_size i = 0; i < n_descs; i++) {
-        for (lg_size j = 1; j <= max_rank; j++) {
-            if (descs[i]->dim[max_rank - j] < master_dim[max_rank - j]) {
-                descs[i]->strides[max_rank - j] = 0;
-                descs[i]->dim[max_rank - j] = master_dim[max_rank - j];
+    for (lg_size i_desc = 0; i_desc < n_descs; i_desc++) {
+        for (lg_size i_axis = 1; i_axis <= max_rank; i_axis++) {
+            if (descs[i_desc]->dim[max_rank - i_axis] < master_dim[max_rank - i_axis]) {
+                descs[i_desc]->strides[max_rank - i_axis] = 0;
+                descs[i_desc]->dim[max_rank - i_axis] = master_dim[max_rank - i_axis];
             }
         }
     }

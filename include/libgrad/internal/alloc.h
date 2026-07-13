@@ -45,7 +45,7 @@ lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor);
 lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor);
 
 /// Allocates the minimum amount of memory necessary to execute an expression
-/// and populates the `data` pointers for any tensor where it is not null.
+/// and populates the `data` pointers for any tensor where they're NULL.
 ///
 /// Allocates the expression backing buffer monolithically using `perm` and returns
 /// the pointer using `out_data`, and allocates O(N) scratch memory using `scratch`.
