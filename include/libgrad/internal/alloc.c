@@ -69,7 +69,6 @@ lg_status lg_alloc_expr(
         sizes[expr->y[i].born_at] = lg_desc_size_bytes(expr->y[i].desc);
     }
     for (lg_size i = 0; i < expr->len; i++) {
-        // TODO: maybe we need a pin flag or something?
         total_freed_after_time[dead_after[i]] += sizes[i];
     }
 

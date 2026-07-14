@@ -79,14 +79,14 @@ typedef struct lg_expr {
 /// Ensure a specific tensor is present after finishing execution of an expr.
 /// Mutates the data pointer in x such that it can be read from normally.
 ///
-/// This must be called AFTER allocating memory for the expr.
+/// This must be called BEFORE allocating memory for the expr.
 lg_status lg_pin(lg_expr *expr, lg_tensor *x);
 
 lg_status lg_nop(lg_expr *expr, lg_tensor x);
 
 lg_status lg_add(lg_expr *expr, lg_tensor *y, const lg_tensor x0, const lg_tensor x1);
 lg_status lg_sub(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
-lg_status lg_contract(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+lg_status lg_contract(lg_expr *expr, lg_tensor *y, lg_tensor x0, lg_tensor x1, const lg_size n_batch_axes);
 lg_status lg_hadamard(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
 
 lg_status lg_loss_mse(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);

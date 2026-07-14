@@ -19,6 +19,7 @@ examples/mnist:
 	mkdir -p out/examples && \
 	cc -o out/examples/mnist.out \
 		$(CFLAGS) \
+		-Iexamples/include \
 		-fsanitize=address \
 		-fsanitize=bounds \
 		examples/mnist/main.c

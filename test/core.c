@@ -254,7 +254,7 @@ test_status test_cpu_add_basic() {
         x1.data[x1_idx] = 2.0f;
     } while (increment_coords_rtl(coords, y.desc.dim, y.desc.rank));
 
-    test_assert(lg_cpu_add(y.desc, y.data, x0.desc, x0.data, x1.desc, x1.data) == LG_STATUS_OK, "failed to add");
+    lg_cpu_add(y.desc, y.data, x0.desc, x0.data, x1.desc, x1.data);
 
     for (lg_size i = 0; i < LG_MAX_RANK; i++) {
         coords[i] = 0;
@@ -306,7 +306,7 @@ test_status test_cpu_add_vec() {
         x1.data[x1_idx] = 2.0f;
     } while (increment_coords_rtl(coords, y.desc.dim, y.desc.rank));
 
-    test_assert(lg_cpu_add(y.desc, y.data, x0.desc, x0.data, x1.desc, x1.data) == LG_STATUS_OK, "failed to add");
+    lg_cpu_add(y.desc, y.data, x0.desc, x0.data, x1.desc, x1.data);
 
     for (lg_size i = 0; i < LG_MAX_RANK; i++) {
         coords[i] = 0;
@@ -379,7 +379,7 @@ test_status test_cpu_matmul() {
 
     lg_scalar expected_out[] = {19, 22, 43, 50};
 
-    test_assert(lg_cpu_contract(y_cpy.desc, y_cpy.data, x0.desc, x0.data, x1T.desc, x1T.data) == LG_STATUS_OK, "failed to contract");
+    lg_cpu_contract(y_cpy.desc, y_cpy.data, x0.desc, x0.data, x1T.desc, x1T.data);
     test_assert_array_eq(expected_out, y.data, 4, "%f");
 
     return TEST_STATUS_OK;
@@ -446,7 +446,7 @@ test_status test_cpu_matmul_batch() {
         19, 22, 43, 50,
     };
 
-    test_assert(lg_cpu_contract(y_cpy.desc, y_cpy.data, x0.desc, x0.data, x1T.desc, x1T.data) == LG_STATUS_OK, "failed to contract");
+    lg_cpu_contract(y_cpy.desc, y_cpy.data, x0.desc, x0.data, x1T.desc, x1T.data);
     test_assert_array_eq(expected_out, y.data, 8, "%f");
 
     return TEST_STATUS_OK;

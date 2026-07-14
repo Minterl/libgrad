@@ -7,12 +7,12 @@
 lg_status lg_cpu_exec(lg_expr expr);
 
 /// Tensors must be sorted & broadcasted
-lg_status lg_cpu_add(
+void lg_cpu_add(
     const lg_desc y_desc, lg_scalar *restrict y,
     const lg_desc x0_desc, const lg_scalar *restrict x0,
     const lg_desc x1_desc, const lg_scalar *restrict x1
 );
-lg_status lg_cpu_contract(
+void lg_cpu_contract(
     const lg_desc y_desc, lg_scalar *restrict y,
     const lg_desc x0_desc, const lg_scalar *restrict x0,
     const lg_desc x1_desc, const lg_scalar *restrict x1
@@ -36,8 +36,14 @@ lg_status lg_cpu_exec(lg_expr expr) {
                 expr.x1[i].desc, expr.x1[i].data
             );
             break;
-        case LG_OPCODE_SUB:
         case LG_OPCODE_CONTRACT:
+            lg_cpu_contract(
+                expr.y[i].desc, expr.y[i].data,
+                expr.x0[i].desc, expr.x0[i].data,
+                expr.x1[i].desc, expr.x1[i].data
+            );
+            break;
+        case LG_OPCODE_SUB:
         case LG_OPCODE_HADAMARD:
         case LG_OPCODE_LOSS_MSE:
         case LG_OPCODE_LOSS_CROSS_ENTROPY:
@@ -53,7 +59,7 @@ lg_status lg_cpu_exec(lg_expr expr) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_cpu_add(
+void lg_cpu_add(
     const lg_desc y_desc, lg_scalar *restrict y,
     const lg_desc x0_desc, const lg_scalar *restrict x0,
     const lg_desc x1_desc, const lg_scalar *restrict x1
@@ -70,11 +76,9 @@ lg_status lg_cpu_add(
 
         y[y_idx] = x0[x0_idx] + x1[x1_idx];
    } while (lg_nditer_increment(&iter, y_desc.rank - 1));
-
-    return LG_STATUS_OK;
 }
 
-lg_status lg_cpu_contract(
+void lg_cpu_contract(
     const lg_desc y_desc, lg_scalar *restrict y,
     const lg_desc x0_desc, const lg_scalar *restrict x0,
     const lg_desc x1_desc, const lg_scalar *restrict x1
@@ -91,8 +95,6 @@ lg_status lg_cpu_contract(
 
         y[y_idx] += x0[x0_idx] * x1[x1_idx];
     } while (lg_nditer_increment(&iter, y_desc.rank - 1));
-
-    return LG_STATUS_OK;
 }
 
 #endif // LG_CPU_IMPLEMENTATION
