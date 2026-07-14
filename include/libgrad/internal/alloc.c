@@ -32,7 +32,8 @@ lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor) {
 lg_status lg_alloc_expr(
     lg_allocator *perm,
     lg_allocator *scratch,
-    lg_scalar **data,
+    lg_scalar **out_data,
+    lg_size *out_bytes_allocated,
     lg_expr *expr
 ) {
     // under the conditions of a cyclomatic complexity
@@ -88,8 +89,11 @@ lg_status lg_alloc_expr(
         status = LG_STATUS_OUT_OF_MEMORY;
         goto out;
     }
-    if (data != NULL) {
-        *data = (lg_scalar*)_data;
+    if (out_data != NULL) {
+        *out_data = (lg_scalar*)_data;
+    }
+    if (out_bytes_allocated != NULL) {
+        *out_bytes_allocated = max_offset;
     }
 
     for (lg_size i = 0; i < expr->len; i++) {

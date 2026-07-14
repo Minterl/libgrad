@@ -26,14 +26,6 @@ typedef struct lg_allocator {
     void* (*alloc)(void *ctx, lg_size size_bytes);
     /// Free the memory at `ptr`.
     void (*free)(void *ctx, void *ptr);
-    /// In contiguous allocations, buffers are allocated to align with the 
-    /// return value of this function. This is primarily useful for SIMD 
-    /// operations that require strict alignment guarantees.
-    ///
-    /// Most implementations should just return a static value.
-    ///
-    /// Returning zero from this method triggers undefined behavior.
-    lg_size (*align_hint)(void *ctx);
 } lg_allocator;
 
 /// Allocate necessary memory for `tensor`, and mutate the `data` pointer.
@@ -47,12 +39,15 @@ lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor);
 /// Allocates the minimum amount of memory necessary to execute an expression
 /// and populates the `data` pointers for any tensor where they're NULL.
 ///
-/// Allocates the expression backing buffer monolithically using `perm` and returns
-/// the pointer using `out_data`, and allocates O(N) scratch memory using `scratch`.
+/// Allocates the expression backing buffer monolithically using `perm` and returns 
+/// and allocates O(N) scratch memory using `scratch`.
+///
+/// `out_data` and `out_bytes_allocated` are nullable.
 lg_status lg_alloc_expr(
     lg_allocator *perm,
     lg_allocator *scratch,
     lg_scalar **out_data,
+    lg_size *out_bytes_allocated,
     lg_expr *expr
 );
 

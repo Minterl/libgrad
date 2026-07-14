@@ -76,11 +76,15 @@ typedef struct lg_expr {
     lg_tensor *x1       LG_CHECK_BOUNDS(len);
 } lg_expr;
 
-/// Ensure a specific tensor is present after finishing execution of an expr.
-/// Mutates the data pointer in x such that it can be read from normally.
+/// Gets the last physical location of the tensor `x` and populates
+/// its `data` pointer if found.
 ///
-/// This must be called BEFORE allocating memory for the expr.
-lg_status lg_pin(lg_expr *expr, lg_tensor *x);
+/// This does not guarantee that the value will actually exist at the end
+/// of execution. 
+/// 
+/// If you want to make sure that is the case, append a NOP using `lg_nop` to 
+/// the end of the expr.
+lg_status lg_get_last_location(lg_expr *expr, lg_tensor *x);
 
 lg_status lg_nop(lg_expr *expr, lg_tensor x);
 

@@ -6,10 +6,11 @@
 #include <libgrad/cpu.h>
 
 #include <assert.h>
-#include <common/arena.h>
 #include <stdio.h>
+#include <common/arena.h>
+#include <common/macros.h>
 
-#define ARENA_CAP 20 * 1024 * 1024
+#define ARENA_CAP 100 * 1024 * 1024
 #define EXPR_CAP 32
 
 int main(void) {
@@ -43,38 +44,57 @@ int main(void) {
 
     status = lg_alloc_tensor(&libgrad_allocator, &x);
     if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
         goto out;
     }
 
     lg_tensor y_0 = {0};
     status = lg_contract(&expr, &y_0, W_0, x, 0);
     if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
         goto out;
     }
     lg_tensor y_1 = {0};
     status = lg_add(&expr, &y_1, y_0, b_0);
     if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        goto out;
+    }
+
+    status = lg_nop(&expr, y_1);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
         goto out;
     }
 
     status = lg_expr_compile(&expr);
     if (status != LG_STATUS_OK) {
-        goto out;
-    }
-
-    status = lg_pin(&expr, &y_1);
-    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
         goto out;
     }
 
     lg_scalar *data = NULL;
-    status = lg_alloc_expr(&libgrad_allocator, &libgrad_allocator, &data, &expr);
+    status = lg_alloc_expr(
+        &libgrad_allocator,
+        &libgrad_allocator,
+        &data,
+        NULL,
+        &expr
+    );
     if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        goto out;
+    }
+
+    status = lg_get_last_location(&expr, &y_1);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
         goto out;
     }
     
     status = lg_cpu_exec(expr);
     if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
         goto out;
     }
 

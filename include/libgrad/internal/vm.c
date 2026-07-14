@@ -1,7 +1,7 @@
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/vm.h>
 
-lg_status lg_pin(lg_expr *expr, lg_tensor *x) {
+lg_status lg_get_last_location(lg_expr *expr, lg_tensor *x) {
     bool found = false;
     for (lg_size i = 0; i < expr->len; i++) {
         if (expr->y[i].born_at == x->born_at) {
@@ -12,17 +12,9 @@ lg_status lg_pin(lg_expr *expr, lg_tensor *x) {
             found = true;
         }
     }
-
     if (!found) {
         return LG_STATUS_NOT_FOUND;
     }
-
-    // Add NOP to ensure value lives until the end of the expression.
-    lg_status status = lg_nop(expr, *x);
-    if (status != LG_STATUS_OK) {
-        return status;
-    }
-
     return LG_STATUS_OK;
 }
 

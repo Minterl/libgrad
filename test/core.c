@@ -16,7 +16,6 @@
 
 // Using unusual memory alignment of 5 for testing purposes
 #define ALLOC_ADDR (void*)(5 * sizeof(lg_scalar))
-#define ALLOC_ALIGN 5 * sizeof(lg_scalar)
 
 typedef struct mock_allocator_context {
     lg_size bytes_allocated;
@@ -26,10 +25,6 @@ void* mock_alloc(void *_ctx, lg_size size_bytes) {
     mock_allocator_context *ctx = _ctx;
     ctx->bytes_allocated += size_bytes;
     return ALLOC_ADDR;
-}
-
-inline static lg_size mock_align_hint() {
-    return ALLOC_ALIGN;
 }
 
 static inline bool increment_coords_rtl(lg_size *coords, const lg_size *dim, lg_size rank) {
@@ -140,7 +135,6 @@ test_status test_alloc_tensor() {
         .ctx = (void*)&ctx,
         .alloc = mock_alloc,
         .free = NULL,
-        .align_hint = mock_align_hint,
     }; 
     lg_tensor ten = {
         .desc.rank = 2, 
@@ -486,7 +480,7 @@ test_status test_expr_alloc() {
     test_assert(lg_add(&expr, &y1, y0, x1) == LG_STATUS_OK, "failed to append add node");
 
     lg_scalar *data_buf;
-    test_assert(lg_alloc_expr(&allocator, &allocator, &data_buf, &expr) == LG_STATUS_OK, "failed to allocate expr");
+    test_assert(lg_alloc_expr(&allocator, &allocator, &data_buf, NULL, &expr) == LG_STATUS_OK, "failed to allocate expr");
     test_assert(data_buf == expr.y[0].data, "wanted %p; got %p", data_buf, expr.y[0].data);
     // test_assert(data_buf == expr.y[1].data, "wanted %p; got %p", data_buf, expr.y[1].data); 
     // fuck you, gcc ubsan. corrupts the fucking pointer
