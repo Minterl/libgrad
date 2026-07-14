@@ -76,6 +76,12 @@ typedef struct lg_expr {
     lg_tensor *x1       LG_CHECK_BOUNDS(len);
 } lg_expr;
 
+/// Ensure a specific tensor is present after finishing execution of an expr.
+/// Mutates the data pointer in x such that it can be read from normally.
+///
+/// This must be called AFTER allocating memory for the expr.
+lg_status lg_pin(lg_expr *expr, lg_tensor *x);
+
 lg_status lg_nop(lg_expr *expr, lg_tensor x);
 
 lg_status lg_add(lg_expr *expr, lg_tensor *y, const lg_tensor x0, const lg_tensor x1);

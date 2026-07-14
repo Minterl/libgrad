@@ -10,7 +10,9 @@
 
 #define EXPR_CAP 32
 
-// TODO: this should really be available by defaultc
+// TODO: write a small arena allocator common to the examples
+
+// TODO: this should really be available by default
 void *libc_alloc(void *ctx, size_t bytes) {
     (void)ctx;
     return (void*)calloc(bytes, 1);
@@ -35,10 +37,10 @@ int main(void) {
         .free = libc_free,
     };
 
-    // lg_tensor input = {
-    //     .desc.rank = 1,
-    //     .desc.dim = {28 * 28},
-    // };
+    lg_tensor x = {
+        .desc.rank = 1,
+        .desc.dim = {28 * 28},
+    };
     lg_tensor W_0 = {
         .desc.rank = 2,
         .desc.dim = {28 * 28, 128},
@@ -50,21 +52,33 @@ int main(void) {
 
     lg_status status = LG_STATUS_OK;
 
+    status = lg_alloc_tensor(&allocator, &x);
+    if (status != LG_STATUS_OK) {
+        goto out_free_expr;
+    }
+
     lg_tensor y_0 = {0};
     status = lg_add(&expr, &y_0, W_0, b_0);
     if (status != LG_STATUS_OK) {
-        goto out_free_expr;
+        goto out_free_input;
     }
-    
+
     status = lg_expr_compile(&expr);
     if (status != LG_STATUS_OK) {
-        goto out_free_expr;
+        goto out_free_input;
     }
+
     lg_scalar *data = NULL;
     status = lg_alloc_expr(&allocator, &allocator, &data, &expr);
     if (status != LG_STATUS_OK) {
-        goto out_free_expr;
+        goto out_free_input;
     }
+
+    status = lg_pin(&expr, &y_0);
+    if (status != LG_STATUS_OK) {
+        goto out_free_data;
+    }
+    
     status = lg_cpu_exec(expr);
     if (status != LG_STATUS_OK) {
         goto out_free_data;
@@ -72,6 +86,8 @@ int main(void) {
 
 out_free_data:
     free(data);
+out_free_input:
+    lg_free_tensor(&allocator, &x);
 out_free_expr:
     free(expr.opcodes);
     free(expr.y);

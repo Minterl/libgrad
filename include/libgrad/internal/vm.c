@@ -1,4 +1,30 @@
+#include <libgrad/internal/core.h>
 #include <libgrad/internal/vm.h>
+
+lg_status lg_pin(lg_expr *expr, lg_tensor *x) {
+    bool found = false;
+    for (lg_size i = 0; i < expr->len; i++) {
+        if (expr->y[i].born_at == x->born_at) {
+            // We only change the data pointer because the expr may have
+            // some other `desc` that doesn't match that of the caller.
+            // We do not want to mutate the caller's interpretation of the buffer.
+            x->data = expr->y[i].data; 
+            found = true;
+        }
+    }
+
+    if (!found) {
+        return LG_STATUS_NOT_FOUND;
+    }
+
+    // Add NOP to ensure value lives until the end of the expression.
+    lg_status status = lg_nop(expr, *x);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+
+    return LG_STATUS_OK;
+}
 
 lg_status lg_expr_append(
     lg_expr *expr,
@@ -21,6 +47,10 @@ lg_status lg_expr_append(
     expr->x1[next_idx] = x1;
 
     return LG_STATUS_OK;
+}
+
+lg_status lg_nop(lg_expr *expr, lg_tensor x) {
+    return lg_expr_append(expr, LG_OPCODE_NOP, (lg_tensor){ .born_at = expr->len }, x, (lg_tensor){0});
 }
 
 lg_status lg_add(
@@ -58,10 +88,6 @@ lg_status lg_add(
     }
 
     return LG_STATUS_OK;
-}
-
-lg_status lg_nop(lg_expr *expr, lg_tensor x) {
-    return lg_expr_append(expr, LG_OPCODE_NOP, (lg_tensor){ .born_at = expr->len }, x, (lg_tensor){0});
 }
 
 lg_status __lg_expr_pass_sort_axes(lg_expr *expr) {
