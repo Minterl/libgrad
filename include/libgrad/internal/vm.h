@@ -59,6 +59,12 @@ typedef enum lg_opcode {
     LG_OPCODE_LN,
 } lg_opcode;
 
+typedef union lg_expr_compilation_meta {
+    struct {
+        lg_size n_batch_axes;
+    } op_contract;
+} lg_expr_compilation_meta;
+
 /// An expression graph used to record operations
 ///
 /// An expression is represented in memory as a structure of arrays.
@@ -70,10 +76,11 @@ typedef struct lg_expr {
     lg_size cap;
     lg_size len;
     
-    lg_opcode *opcodes  LG_CHECK_BOUNDS(len);
-    lg_tensor *y        LG_CHECK_BOUNDS(len);
-    lg_tensor *x0       LG_CHECK_BOUNDS(len);
-    lg_tensor *x1       LG_CHECK_BOUNDS(len);
+    lg_opcode                 *opcodes  LG_CHECK_BOUNDS(len);
+    lg_tensor                 *y        LG_CHECK_BOUNDS(len);
+    lg_tensor                 *x0       LG_CHECK_BOUNDS(len);
+    lg_tensor                 *x1       LG_CHECK_BOUNDS(len);
+    lg_expr_compilation_meta  *meta     LG_CHECK_BOUNDS(len);
 } lg_expr;
 
 /// Gets the last physical location of the tensor `x` and populates

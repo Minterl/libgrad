@@ -36,17 +36,30 @@ lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor);
 /// Frees the buffers backing `tensor`.
 lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor);
 
+/// Allocate the memory necessary for an expr of capacity `cap`,
+/// and assign offsets into the buffer for each item in the SoA.
+lg_status lg_alloc_expr(
+    lg_allocator *allocator,
+    uint8_t **out_ptr,
+    lg_size *out_bytes_allocated,
+    lg_expr *expr,
+    lg_size cap
+);
+
+/// Frees the memory required for an expr.
+void lg_free_expr(lg_allocator *allocator, lg_expr *expr);
+
 /// Allocates the minimum amount of memory necessary to execute an expression
 /// and populates the `data` pointers for any tensor where they're NULL.
 ///
 /// Allocates the expression backing buffer monolithically using `perm` and returns 
 /// and allocates O(N) scratch memory using `scratch`.
 ///
-/// `out_data` and `out_bytes_allocated` are nullable.
-lg_status lg_alloc_expr(
+/// `out_ptr` and `out_bytes_allocated` are nullable.
+lg_status lg_alloc_expr_data(
     lg_allocator *perm,
     lg_allocator *scratch,
-    lg_scalar **out_data,
+    lg_scalar **out_ptr,
     lg_size *out_bytes_allocated,
     lg_expr *expr
 );

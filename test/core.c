@@ -1,5 +1,6 @@
 #ifndef LIBGRAD_IMPLEMENTATION
 #define LIBGRAD_IMPLEMENTATION
+#include "libgrad/internal/alloc.h"
 #endif // LIBGRAD_IMPLEMENTATION
 #ifndef LG_CPU_IMPLEMENTATION
 #define LG_CPU_IMPLEMENTATION
@@ -447,18 +448,14 @@ test_status test_cpu_matmul_batch() {
 }
 
 test_status test_expr_alloc() {
-    lg_expr expr = {
-        .cap = 32,
-        .x0 = (lg_tensor[32]){0},
-        .x1 = (lg_tensor[32]){0},
-        .y = (lg_tensor[32]){0},
-        .opcodes = (lg_opcode[32]){0},
-    };
-
     lg_allocator allocator = {
         .alloc = alloc_libc,
         .free = free_libc,
     };
+
+    lg_expr expr = {0};
+    uint8_t *expr_buf;
+    lg_alloc_expr(&allocator, &expr_buf, NULL, &expr, 32);
 
     lg_tensor x0 = { .desc.rank = 1, .desc.dim = {4} },
               x1 = { .desc.rank = 1, .desc.dim = {4} };
@@ -480,7 +477,7 @@ test_status test_expr_alloc() {
     test_assert(lg_add(&expr, &y1, y0, x1) == LG_STATUS_OK, "failed to append add node");
 
     lg_scalar *data_buf;
-    test_assert(lg_alloc_expr(&allocator, &allocator, &data_buf, NULL, &expr) == LG_STATUS_OK, "failed to allocate expr");
+    test_assert(lg_alloc_expr_data(&allocator, &allocator, &data_buf, NULL, &expr) == LG_STATUS_OK, "failed to allocate expr");
     test_assert(data_buf == expr.y[0].data, "wanted %p; got %p", data_buf, expr.y[0].data);
     // test_assert(data_buf == expr.y[1].data, "wanted %p; got %p", data_buf, expr.y[1].data); 
     // fuck you, gcc ubsan. corrupts the fucking pointer
@@ -496,6 +493,7 @@ test_status test_expr_alloc() {
     // test_assert_array_eq(expected_data, expr.y[1].data, 4, "%f");
     // still corrupts the fucking pointer
 
+    free(expr_buf);
     free(data_buf);
 
     return TEST_STATUS_OK;

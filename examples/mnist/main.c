@@ -1,3 +1,4 @@
+#include "libgrad/internal/alloc.h"
 #define LIBGRAD_IMPLEMENTATION
 #include <libgrad/libgrad.h>
 #ifndef LG_CPU_IMPLEMENTATION
@@ -18,14 +19,14 @@ int main(void) {
     assert(com_arena_init(&alloc, ARENA_CAP) == 0);
     lg_allocator libgrad_allocator = com_arena_as_lg_allocator(&alloc);
 
-    lg_expr expr = {
-        // TODO: this is also annoying
-        .cap = EXPR_CAP,
-        .opcodes = (lg_opcode*)arena_alloc(&alloc, EXPR_CAP * sizeof(lg_opcode)),
-        .y = (lg_tensor*)arena_alloc(&alloc, EXPR_CAP * sizeof(lg_tensor)),
-        .x0 = (lg_tensor*)arena_alloc(&alloc, EXPR_CAP * sizeof(lg_tensor)),
-        .x1 = (lg_tensor*)arena_alloc(&alloc, EXPR_CAP * sizeof(lg_tensor)),
-    };
+    lg_status status = LG_STATUS_OK;
+
+    lg_expr expr = {0};
+    status = lg_alloc_expr(&libgrad_allocator, NULL, NULL, &expr, EXPR_CAP);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        return status;
+    }
 
     lg_tensor x = {
         .desc.rank = 1,
@@ -39,8 +40,6 @@ int main(void) {
         .desc.rank = 1,
         .desc.dim = {1, 128},
     };
-
-    lg_status status = LG_STATUS_OK;
 
     status = lg_alloc_tensor(&libgrad_allocator, &x);
     if (status != LG_STATUS_OK) {
@@ -74,7 +73,7 @@ int main(void) {
     }
 
     lg_scalar *data = NULL;
-    status = lg_alloc_expr(
+    status = lg_alloc_expr_data(
         &libgrad_allocator,
         &libgrad_allocator,
         &data,

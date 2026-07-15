@@ -1,3 +1,4 @@
+#include <libgrad/internal/vm.h>
 #include <libgrad/internal/alloc.h>
 
 lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor) {
@@ -30,9 +31,59 @@ lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor) {
 }
 
 lg_status lg_alloc_expr(
+    lg_allocator *allocator,
+    uint8_t **out_ptr,
+    lg_size *out_bytes_allocated,
+    lg_expr *expr,
+    lg_size cap
+) {
+    const lg_size size_opcodes = cap * sizeof(lg_opcode);
+    const lg_size size_tensors = cap * sizeof(lg_tensor);
+    const lg_size size_meta = cap * sizeof(lg_expr_compilation_meta);
+    const lg_size size_total = size_opcodes + (3 * size_tensors) + size_meta;
+
+    uint8_t *buf = allocator->alloc(allocator->ctx, size_total);
+    if (buf == NULL) {
+        return LG_STATUS_OUT_OF_MEMORY;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = buf;
+    }
+    if (out_bytes_allocated != NULL) {
+        *out_bytes_allocated = size_total;
+    }
+
+    expr->cap = cap;
+    expr->opcodes = (lg_opcode*)buf;
+    buf += size_opcodes;
+    expr->y = (lg_tensor*)buf;
+    buf += size_tensors;
+    expr->x0 = (lg_tensor*)buf;
+    buf += size_tensors;
+    expr->x1 = (lg_tensor*)buf;
+    buf += size_tensors;
+    expr->meta = (lg_expr_compilation_meta*)buf;
+
+    expr->len = 0;
+
+    return LG_STATUS_OK;
+}
+
+void lg_free_expr(lg_allocator *allocator, lg_expr *expr) {
+    allocator->free(allocator->ctx, expr->opcodes);
+    expr->cap = 0;
+    expr->len = 0;
+    expr->opcodes = NULL;
+    expr->y = NULL;
+    expr->x0 = NULL;
+    expr->x1 = NULL;
+    expr->meta = NULL;
+}
+
+lg_status lg_alloc_expr_data(
     lg_allocator *perm,
     lg_allocator *scratch,
-    lg_scalar **out_data,
+    lg_scalar **out_ptr,
     lg_size *out_bytes_allocated,
     lg_expr *expr
 ) {
@@ -89,8 +140,8 @@ lg_status lg_alloc_expr(
         status = LG_STATUS_OUT_OF_MEMORY;
         goto out;
     }
-    if (out_data != NULL) {
-        *out_data = (lg_scalar*)_data;
+    if (out_ptr != NULL) {
+        *out_ptr = (lg_scalar*)_data;
     }
     if (out_bytes_allocated != NULL) {
         *out_bytes_allocated = max_offset;
