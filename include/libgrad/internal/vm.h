@@ -108,6 +108,7 @@ lg_status lg_stable_softmax(lg_expr *expr, const lg_tensor y, const lg_tensor in
 lg_status lg_sigmoid(lg_expr *expr, lg_tensor y, const lg_tensor in);
 lg_status lg_ln(lg_expr *expr, lg_tensor y, const lg_tensor in);
 
-lg_status lg_expr_compile(lg_expr *expr);
+/// "Compiles" an expr.
+lg_status lg_expr_compile(lg_expr *expr, lg_layout layout, lg_size unit_align);
 
 #endif // LG_VM_H_

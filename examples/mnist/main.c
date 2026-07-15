@@ -38,7 +38,7 @@ int main(void) {
     };
     lg_tensor b_0 = {
         .desc.rank = 1,
-        .desc.dim = {1, 128},
+        .desc.dim = {128},
     };
 
     status = lg_alloc_tensor(&libgrad_allocator, &x);
@@ -66,7 +66,7 @@ int main(void) {
         goto out;
     }
 
-    status = lg_expr_compile(&expr);
+    status = lg_expr_compile(&expr, LG_LAYOUT_ROW_MAJOR, 1);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;

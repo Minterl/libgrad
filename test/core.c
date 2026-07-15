@@ -476,13 +476,13 @@ test_status test_expr_alloc() {
     lg_tensor y1;
     test_assert(lg_add(&expr, &y1, y0, x1) == LG_STATUS_OK, "failed to append add node");
 
+    test_assert(lg_expr_compile(&expr, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to compile expr");
+
     lg_scalar *data_buf;
     test_assert(lg_alloc_expr_data(&allocator, &allocator, &data_buf, NULL, &expr) == LG_STATUS_OK, "failed to allocate expr");
     test_assert(data_buf == expr.y[0].data, "wanted %p; got %p", data_buf, expr.y[0].data);
     // test_assert(data_buf == expr.y[1].data, "wanted %p; got %p", data_buf, expr.y[1].data); 
     // fuck you, gcc ubsan. corrupts the fucking pointer
-
-    test_assert(lg_expr_compile(&expr) == LG_STATUS_OK, "failed to compile expr");
     test_assert(lg_cpu_exec(expr) == LG_STATUS_OK, "failed to exectute expr");
 
     // The buffers alias, so . . .

@@ -41,13 +41,11 @@ lg_status lg_expr_append(
     return LG_STATUS_OK;
 }
 
-/// Shallow copies from src to dest withotu copying the data pointer.
-/// This exists because simple assignment doesn't behave correctly all of the time.
-static inline void __lg_tensor_clone_metadata(lg_tensor *restrict dest, const lg_tensor *restrict src) {
+/// Copies the dims and rank from `src` to `dest`.
+static inline void __lg_tensor_clone_logical_shape(lg_tensor *restrict dest, const lg_tensor *restrict src) {
     dest->born_at = src->born_at;
     for (lg_size i = 0; i < src->desc.rank; i++) {
         dest->desc.dim[i] = src->desc.dim[i];
-        dest->desc.strides[i] = src->desc.strides[i];
     }
     dest->desc.rank = src->desc.rank;
 }
@@ -65,24 +63,9 @@ lg_status lg_add(
     const lg_size expr_idx = expr->len;
     lg_status status;
 
-    __lg_tensor_clone_metadata(y, &x0);
+    __lg_tensor_clone_logical_shape(y, &x0);
     y->born_at = expr_idx;
-    // TODO: naive layout
-    status = lg_desc_layout(&y->desc, LG_LAYOUT_ROW_MAJOR, 1 /* TODO */);
-    if (status != LG_STATUS_OK) {
-        return status;
-    }
-
     status = lg_expr_append(expr, LG_OPCODE_ADD, *y, x0, x1);
-    if (status != LG_STATUS_OK) {
-        return status;
-    }
-
-    status = lg_desc_broadcast((lg_desc*[]){
-        &y->desc,
-        &expr->x0[expr_idx].desc,
-        &expr->x1[expr_idx].desc,
-    }, 3);
     if (status != LG_STATUS_OK) {
         return status;
     }
@@ -100,28 +83,102 @@ lg_status lg_contract(
     const lg_size expr_idx = expr->len;
     lg_status status;
 
-    __lg_tensor_clone_metadata(y, &x0);
     y->born_at = expr_idx;
-    status = lg_desc_layout(&y->desc, LG_LAYOUT_ROW_MAJOR, 1 /* TODO */);
-    if (status != LG_STATUS_OK) {
-        return status;
+    lg_size rank = 0;
+    for (lg_size i = x0.desc.rank; i > n_batch_axes; i--, rank++) {
+        y->desc.dim[rank] = x0.desc.dim[i - 1];
     }
+    for (lg_size i = n_batch_axes; i < x1.desc.rank; i++, rank++) {
+        y->desc.dim[rank] = x0.desc.dim[i];
+    }
+    y->desc.rank = rank;
 
     status = lg_expr_append(expr, LG_OPCODE_CONTRACT, *y, x0, x1);
     if (status != LG_STATUS_OK) {
         return status;
     }
 
-    status = lg_desc_compute_contracted_dims(
-        &y->desc,
-        &x0.desc,
-        &x0.desc,
-        n_batch_axes
-    );
-    if (status != LG_STATUS_OK) {
-        return status;
+    expr->meta[expr_idx].op_contract.n_batch_axes = n_batch_axes;
+
+    return LG_STATUS_OK;
+}
+
+lg_status __lg_expr_pass_assign_layouts(lg_expr *expr, lg_layout layout, lg_size unit_align) {
+    for (lg_size i_op = 0; i_op < expr->len; i_op++) {
+        if (expr->opcodes[i_op] == LG_OPCODE_NOP) {
+            continue;
+        }
+
+        lg_desc *const descs[3] = {
+            &expr->y[i_op].desc,
+            &expr->x0[i_op].desc,
+            &expr->x1[i_op].desc,
+        };
+
+        for (lg_size i_desc = 0; i_desc < 3; i_desc++) {
+            lg_desc *desc = descs[i_desc];
+
+            for (lg_size i_stride = 0; i_stride < LG_MAX_RANK; i_stride++) {
+                if (desc->strides[i_stride] != 0) {
+                    goto skip_layout;
+                }
+            }
+
+            lg_status status = lg_desc_layout(desc, layout, unit_align);
+            if (status != LG_STATUS_OK) {
+                return status;
+            }
+
+skip_layout:;
+        }
     }
 
+    return LG_STATUS_OK;
+}
+
+lg_status __lg_expr_pass_precompute_strides(lg_expr *expr) {
+    lg_status status;
+    for (lg_size i = 0; i < expr->len; i++) {
+        switch (expr->opcodes[i]) {
+        case LG_OPCODE_NOP:
+            break;
+
+        case LG_OPCODE_ADD:
+        case LG_OPCODE_SUB:
+        case LG_OPCODE_HADAMARD: {
+            status = lg_desc_broadcast((lg_desc*[]){
+                &expr->y->desc,
+                &expr->x0[i].desc,
+                &expr->x1[i].desc,
+            }, 3);
+            if (status != LG_STATUS_OK) {
+                return status;
+            }
+            break;
+        }
+
+        case LG_OPCODE_CONTRACT: {
+            status = lg_desc_compute_contracted_dims(
+                &expr->y[i].desc,
+                &expr->x0[i].desc,
+                &expr->x1[i].desc,
+                expr->meta[i].op_contract.n_batch_axes
+            );
+            if (status != LG_STATUS_OK) {
+                return status;
+            }
+            break;
+        }
+
+        case LG_OPCODE_LOSS_MSE:
+        case LG_OPCODE_LOSS_CROSS_ENTROPY:
+        case LG_OPCODE_RELU:
+        case LG_OPCODE_STABLE_SOFTMAX:
+        case LG_OPCODE_SIGMOID:
+        case LG_OPCODE_LN:
+            return LG_STATUS_UNSUPPORTED_OPCODE;
+        }
+    }
     return LG_STATUS_OK;
 }
 
@@ -155,8 +212,16 @@ lg_status __lg_expr_pass_coalesce_axes(lg_expr *expr) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_expr_compile(lg_expr *expr) {
+lg_status lg_expr_compile(lg_expr *expr, lg_layout layout, lg_size unit_align) {
     lg_status status;
+    status = __lg_expr_pass_assign_layouts(expr, layout, unit_align);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    status = __lg_expr_pass_precompute_strides(expr);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
     status = __lg_expr_pass_sort_axes(expr);
     if (status != LG_STATUS_OK) {
         return status;
