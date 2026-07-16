@@ -23,7 +23,7 @@ struct lg_allocator {
     void *ctx;
     /// Allocate `size_bytes` bytes.
     /// Callers will assume that this pointer is aligned.
-    void* (*alloc)(void *ctx, lg_size size_bytes);
+    void* (*alloc)(void *ctx, size_t size_bytes);
     /// Free the memory at `ptr`.
     void (*free)(void *ctx, void *ptr);
 };
@@ -41,9 +41,9 @@ enum lg_status lga_FreeTensor(struct lg_allocator *allocator, struct lg_tensor *
 enum lg_status lga_AllocExpr(
     struct lg_allocator *allocator,
     uint8_t **out_ptr,
-    lg_size *out_bytes_allocated,
+    size_t *out_bytes_allocated,
     struct lg_expr *expr,
-    lg_size cap
+    size_t cap
 );
 
 /// Frees the memory required for an expr.
@@ -60,7 +60,7 @@ enum lg_status lga_AllocExprData(
     struct lg_allocator *perm,
     struct lg_allocator *scratch,
     lg_scalar **out_ptr,
-    lg_size *out_bytes_allocated,
+    size_t *out_bytes_allocated,
     struct lg_expr *expr
 );
 

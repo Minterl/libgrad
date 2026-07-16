@@ -62,24 +62,24 @@ enum lg_opcode {
 /// If x1.data == NULL, then the node represents a unary
 /// operation.
 /// Otherwise, it represents a binary operation as expected.
-struct lg_expr_node {
+struct lg_exprNode {
     enum lg_opcode    opcode;
 
     struct lg_tensor  y;
     struct lg_tensor  x0;
     struct lg_tensor  x1;
 
-    lg_size           contract_n_batch_axes;
+    size_t            contract_n_batch_axes;
 };
 
 /// The intermediate representation of a program.
 /// 
 /// As of right now, the exprs themselves do not support any control flow.
 struct lg_expr {
-    lg_size               cap;
-    lg_size               len;
+    size_t               cap;
+    size_t               len;
     
-    struct lg_expr_node  *nodes LG_CHECK_BOUNDS(len);
+    struct lg_exprNode  *nodes LG_CHECK_BOUNDS(len);
 };
 
 /// Gets the last physical location of the tensor `x` and populates
@@ -88,7 +88,7 @@ struct lg_expr {
 /// This does not guarantee that the value will actually exist at the end
 /// of execution. 
 /// 
-/// If you want to make sure that is the case, append a NOP using `lg_nop` to 
+/// If you want to make sure that is the case, append a NOP using `lgvm_Ncp` to 
 /// the end of the expr.
 enum lg_status lgvm_GetLastLocationOfTensor(struct lg_expr *expr, struct lg_tensor *x);
 
@@ -96,7 +96,7 @@ enum lg_status lgvm_Nop(struct lg_expr *expr, struct lg_tensor x);
 
 enum lg_status lgvm_Add(struct lg_expr *expr, struct lg_tensor *y, const struct lg_tensor x0, const struct lg_tensor x1);
 enum lg_status lgvm_Sub(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor x0, const struct lg_tensor x1);
-enum lg_status lgvm_Contract(struct lg_expr *expr, struct lg_tensor *y, struct lg_tensor x0, struct lg_tensor x1, const lg_size n_batch_axes);
+enum lg_status lgvm_Contract(struct lg_expr *expr, struct lg_tensor *y, struct lg_tensor x0, struct lg_tensor x1, const size_t n_batch_axes);
 enum lg_status lgvm_Hadamard(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor x0, const struct lg_tensor x1);
 
 enum lg_status lgvm_MSELoss(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor x0, const struct lg_tensor x1);
@@ -108,6 +108,6 @@ enum lg_status lgvm_Sigmoid(struct lg_expr *expr, struct lg_tensor y, const stru
 enum lg_status lgvm_Ln(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor in);
 
 /// "Compiles" an expr.
-enum lg_status lgvm_CompileExpr(struct lg_expr *expr, enum lg_layout layout, lg_size unit_align);
+enum lg_status lgvm_CompileExpr(struct lg_expr *expr, enum lg_layout layout, size_t unit_align);
 
 #endif // LG_VM_H_

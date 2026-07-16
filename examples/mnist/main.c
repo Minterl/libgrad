@@ -16,8 +16,8 @@
 
 int main(void) {
     struct arena alloc = {0};
-    assert(arena_init(&alloc, ARENA_CAP) == 0);
-    struct lg_allocator libgrad_allocator = arena_as_lg_allocator(&alloc);
+    assert(arenaInit(&alloc, ARENA_CAP) == 0);
+    struct lg_allocator libgrad_allocator = arenaAsLgAllocator(&alloc);
 
     enum lg_status status = LG_STATUS_OK;
 
@@ -106,7 +106,7 @@ int main(void) {
     } while (lg_nditerIncrement(&iter, y_1.desc.rank - 1));
 
 out:
-    arena_destroy(&alloc);
+    arenaDestroy(&alloc);
 
     return status;
 }

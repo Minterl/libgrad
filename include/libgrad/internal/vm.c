@@ -3,7 +3,7 @@
 
 enum lg_status lgvm_GetLastLocationOfTensor(struct lg_expr *expr, struct lg_tensor *x) {
     bool found = false;
-    for (lg_size i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->len; i++) {
         if (expr->nodes[i].y.born_at == x->born_at) {
             // We only change the data pointer because the expr may have
             // some other `desc` that doesn't match that of the caller.
@@ -20,7 +20,7 @@ enum lg_status lgvm_GetLastLocationOfTensor(struct lg_expr *expr, struct lg_tens
 
 enum lg_status __lgvm_exprAppend(
     struct lg_expr *expr,
-    const struct lg_expr_node node 
+    const struct lg_exprNode node 
 ) {
 #ifdef LG_SAFE
     if (expr->len >= expr->cap) {
@@ -28,7 +28,7 @@ enum lg_status __lgvm_exprAppend(
     }
 #endif // LG_SAFE
 
-    lg_size next_idx = expr->len;
+    size_t next_idx = expr->len;
     expr->len += 1;
     expr->nodes[next_idx] = node;
 
@@ -38,14 +38,14 @@ enum lg_status __lgvm_exprAppend(
 /// Copies the dims and rank from `src` to `dest`.
 static inline void __lgvm_CloneTensorLogicalShape(struct lg_tensor *restrict dest, const struct lg_tensor *restrict src) {
     dest->born_at = src->born_at;
-    for (lg_size i = 0; i < src->desc.rank; i++) {
+    for (size_t i = 0; i < src->desc.rank; i++) {
         dest->desc.dim[i] = src->desc.dim[i];
     }
     dest->desc.rank = src->desc.rank;
 }
 
 enum lg_status lgvm_Nop(struct lg_expr *expr, struct lg_tensor x) {
-    return __lgvm_exprAppend(expr, (struct lg_expr_node){
+    return __lgvm_exprAppend(expr, (struct lg_exprNode){
         .opcode = LG_OPCODE_NOP,
         .y = (struct lg_tensor){ .born_at = expr->len },
         .x0 = x,
@@ -58,12 +58,12 @@ enum lg_status lgvm_Add(
     const struct lg_tensor x0,
     const struct lg_tensor x1
 ) {
-    const lg_size expr_idx = expr->len;
+    const size_t expr_idx = expr->len;
     enum lg_status status;
 
     __lgvm_CloneTensorLogicalShape(y, &x0);
     y->born_at = expr_idx;
-    status = __lgvm_exprAppend(expr, (struct lg_expr_node){
+    status = __lgvm_exprAppend(expr, (struct lg_exprNode){
         .opcode = LG_OPCODE_ADD,   
         .y = *y,
         .x0 = x0,
@@ -81,22 +81,22 @@ enum lg_status lgvm_Contract(
     struct lg_tensor *y,
     struct lg_tensor x0,
     struct lg_tensor x1,
-    const lg_size n_batch_axes
+    const size_t n_batch_axes
 ) {
-    const lg_size expr_idx = expr->len;
+    const size_t expr_idx = expr->len;
     enum lg_status status;
 
     y->born_at = expr_idx;
-    lg_size rank = 0;
-    for (lg_size i = x0.desc.rank; i > n_batch_axes; i--, rank++) {
+    size_t rank = 0;
+    for (size_t i = x0.desc.rank; i > n_batch_axes; i--, rank++) {
         y->desc.dim[rank] = x0.desc.dim[i - 1];
     }
-    for (lg_size i = n_batch_axes; i < x1.desc.rank; i++, rank++) {
+    for (size_t i = n_batch_axes; i < x1.desc.rank; i++, rank++) {
         y->desc.dim[rank] = x0.desc.dim[i];
     }
     y->desc.rank = rank;
 
-    status = __lgvm_exprAppend(expr, (struct lg_expr_node){
+    status = __lgvm_exprAppend(expr, (struct lg_exprNode){
         .opcode = LG_OPCODE_CONTRACT,   
         .y = *y,
         .x0 = x0,
@@ -110,8 +110,8 @@ enum lg_status lgvm_Contract(
     return LG_STATUS_OK;
 }
 
-enum lg_status __lgvm_AssignLayouts(struct lg_expr *expr, enum lg_layout layout, lg_size unit_align) {
-    for (lg_size i_node = 0; i_node < expr->len; i_node++) {
+enum lg_status __lgvm_AssignLayouts(struct lg_expr *expr, enum lg_layout layout, size_t unit_align) {
+    for (size_t i_node = 0; i_node < expr->len; i_node++) {
         if (expr->nodes[i_node].opcode == LG_OPCODE_NOP) {
             continue;
         }
@@ -122,10 +122,10 @@ enum lg_status __lgvm_AssignLayouts(struct lg_expr *expr, enum lg_layout layout,
             &expr->nodes[i_node].x1.desc,
         };
 
-        for (lg_size i_desc = 0; i_desc < 3; i_desc++) {
+        for (size_t i_desc = 0; i_desc < 3; i_desc++) {
             struct lg_desc *desc = descs[i_desc];
 
-            for (lg_size i_stride = 0; i_stride < LG_MAX_RANK; i_stride++) {
+            for (size_t i_stride = 0; i_stride < LG_MAX_RANK; i_stride++) {
                 if (desc->strides[i_stride] != 0) {
                     goto skip_layout;
                 }
@@ -145,7 +145,7 @@ skip_layout:;
 
 enum lg_status __lg_PrecomputeStrides(struct lg_expr *expr) {
     enum lg_status status;
-    for (lg_size i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->len; i++) {
         switch (expr->nodes[i].opcode) {
         case LG_OPCODE_NOP:
             break;
@@ -191,7 +191,7 @@ enum lg_status __lg_PrecomputeStrides(struct lg_expr *expr) {
 
 enum lg_status __lgvm_SortAxes(struct lg_expr *expr) {
     enum lg_status status;
-    for (lg_size i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->len; i++) {
         status = lg_SortAxes((struct lg_desc*[]){
             &expr->nodes[i].y.desc,
             &expr->nodes[i].x0.desc,
@@ -206,7 +206,7 @@ enum lg_status __lgvm_SortAxes(struct lg_expr *expr) {
 
 enum lg_status __lgvm_CoalesceAxes(struct lg_expr *expr) {
     enum lg_status status;
-    for (lg_size i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->len; i++) {
         status = lg_CoalesceAxes((struct lg_desc*[]){
             &expr->nodes[i].y.desc,
             &expr->nodes[i].x0.desc,
@@ -219,7 +219,7 @@ enum lg_status __lgvm_CoalesceAxes(struct lg_expr *expr) {
     return LG_STATUS_OK;
 }
 
-enum lg_status lgvm_CompileExpr(struct lg_expr *expr, enum lg_layout layout, lg_size unit_align) {
+enum lg_status lgvm_CompileExpr(struct lg_expr *expr, enum lg_layout layout, size_t unit_align) {
     enum lg_status status;
     status = __lgvm_AssignLayouts(expr, layout, unit_align);
     if (status != LG_STATUS_OK) {

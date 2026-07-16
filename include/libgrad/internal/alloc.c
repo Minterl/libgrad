@@ -2,12 +2,12 @@
 #include <libgrad/internal/alloc.h>
 
 enum lg_status lga_AllocTensor(struct lg_allocator *allocator, struct lg_tensor *tensor) {
-    lg_size one_size = lg_descSizeInBytes(tensor->desc);
+    size_t one_size = lg_descSizeInBytes(tensor->desc);
     if (one_size == 0) {
         return LG_STATUS_OK;
     }
 
-    lg_size total_size = one_size;
+    size_t total_size = one_size;
 
     uint8_t *ptr = allocator->alloc(allocator->ctx, total_size);
     if (ptr == NULL) {
@@ -33,11 +33,11 @@ enum lg_status lga_FreeTensor(struct lg_allocator *allocator, struct lg_tensor *
 enum lg_status lga_AllocExpr(
     struct lg_allocator *allocator,
     uint8_t **out_ptr,
-    lg_size *out_bytes_allocated,
+    size_t *out_bytes_allocated,
     struct lg_expr *expr,
-    lg_size cap
+    size_t cap
 ) {
-    const lg_size size = cap * sizeof(struct lg_expr_node);
+    const size_t size = cap * sizeof(struct lg_exprNode);
     
     uint8_t *buf = allocator->alloc(allocator->ctx, size);
     if (buf == NULL) {
@@ -50,7 +50,7 @@ enum lg_status lga_AllocExpr(
         *out_bytes_allocated = size;
     }
 
-    expr->nodes = (struct lg_expr_node*)buf;
+    expr->nodes = (struct lg_exprNode*)buf;
     expr->cap = cap;
     expr->len = 0;
 
@@ -68,7 +68,7 @@ enum lg_status lga_AllocExprData(
     struct lg_allocator *perm,
     struct lg_allocator *scratch,
     lg_scalar **out_ptr,
-    lg_size *out_bytes_allocated,
+    size_t *out_bytes_allocated,
     struct lg_expr *expr
 ) {
     // under the conditions of a cyclomatic complexity
@@ -78,24 +78,24 @@ enum lg_status lga_AllocExprData(
     
     enum lg_status status = LG_STATUS_OK;
 
-    uint8_t *scratch_buf = scratch->alloc(scratch->ctx, expr->len * 4 * sizeof(lg_size));
+    uint8_t *scratch_buf = scratch->alloc(scratch->ctx, expr->len * 4 * sizeof(size_t));
     if (scratch_buf == NULL) {
         return LG_STATUS_OUT_OF_MEMORY;
     }
 
-    lg_size *sizes = (lg_size*)scratch_buf;
-    lg_size *dead_after = sizes + expr->len;
-    lg_size *total_freed_after_time = dead_after + expr->len;
-    lg_size *offsets = total_freed_after_time + expr->len;
+    size_t *sizes = (size_t*)scratch_buf;
+    size_t *dead_after = sizes + expr->len;
+    size_t *total_freed_after_time = dead_after + expr->len;
+    size_t *offsets = total_freed_after_time + expr->len;
 
-    for (lg_size i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->len; i++) {
         sizes[i] = 0;
         dead_after[i] = 0;
         total_freed_after_time[i] = 0;
         offsets[i] = 0;
     }
 
-    for (lg_size i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->len; i++) {
         if (expr->nodes[i].x0.data == NULL) {
             dead_after[expr->nodes[i].x0.born_at] = i;
         }
@@ -104,13 +104,13 @@ enum lg_status lga_AllocExprData(
         }
         sizes[expr->nodes[i].y.born_at] = lg_descSizeInBytes(expr->nodes[i].y.desc);
     }
-    for (lg_size i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->len; i++) {
         total_freed_after_time[dead_after[i]] += sizes[i];
     }
 
-    lg_size current_offset = 0;
-    lg_size max_offset = 0;
-    for (lg_size time = 0; time < expr->len; time++) {
+    size_t current_offset = 0;
+    size_t max_offset = 0;
+    for (size_t time = 0; time < expr->len; time++) {
         offsets[time] = current_offset;
         current_offset += sizes[expr->nodes[time].y.born_at];
         if (current_offset > max_offset) {
@@ -131,7 +131,7 @@ enum lg_status lga_AllocExprData(
         *out_bytes_allocated = max_offset;
     }
 
-    for (lg_size i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->len; i++) {
         expr->nodes[i].y.data = (lg_scalar*)(_data + offsets[expr->nodes[i].y.born_at]);
         if (expr->nodes[i].x0.data == NULL) {
             expr->nodes[i].x0.data = (lg_scalar*)(_data + offsets[expr->nodes[i].x0.born_at]);

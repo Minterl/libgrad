@@ -19,19 +19,19 @@
 #define ALLOC_ADDR (void*)(5 * sizeof(lg_scalar))
 
 typedef struct mock_allocator_context {
-    lg_size bytes_allocated;
+    size_t bytes_allocated;
 } mock_allocator_context;
 
-void* mock_alloc(void *_ctx, lg_size size_bytes) {
+void* mock_alloc(void *_ctx, size_t size_bytes) {
     mock_allocator_context *ctx = _ctx;
     ctx->bytes_allocated += size_bytes;
     return ALLOC_ADDR;
 }
 
-static inline bool increment_coords_rtl(lg_size *coords, const lg_size *dim, lg_size rank) {
+static inline bool increment_coords_rtl(size_t *coords, const size_t *dim, size_t rank) {
     if (rank == 0) return false;
 
-    lg_size axis = rank;
+    size_t axis = rank;
     
     while (axis > 0) {
         axis--;
@@ -48,7 +48,7 @@ static inline bool increment_coords_rtl(lg_size *coords, const lg_size *dim, lg_
 test_status test_tensor_layout() {
     // --- w/o padding ---
     {
-        lg_size expected_strides[] = {8, 4, 1};
+        size_t expected_strides[] = {8, 4, 1};
         struct lg_tensor ten = { .desc.dim = {3, 2, 4}, .desc.rank = 3 };
         test_assert(lg_descComputeLayoutStrides(&ten.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.desc.rank == 3, "got tensor rank %lu", ten.desc.rank);
@@ -57,7 +57,7 @@ test_status test_tensor_layout() {
 
     // --- w/ padding ---
     {
-        lg_size expected_strides[4] = {224, 32, 8, 1};
+        size_t expected_strides[4] = {224, 32, 8, 1};
         struct lg_tensor ten = { .desc.dim = {2, 7, 4, 3}, .desc.rank = 4 };
         test_assert(lg_descComputeLayoutStrides(&ten.desc, LG_LAYOUT_ROW_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.desc.rank == 4, "got tensor rank %lu", ten.desc.rank);
@@ -66,7 +66,7 @@ test_status test_tensor_layout() {
     
     // --- w/o padding ---
     {
-        lg_size expected_strides[] = {1, 4, 8};
+        size_t expected_strides[] = {1, 4, 8};
         struct lg_tensor ten = { .desc.dim = {3, 2, 4}, .desc.rank = 3 };
         test_assert(lg_descComputeLayoutStrides(&ten.desc, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.desc.rank == 3, "got tensor rank %lu", ten.desc.rank);
@@ -75,7 +75,7 @@ test_status test_tensor_layout() {
 
     // --- w/ padding ---
     {
-        lg_size expected_strides[] = {1, 8, 32, 224};
+        size_t expected_strides[] = {1, 8, 32, 224};
         struct lg_tensor ten = { .desc.dim = {2, 7, 4, 3}, .desc.rank = 4 };
         test_assert(lg_descComputeLayoutStrides(&ten.desc, LG_LAYOUT_COL_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.desc.rank == 4, "got tensor rank %lu", ten.desc.rank);
@@ -92,7 +92,7 @@ test_status test_tensor_size() {
         .desc.strides = {6, 1},
         .data = NULL,
     };
-    lg_size _36_size = lg_descSizeInBytes(_36.desc);
+    size_t _36_size = lg_descSizeInBytes(_36.desc);
     test_assert(_36_size == 36 * sizeof(lg_scalar), "tensor size was %lu", _36_size);
 
     struct lg_tensor also_36 = {
@@ -101,15 +101,15 @@ test_status test_tensor_size() {
         .desc.strides = {6, 3, 1},
         .data = NULL,
     };
-    lg_size also_36_size = lg_descSizeInBytes(also_36.desc);
+    size_t also_36_size = lg_descSizeInBytes(also_36.desc);
     test_assert(also_36_size == 36 * sizeof(lg_scalar), "tensor size was %lu", also_36_size);
 
     struct lg_tensor padded = { .desc.dim = {3, 3, 3}, .desc.rank = 3 };
     test_assert(lg_descComputeLayoutStrides(&padded.desc, LG_LAYOUT_ROW_MAJOR, 4) == LG_STATUS_OK, "failed to initialize tensor");
-    lg_size calculated_bytes = lg_descSizeInBytes(padded.desc);
+    size_t calculated_bytes = lg_descSizeInBytes(padded.desc);
     // Strides should be (12, 4, 1), meaning the maximum offset at (2, 2, 2) is
     // (12 + 4 + 1) * 2, so the max size is one more than that.
-    lg_size expected_bytes = ((12 + 4 + 1) * 2 + 1) * sizeof(lg_scalar);
+    size_t expected_bytes = ((12 + 4 + 1) * 2 + 1) * sizeof(lg_scalar);
     test_assert(
         calculated_bytes == expected_bytes,
         "tensor size calculated to be %lu bytes, wanted %lu",
@@ -148,9 +148,9 @@ test_status test_alloc_tensor() {
     // the data allocation should end at 41 * sizeof(lg_scalar),
     // and the gradient allocation should start at the nearest multiple of 5,
     // which is 40 * sizeof(lg_scalar) if lg_scalar is float, yielding 4 * sizeof(lg_scalar) bytes of padding.
-    lg_size expected_bytes = 36 * sizeof(lg_scalar);
+    size_t expected_bytes = 36 * sizeof(lg_scalar);
 
-    lg_size calculated_one_bytes = lg_descSizeInBytes(ten.desc);
+    size_t calculated_one_bytes = lg_descSizeInBytes(ten.desc);
     test_assert(calculated_one_bytes == expected_bytes, "tensor size calculated to be %lu bytes", calculated_one_bytes);
     test_assert(lga_AllocTensor(&allocator, &ten) == LG_STATUS_OK, "failed to allocate tensor");
     test_assert(ten.data == (lg_scalar*)ALLOC_ADDR, "allocated data at address %lu, expected %lu", ten.data, (lg_scalar*)ALLOC_ADDR);
@@ -194,8 +194,8 @@ test_status test_tensor_aligned_views() {
     test_assert(x1.desc.strides[1] == 1, "got second stride of %lu", x0.desc.strides[1]);
 
     // Coalesced dimensions
-    lg_size expected_strides_a[] = {16, 4, 1};
-    lg_size expected_strides_b[] = {0, 4, 1};
+    size_t expected_strides_a[] = {16, 4, 1};
+    size_t expected_strides_b[] = {0, 4, 1};
 
     test_assert(lg_ComputeBroadcastedAxes((struct lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to broadcast tensors");
     test_assert(lg_SortAxes((struct lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to sort dmis");
@@ -207,7 +207,7 @@ test_status test_tensor_aligned_views() {
     return TEST_STATUS_OK;
 }
 
-void *alloc_libc(void *_, lg_size bytes) {
+void *alloc_libc(void *_, size_t bytes) {
     (void)_;
     return calloc(bytes, 1);
 }
@@ -237,11 +237,11 @@ test_status test_cpu_add_basic() {
     test_assert(lg_ComputeBroadcastedAxes(((struct lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
     test_assert(lg_SortAxes(((struct lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to sort dims");
 
-    lg_size coords[LG_MAX_RANK] = {0};
+    size_t coords[LG_MAX_RANK] = {0};
     do {
-        lg_size x0_idx = 0;
-        lg_size x1_idx = 0;
-        for (lg_size i = 0; i < y.desc.rank; i++) {
+        size_t x0_idx = 0;
+        size_t x1_idx = 0;
+        for (size_t i = 0; i < y.desc.rank; i++) {
             x0_idx += x0.desc.strides[i] * coords[i];
             x1_idx += x1.desc.strides[i] * coords[i];
         }
@@ -251,13 +251,13 @@ test_status test_cpu_add_basic() {
 
     lgrt_cpu_Add(y.desc, y.data, x0.desc, x0.data, x1.desc, x1.data);
 
-    for (lg_size i = 0; i < LG_MAX_RANK; i++) {
+    for (size_t i = 0; i < LG_MAX_RANK; i++) {
         coords[i] = 0;
     }
 
     do {
-        lg_size idx = 0;
-        for (lg_size i = 0; i < y.desc.rank; i++) {
+        size_t idx = 0;
+        for (size_t i = 0; i < y.desc.rank; i++) {
             idx += y.desc.strides[i] * coords[i];
         }
         test_assert(y.data[idx] == 3.0f, "wanted 3, got %f", y.data[idx]);
@@ -289,11 +289,11 @@ test_status test_cpu_add_vec() {
 
     test_assert(lg_ComputeBroadcastedAxes(((struct lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
 
-    lg_size coords[LG_MAX_RANK] = {0};
+    size_t coords[LG_MAX_RANK] = {0};
     do {
-        lg_size x0_idx = 0;
-        lg_size x1_idx = 0;
-        for (lg_size i = 0; i < y.desc.rank; i++) {
+        size_t x0_idx = 0;
+        size_t x1_idx = 0;
+        for (size_t i = 0; i < y.desc.rank; i++) {
             x0_idx += x0.desc.strides[i] * coords[i];
             x1_idx += x1.desc.strides[i] * coords[i];
         }
@@ -303,13 +303,13 @@ test_status test_cpu_add_vec() {
 
     lgrt_cpu_Add(y.desc, y.data, x0.desc, x0.data, x1.desc, x1.data);
 
-    for (lg_size i = 0; i < LG_MAX_RANK; i++) {
+    for (size_t i = 0; i < LG_MAX_RANK; i++) {
         coords[i] = 0;
     }
 
     do {
-        lg_size idx = 0;
-        for (lg_size i = 0; i < y.desc.rank; i++) {
+        size_t idx = 0;
+        for (size_t i = 0; i < y.desc.rank; i++) {
             idx += y.desc.strides[i] * coords[i];
         }
         test_assert(y.data[idx] == 3.0f, "wanted 3, got %f", y.data[idx]);
@@ -332,8 +332,8 @@ test_status test_cpu_matmul() {
     test_assert(lg_descComputeLayoutStrides(&x1T.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
     {
-        lg_size expected_dim[] = {2, 2};
-        lg_size expected_strides[] = {2, 1};
+        size_t expected_dim[] = {2, 2};
+        size_t expected_strides[] = {2, 1};
         
         test_assert_array_eq(expected_dim, y.desc.dim, 2, "%lu");
         test_assert_array_eq(expected_strides, y.desc.strides, 2, "%lu");
@@ -355,10 +355,10 @@ test_status test_cpu_matmul() {
     test_assert(lg_ComputeContractedAxes(&y_cpy.desc, &x0.desc, &x1T.desc, 0) == LG_STATUS_OK, "failed to contract output dims");
 
     {
-        lg_size expected_dim[] = {2, 2, 2};
-        lg_size y_expected_strides[] = {2, 1, 0};
-        lg_size x0_expected_strides[] = {2, 0, 1};
-        lg_size x1_expected_strides[] = {0, 1, 2};
+        size_t expected_dim[] = {2, 2, 2};
+        size_t y_expected_strides[] = {2, 1, 0};
+        size_t x0_expected_strides[] = {2, 0, 1};
+        size_t x1_expected_strides[] = {0, 1, 2};
 
         test_assert(y_cpy.desc.rank == 3, "y rank: %lu", y_cpy.desc.rank);
         test_assert(x0.desc.rank == 3, "x0 rank: %lu", x0.desc.rank);
@@ -390,8 +390,8 @@ test_status test_cpu_matmul_batch() {
     test_assert(lg_descComputeLayoutStrides(&x1T.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
     {
-        lg_size expected_dim[] = {2, 2, 2};
-        lg_size expected_strides[] = {4, 2, 1};
+        size_t expected_dim[] = {2, 2, 2};
+        size_t expected_strides[] = {4, 2, 1};
         
         test_assert_array_eq(expected_dim, y.desc.dim, 3, "%lu");
         test_assert_array_eq(expected_strides, y.desc.strides, 3, "%lu");
@@ -419,10 +419,10 @@ test_status test_cpu_matmul_batch() {
     test_assert(lg_ComputeContractedAxes(&y_cpy.desc, &x0.desc, &x1T.desc, 1) == LG_STATUS_OK, "failed to contract output dims");
 
     {
-        lg_size expected_dim[] = {2, 2, 2, 2};
-        lg_size y_expected_strides[] = {4, 2, 1, 0};
-        lg_size x0_expected_strides[] = {4, 2, 0, 1};
-        lg_size x1_expected_strides[] = {4, 0, 1, 2};
+        size_t expected_dim[] = {2, 2, 2, 2};
+        size_t y_expected_strides[] = {4, 2, 1, 0};
+        size_t x0_expected_strides[] = {4, 2, 0, 1};
+        size_t x1_expected_strides[] = {4, 0, 1, 2};
 
         test_assert(y_cpy.desc.rank == 4, "y rank: %lu", y_cpy.desc.rank);
         test_assert(x0.desc.rank == 4, "x0 rank: %lu", x0.desc.rank);
@@ -455,7 +455,7 @@ test_status test_expr_alloc() {
 
     struct lg_expr expr = {0};
     uint8_t *expr_buf;
-    lg_size expr_fields_bytes_allocated;
+    size_t expr_fields_bytes_allocated;
     test_assert(lga_AllocExpr(&allocator, &expr_buf, &expr_fields_bytes_allocated, &expr, 32) == LG_STATUS_OK, "failed to allocate expr");
     test_assert(0 < expr_fields_bytes_allocated, "failed to allocate expr");
 

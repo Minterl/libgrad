@@ -1,13 +1,13 @@
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/debug.h>
 
-lg_size lg_descSizeInBytes(struct lg_desc desc) {
+size_t lg_descSizeInBytes(struct lg_desc desc) {
     if (desc.rank == 0) {
         return 0;
     }
 
-    lg_size max_offset = 0;
-    for (lg_size i = 0; i < desc.rank; i++) {
+    size_t max_offset = 0;
+    for (size_t i = 0; i < desc.rank; i++) {
         if (desc.dim[i] > 0) {
             max_offset += (desc.dim[i] - 1) * desc.strides[i];
         }
@@ -16,26 +16,26 @@ lg_size lg_descSizeInBytes(struct lg_desc desc) {
     return (max_offset + 1) * sizeof(lg_scalar);
 }
 
-void lg_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, lg_size copy_to_dim) {
-    lg_size dim_offset = 0;
-    for (lg_size i = 0; i < copy_to_dim; i++) {
+void lg_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, size_t copy_to_dim) {
+    size_t dim_offset = 0;
+    for (size_t i = 0; i < copy_to_dim; i++) {
         dim_offset += desc.dim[i];
     }
-    const lg_size n_values = desc.dim[copy_to_dim];
-    for (lg_size i = 0; i < n_values; i++) {
+    const size_t n_values = desc.dim[copy_to_dim];
+    for (size_t i = 0; i < n_values; i++) {
         dest[dim_offset + i] = vector[i];
     }
 }
 
-enum lg_status lg_descComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, lg_size unit_align) {
+enum lg_status lg_descComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align) {
 #ifdef LG_SAFE
     if (desc->rank > LG_MAX_RANK) {
         return LG_STATUS_INVALID_RANK;
     }
 #endif // LG_SAFE
-    lg_size last_stride = 1;
-    for (lg_size i = 1; i <= desc->rank; i++) {
-        lg_size axis = layout == LG_LAYOUT_ROW_MAJOR ? desc->rank - i : i - 1;
+    size_t last_stride = 1;
+    for (size_t i = 1; i <= desc->rank; i++) {
+        size_t axis = layout == LG_LAYOUT_ROW_MAJOR ? desc->rank - i : i - 1;
         desc->strides[axis] = last_stride;
         last_stride *= desc->dim[desc->rank - i];
         // Conceptually, we only pad the rightmost dimension.
@@ -59,8 +59,8 @@ bool lg_descIsIsotropic(struct lg_desc desc) {
     case 0:
         return 1;
     default: {
-        lg_size last_dim = desc.dim[0];
-        for (lg_size i = 0; i < desc.rank; i++) {
+        size_t last_dim = desc.dim[0];
+        for (size_t i = 0; i < desc.rank; i++) {
             if (last_dim != desc.dim[i]) {
                 return 0;
             }
@@ -70,33 +70,24 @@ bool lg_descIsIsotropic(struct lg_desc desc) {
     }
 }
 
-void lg_descTranspose(struct lg_desc *desc) {
-     for (size_t i = 0; i < desc->rank / 2; i++) {
-         const size_t opp = desc->rank - 1 - i;
-         size_t temp = desc->dim[i];
-        desc->dim[i] = desc->dim[opp];
-        desc->dim[opp] = temp;
-    }
-}
-
 /// Returns the maximum rank of all of the descriptors
 static inline size_t __lg_descLeftPadAxes(struct lg_desc **descs, size_t n_descs) {
-     size_t max_rank = 0;
-     for (size_t i = 0; i < n_descs; i++) {
+    size_t max_rank = 0;
+    for (size_t i = 0; i < n_descs; i++) {
         if (descs[i]->rank > max_rank) {
             max_rank = descs[i]->rank;
         }
     }
 
-    for (lg_size i = 0; i < n_descs; i++) {
+    for (size_t i = 0; i < n_descs; i++) {
         if (descs[i]->rank < max_rank) {
-            lg_size shift = max_rank - descs[i]->rank;
-            for (lg_size j = descs[i]->rank; j > 0; j--) {
-                lg_size src_idx = j - 1;
+            size_t shift = max_rank - descs[i]->rank;
+            for (size_t j = descs[i]->rank; j > 0; j--) {
+                size_t src_idx = j - 1;
                 descs[i]->dim[src_idx + shift] = descs[i]->dim[src_idx];
                 descs[i]->strides[src_idx + shift] = descs[i]->strides[src_idx];
             }
-            for (lg_size j = 0; j < shift; j++) {
+            for (size_t j = 0; j < shift; j++) {
                 descs[i]->dim[j] = 1;
                 descs[i]->strides[j] = 0;
             }
@@ -107,7 +98,7 @@ static inline size_t __lg_descLeftPadAxes(struct lg_desc **descs, size_t n_descs
     return max_rank;
 }
     
-enum lg_status lg_ComputeBroadcastedAxes(struct lg_desc **descs, lg_size n_descs) {
+ enum lg_status lg_ComputeBroadcastedAxes(struct lg_desc **descs, size_t n_descs) {
     const size_t max_rank = __lg_descLeftPadAxes(descs, n_descs);
 
     // --- Validate that all tensors are broadcast-compatible ---
@@ -121,14 +112,14 @@ enum lg_status lg_ComputeBroadcastedAxes(struct lg_desc **descs, lg_size n_descs
     // 1) The dimensions are the same.
     // 2) One of the dimensions is 1.
     // 3) One of the dimensions does not exist.
-    lg_size master_dim[LG_MAX_RANK];
-    for (lg_size i = 0; i < max_rank; i++) {
+    size_t master_dim[LG_MAX_RANK];
+    for (size_t i = 0; i < max_rank; i++) {
         master_dim[i] = 1;
     }
 
-    for (lg_size i_desc = 0; i_desc < n_descs; i_desc++) {
-        for (lg_size i_axis = 0; i_axis < max_rank; i_axis++) {
-            lg_size dim_current = (i_axis < descs[i_desc]->rank) ? descs[i_desc]->dim[i_axis] : 1;
+    for (size_t i_desc = 0; i_desc < n_descs; i_desc++) {
+        for (size_t i_axis = 0; i_axis < max_rank; i_axis++) {
+            size_t dim_current = (i_axis < descs[i_desc]->rank) ? descs[i_desc]->dim[i_axis] : 1;
             if (dim_current == 1) {
                 continue;
             }
@@ -151,8 +142,8 @@ enum lg_status lg_ComputeBroadcastedAxes(struct lg_desc **descs, lg_size n_descs
     // 1) Setting all strides less than the master to zero, causing the actual
     //    offsets to never move.
     // 2) Aligning the logical dimensions of the tensor with the master.
-    for (lg_size i_desc = 0; i_desc < n_descs; i_desc++) {
-        for (lg_size i_axis = 1; i_axis <= max_rank; i_axis++) {
+    for (size_t i_desc = 0; i_desc < n_descs; i_desc++) {
+        for (size_t i_axis = 1; i_axis <= max_rank; i_axis++) {
             if (descs[i_desc]->dim[max_rank - i_axis] < master_dim[max_rank - i_axis]) {
                 descs[i_desc]->strides[max_rank - i_axis] = 0;
                 descs[i_desc]->dim[max_rank - i_axis] = master_dim[max_rank - i_axis];
@@ -169,7 +160,7 @@ enum lg_status lg_ComputeBroadcastedAxes(struct lg_desc **descs, lg_size n_descs
     return LG_STATUS_OK;
 }
 
-enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, lg_size n_batch_axes) {
+enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes) {
     // The logical tensor axes will be laid out as follows:
     // { [batch], [x0_free], [x1_free], [contracted] }
     //    reg      reg       reg       0          | y strides
@@ -184,15 +175,15 @@ enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, s
     // x1.rank = n_batch + n_contracted + x1_free
     // y.rank = n_batch + x0_free + x1_free
     // ergo ...
-    const lg_size n_contracted_axes = (x0->rank + x1->rank - y->rank - n_batch_axes) / 2;
-    const lg_size x0_first_contracted_axis = x0->rank - n_contracted_axes;
-    const lg_size x1_first_free_axis = n_contracted_axes + n_batch_axes;
+    const size_t n_contracted_axes = (x0->rank + x1->rank - y->rank - n_batch_axes) / 2;
+    const size_t x0_first_contracted_axis = x0->rank - n_contracted_axes;
+    const size_t x1_first_free_axis = n_contracted_axes + n_batch_axes;
 
     // Batch axes are already in place
-    lg_size r = n_batch_axes;
+    size_t r = n_batch_axes;
 
     // Free axes
-    for (lg_size i = n_batch_axes; i < x0_first_contracted_axis; i++, r++) {
+    for (size_t i = n_batch_axes; i < x0_first_contracted_axis; i++, r++) {
         x0->dim[r] = x0_cpy.dim[i];
         x0->strides[r] = x0_cpy.strides[i];
         x1->dim[r] = x0_cpy.dim[i];
@@ -202,7 +193,7 @@ enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, s
         }
         y->strides[r] = y_cpy.strides[r];
     }
-    for (lg_size i = x1_first_free_axis; i < x1_cpy.rank; i++, r++) {
+    for (size_t i = x1_first_free_axis; i < x1_cpy.rank; i++, r++) {
         x0->dim[r] = x1_cpy.dim[i];
         x0->strides[r] = 0;
         x1->dim[r] = x1_cpy.dim[i];
@@ -216,7 +207,7 @@ enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, s
     // Contracted axes
     if (n_contracted_axes > 0) {
         for (
-            lg_size x0_ax = x0_first_contracted_axis, x1_ax = x1_first_free_axis - 1;
+            size_t x0_ax = x0_first_contracted_axis, x1_ax = x1_first_free_axis - 1;
             x0_ax < x0_cpy.rank; // x1_ax > 0
             x0_ax++, x1_ax--, r++
         ) {
@@ -236,23 +227,23 @@ enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, s
     return LG_STATUS_OK;
 }
 
-enum lg_status lg_SortAxes(struct lg_desc **descs, lg_size n_descs) {
-    lg_size max_rank = 0;
-    for (lg_size i = 0; i < n_descs; i++) {
+enum lg_status lg_SortAxes(struct lg_desc **descs, size_t n_descs) {
+    size_t max_rank = 0;
+    for (size_t i = 0; i < n_descs; i++) {
         if (descs[i]->rank > max_rank) {
             max_rank = descs[i]->rank;
         }
     }
 
-    for (lg_size i = 0; i < max_rank; i++) {
+    for (size_t i = 0; i < max_rank; i++) {
         bool swapped = 0;
-        for (lg_size j = 1; j < max_rank - i; j++) {
-            const lg_size prev_dim = descs[0]->strides[j - 1];
-            const lg_size cur_dim = descs[0]->strides[j];
+        for (size_t j = 1; j < max_rank - i; j++) {
+            const size_t prev_dim = descs[0]->strides[j - 1];
+            const size_t cur_dim = descs[0]->strides[j];
             if (prev_dim < cur_dim) {
                 // Swap the dimensions and strides for all of the tensors
-                for (lg_size k = 0; k < n_descs; k++) {
-                    lg_size temp = descs[k]->dim[j - 1];
+                for (size_t k = 0; k < n_descs; k++) {
+                    size_t temp = descs[k]->dim[j - 1];
                     descs[k]->dim[j - 1] = descs[k]->dim[j];
                     descs[k]->dim[j] = temp;
                     temp = descs[k]->strides[j - 1];
@@ -270,9 +261,9 @@ enum lg_status lg_SortAxes(struct lg_desc **descs, lg_size n_descs) {
     return LG_STATUS_OK;
 }
 
-enum lg_status lg_CoalesceAxes(struct lg_desc **descs, lg_size n_descs) {
-    lg_size max_rank = 0;
-    for (lg_size i = 0; i < n_descs; i++) {
+enum lg_status lg_CoalesceAxes(struct lg_desc **descs, size_t n_descs) {
+    size_t max_rank = 0;
+    for (size_t i = 0; i < n_descs; i++) {
         if (descs[i]->rank > max_rank) {
             max_rank = descs[i]->rank;
         }
@@ -287,14 +278,14 @@ enum lg_status lg_CoalesceAxes(struct lg_desc **descs, lg_size n_descs) {
     //    previous dimenison.
     //
     // Use i + 1 < max_rank to handle underflows.
-    for (lg_size i = 0; i + 1 < max_rank; i++) {
+    for (size_t i = 0; i + 1 < max_rank; i++) {
         while (i + 1 < max_rank) {
             bool can_coalesce = 1;
-            for (lg_size j = 0; j < n_descs; j++) {
-                const lg_size d0 = descs[j]->dim[i];
-                const lg_size d1 = descs[j]->dim[i + 1];
-                const lg_size s0 = descs[j]->strides[i];
-                const lg_size s1 = descs[j]->strides[i + 1];
+            for (size_t j = 0; j < n_descs; j++) {
+                const size_t d0 = descs[j]->dim[i];
+                const size_t d1 = descs[j]->dim[i + 1];
+                const size_t s0 = descs[j]->strides[i];
+                const size_t s1 = descs[j]->strides[i + 1];
 
                 const bool is_broadcasted = s0 == 0 || s1 == 0;
                 const bool has_unit = d0 == 1 || d1 == 1;
@@ -310,15 +301,15 @@ enum lg_status lg_CoalesceAxes(struct lg_desc **descs, lg_size n_descs) {
                 break;
             }
 
-            const lg_size new_dim = descs[0]->dim[i] * descs[0]->dim[i + 1];
+            const size_t new_dim = descs[0]->dim[i] * descs[0]->dim[i + 1];
             max_rank--;
-            for (lg_size j = 0; j < n_descs; j++) {
+            for (size_t j = 0; j < n_descs; j++) {
                 descs[j]->rank = max_rank;
                 descs[j]->dim[i] = new_dim;
                 if (descs[j]->strides[i + 1] != 0) {
                     descs[j]->strides[i] = descs[j]->strides[i + 1];
                 }
-                for (lg_size k = i + 1; k < max_rank; k++) {
+                for (size_t k = i + 1; k < max_rank; k++) {
                     descs[j]->dim[k] = descs[j]->dim[k + 1];
                     descs[j]->strides[k] = descs[j]->strides[k + 1];
                 }
@@ -329,10 +320,10 @@ enum lg_status lg_CoalesceAxes(struct lg_desc **descs, lg_size n_descs) {
     return LG_STATUS_OK;
 }
 
-bool lg_nditerIncrement(struct lg_nditer *iter, lg_size axis) {
-    const lg_size rank = iter->descs[0].rank;
-    const lg_size first_tracked_dim = rank - iter->n_tracked_dims;
-    const lg_size *restrict dim = iter->descs[0].dim;
+bool lg_nditerIncrement(struct lg_nditer *iter, size_t axis) {
+    const size_t rank = iter->descs[0].rank;
+    const size_t first_tracked_dim = rank - iter->n_tracked_dims;
+    const size_t *restrict dim = iter->descs[0].dim;
 
     if (rank == 0) {
         return false;
@@ -343,13 +334,13 @@ bool lg_nditerIncrement(struct lg_nditer *iter, lg_size axis) {
         axis--;
         iter->coords[axis]++;
         if (iter->coords[axis] < dim[axis]) {
-            for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
+            for (size_t i = 0; i < LG_N_TRACKED_TENSORS; i++) {
                 iter->indices[i] += iter->descs[i].strides[axis];
             }
             return true; 
         }
         iter->coords[axis] = 0;
-        for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
+        for (size_t i = 0; i < LG_N_TRACKED_TENSORS; i++) {
             iter->indices[i] -= iter->descs[i].strides[axis] * (dim[axis] - 1);
         }
     }
@@ -357,14 +348,14 @@ bool lg_nditerIncrement(struct lg_nditer *iter, lg_size axis) {
     return false;
 }
 
-void lg_nditerGoto(struct lg_nditer *iter, lg_size *coords) {
-    for(lg_size i = 0; i < iter->n_tracked_dims; i++) {
+void lg_nditerGoto(struct lg_nditer *iter, size_t *coords) {
+    for(size_t i = 0; i < iter->n_tracked_dims; i++) {
         iter->coords[i] = coords[i];
     }
 
-    for (lg_size i = 0; i < LG_N_TRACKED_TENSORS; i++) {
+    for (size_t i = 0; i < LG_N_TRACKED_TENSORS; i++) {
         iter->indices[i] = 0;
-        for (lg_size j = 0; j < iter->n_tracked_dims; j++) {
+        for (size_t j = 0; j < iter->n_tracked_dims; j++) {
             iter->indices[i] += iter->descs[i].strides[j] * coords[j];
         }
     }

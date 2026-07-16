@@ -23,11 +23,6 @@
 #   define lg_scalar float
 #endif // lg_scalar
 
-/// Pointer-sized integer
-#ifndef lg_size
-#   define lg_size size_t
-#endif // lg_size
-
 /// Bounds checking
 #ifdef __cplusplus
 #   define LG_CHECK_BOUNDS(x) /* nothing */
@@ -73,14 +68,14 @@ enum lg_layout {
 struct lg_desc {
     /// The rank of the tensor.
     /// Must be less than LG_MAX_RANK.
-    lg_size rank;
+    size_t rank;
 
     /// The dimensionality of the tensor.
-    lg_size dim[LG_MAX_RANK];
+    size_t dim[LG_MAX_RANK];
 
     /// The strides of the tensor.
     /// The order of this array must match that of `dim`.
-    lg_size strides[LG_MAX_RANK];
+    size_t strides[LG_MAX_RANK];
 };
 
 /// Tracks the coordinates of LG_N_TRACKED_TENSORS tensors.
@@ -88,32 +83,32 @@ struct lg_desc {
 /// All tensors in a single iter must be both broadcasted and
 /// have their dims sorted in descending order.
 struct lg_nditer {
-    lg_size coords[LG_MAX_RANK];
+    size_t coords[LG_MAX_RANK];
     struct lg_desc descs[LG_N_TRACKED_TENSORS];
-    lg_size indices[LG_N_TRACKED_TENSORS];
-    lg_size n_tracked_dims;
+    size_t indices[LG_N_TRACKED_TENSORS];
+    size_t n_tracked_dims;
 };
 
 /// Increment the coordinate `axis` on `iter` and update offsets.
 /// 
 /// Does not perform any bounds checking.
-bool lg_nditerIncrement(struct lg_nditer *iter, lg_size axis);
+bool lg_nditerIncrement(struct lg_nditer *iter, size_t axis);
 
 /// Recomputes the indices in `iter` according to its `coords`.
 ///
 /// If you want to "jump" to a specific coordinate in a tensor, this is the
 /// easiest way to do it.
-void lg_nditerGoto(struct lg_nditer *iter, lg_size *coords);
+void lg_nditerGoto(struct lg_nditer *iter, size_t *coords);
 
 /// Broadcast tensor views.
 ///
-enum lg_status lg_ComputeBroadcastedAxes(struct lg_desc **descs, lg_size n_descs);
+enum lg_status lg_ComputeBroadcastedAxes(struct lg_desc **descs, size_t n_descs);
 
 /// Contracts the dimensions of `y`, inferring the contracted dimensions.
 ///
 /// The contracted dimensions must be aligned at the beginning of `x0`, and `x1` with batch dimensions
 /// following.
-enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, lg_size n_batch_axes);
+enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes);
 
 /// Sort axes such that the primary is unit stride first.
 ///
@@ -125,19 +120,19 @@ enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, s
 /// plan for the other tensors. In that, this is the tensor where it is 
 /// guaranteed that the contiguous dimension (the dimension with the unit stride)
 /// will be accessed sequentially in memory.
-enum lg_status lg_SortAxes(struct lg_desc **descs, lg_size n_descs);
+enum lg_status lg_SortAxes(struct lg_desc **descs, size_t n_descs);
 
 /// Coalesce tensor axes to be as flat as possible.
 ///
 /// Inputs to this function MUST be broadcasted AND sorted from least to greatest
 /// using `lg_SortAxes`.
-enum lg_status lg_CoalesceAxes(struct lg_desc **descs, lg_size n_descs);
+enum lg_status lg_CoalesceAxes(struct lg_desc **descs, size_t n_descs);
 
 /// Compute the size in bytes of a tensor's data buffer.
-lg_size lg_descSizeInBytes(struct lg_desc desc);
+size_t lg_descSizeInBytes(struct lg_desc desc);
 
 /// Copy a vector value to the dim `copy_to_dim`.
-void lg_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, lg_size copy_to_axis);
+void lg_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, size_t copy_to_axis);
 
 /// Lays out a tensor with pre-populated `dim` and `rank` with the strides to be stored in
 /// the order in `layout`. In this layout, the rightmost dimension has the unit stride.
@@ -147,7 +142,7 @@ void lg_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg
 /// Does not allocate any memory; that can be done with `lg_alloc_tensor`.
 ///
 /// This is the recommended and standard way to initialize a tensor layout.
-enum lg_status lg_descComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, lg_size unit_align);
+enum lg_status lg_descComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align);
 
 /// Returns true if a tensor is isotropic.
 /// 
