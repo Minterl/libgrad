@@ -12,23 +12,23 @@
 /// non-zero values in `dim`.
 ///
 /// Backing buffers are stored stride-major.
-typedef struct lg_tensor {
+struct lg_tensor {
     /// Since the exprs are pure SSA, the time the (y) value is born at
     /// functions as a globally unique identifier.
     uint32_t born_at;
     
     /// The shape descriptor of the tensor.
-    lg_desc desc;
+    struct lg_desc desc;
     
     /// The tensor's primary backing buffer.
     lg_scalar *data;
-} lg_tensor;
+};
 
 /// Discriminator for an operation.
 ///
 /// The integer representations of opcodes are not designed
 /// to be stable and should not be serialized.
-typedef enum lg_opcode {
+enum lg_opcode {
     /// --- BINARY OPERATIONS ---
     /// Element-wise tensor addition
     LG_OPCODE_ADD,
@@ -55,32 +55,32 @@ typedef enum lg_opcode {
     LG_OPCODE_SIGMOID,
     /// Element-wise natural log
     LG_OPCODE_LN,
-} lg_opcode;
+};
 
 /// An IR node in an expr.
 ///
 /// If x1.data == NULL, then the node represents a unary
 /// operation.
 /// Otherwise, it represents a binary operation as expected.
-typedef struct lg_expr_node {
-    lg_opcode  opcode;
+struct lg_expr_node {
+    enum lg_opcode    opcode;
 
-    lg_tensor  y;
-    lg_tensor  x0;
-    lg_tensor  x1;
+    struct lg_tensor  y;
+    struct lg_tensor  x0;
+    struct lg_tensor  x1;
 
-    lg_size    contract_n_batch_axes;
-} lg_expr_node;
+    lg_size           contract_n_batch_axes;
+};
 
 /// The intermediate representation of a program.
 /// 
 /// As of right now, the exprs themselves do not support any control flow.
-typedef struct lg_expr {
-    lg_size        cap;
-    lg_size        len;
+struct lg_expr {
+    lg_size               cap;
+    lg_size               len;
     
-    lg_expr_node  *nodes LG_CHECK_BOUNDS(len);
-} lg_expr;
+    struct lg_expr_node  *nodes LG_CHECK_BOUNDS(len);
+};
 
 /// Gets the last physical location of the tensor `x` and populates
 /// its `data` pointer if found.
@@ -90,24 +90,24 @@ typedef struct lg_expr {
 /// 
 /// If you want to make sure that is the case, append a NOP using `lg_nop` to 
 /// the end of the expr.
-lg_status lg_get_last_location(lg_expr *expr, lg_tensor *x);
+enum lg_status lgvm_GetLastLocationOfTensor(struct lg_expr *expr, struct lg_tensor *x);
 
-lg_status lg_nop(lg_expr *expr, lg_tensor x);
+enum lg_status lgvm_Nop(struct lg_expr *expr, struct lg_tensor x);
 
-lg_status lg_add(lg_expr *expr, lg_tensor *y, const lg_tensor x0, const lg_tensor x1);
-lg_status lg_sub(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
-lg_status lg_contract(lg_expr *expr, lg_tensor *y, lg_tensor x0, lg_tensor x1, const lg_size n_batch_axes);
-lg_status lg_hadamard(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+enum lg_status lgvm_Add(struct lg_expr *expr, struct lg_tensor *y, const struct lg_tensor x0, const struct lg_tensor x1);
+enum lg_status lgvm_Sub(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor x0, const struct lg_tensor x1);
+enum lg_status lgvm_Contract(struct lg_expr *expr, struct lg_tensor *y, struct lg_tensor x0, struct lg_tensor x1, const lg_size n_batch_axes);
+enum lg_status lgvm_Hadamard(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor x0, const struct lg_tensor x1);
 
-lg_status lg_loss_mse(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
-lg_status lg_loss_cross_entropy(lg_expr *expr, lg_tensor y, const lg_tensor x0, const lg_tensor x1);
+enum lg_status lgvm_MSELoss(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor x0, const struct lg_tensor x1);
+enum lg_status lgvm_CrossEntropyLoss(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor x0, const struct lg_tensor x1);
 
-lg_status lg_relu(lg_expr *expr, lg_tensor y, const lg_tensor in);
-lg_status lg_stable_softmax(lg_expr *expr, const lg_tensor y, const lg_tensor in);
-lg_status lg_sigmoid(lg_expr *expr, lg_tensor y, const lg_tensor in);
-lg_status lg_ln(lg_expr *expr, lg_tensor y, const lg_tensor in);
+enum lg_status lgvm_ReLU(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor in);
+enum lg_status lgvm_StableSoftmax(struct lg_expr *expr, const struct lg_tensor y, const struct lg_tensor in);
+enum lg_status lgvm_Sigmoid(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor in);
+enum lg_status lgvm_Ln(struct lg_expr *expr, struct lg_tensor y, const struct lg_tensor in);
 
 /// "Compiles" an expr.
-lg_status lg_expr_compile(lg_expr *expr, lg_layout layout, lg_size unit_align);
+enum lg_status lgvm_CompileExpr(struct lg_expr *expr, enum lg_layout layout, lg_size unit_align);
 
 #endif // LG_VM_H_

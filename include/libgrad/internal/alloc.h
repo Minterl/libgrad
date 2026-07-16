@@ -18,7 +18,7 @@
 /// a) don't (just write it yourself), or
 ///
 /// b) read the source. It's more boilerplate than anything else.
-typedef struct lg_allocator {
+struct lg_allocator {
     /// Context passed to each allocator method.
     void *ctx;
     /// Allocate `size_bytes` bytes.
@@ -26,28 +26,28 @@ typedef struct lg_allocator {
     void* (*alloc)(void *ctx, lg_size size_bytes);
     /// Free the memory at `ptr`.
     void (*free)(void *ctx, void *ptr);
-} lg_allocator;
+};
 
 /// Allocate necessary memory for `tensor`, and mutate the `data` pointer.
 /// 
 /// If a tensor is zero-sized, returns early without mutating `tensor`.
-lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor);
+enum lg_status lga_AllocTensor(struct lg_allocator *allocator, struct lg_tensor *tensor);
 
 /// Frees the buffers backing `tensor`.
-lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor);
+enum lg_status lga_FreeTensor(struct lg_allocator *allocator, struct lg_tensor *tensor);
 
 /// Allocate the memory necessary for an expr of capacity `cap`,
 /// and assign offsets into the buffer for each item in the SoA.
-lg_status lg_alloc_expr(
-    lg_allocator *allocator,
+enum lg_status lga_AllocExpr(
+    struct lg_allocator *allocator,
     uint8_t **out_ptr,
     lg_size *out_bytes_allocated,
-    lg_expr *expr,
+    struct lg_expr *expr,
     lg_size cap
 );
 
 /// Frees the memory required for an expr.
-void lg_free_expr(lg_allocator *allocator, lg_expr *expr);
+void lga_FreeExpr(struct lg_allocator *allocator, struct lg_expr *expr);
 
 /// Allocates the minimum amount of memory necessary to execute an expression
 /// and populates the `data` pointers for any tensor where they're NULL.
@@ -56,12 +56,12 @@ void lg_free_expr(lg_allocator *allocator, lg_expr *expr);
 /// and allocates O(N) scratch memory using `scratch`.
 ///
 /// `out_ptr` and `out_bytes_allocated` are nullable.
-lg_status lg_alloc_expr_data(
-    lg_allocator *perm,
-    lg_allocator *scratch,
+enum lg_status lga_AllocExprData(
+    struct lg_allocator *perm,
+    struct lg_allocator *scratch,
     lg_scalar **out_ptr,
     lg_size *out_bytes_allocated,
-    lg_expr *expr
+    struct lg_expr *expr
 );
 
 #endif // LG_ALLOC_H_

@@ -1,8 +1,8 @@
 #include <libgrad/internal/vm.h>
 #include <libgrad/internal/alloc.h>
 
-lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor) {
-    lg_size one_size = lg_desc_size_bytes(tensor->desc);
+enum lg_status lga_AllocTensor(struct lg_allocator *allocator, struct lg_tensor *tensor) {
+    lg_size one_size = lg_descSizeInBytes(tensor->desc);
     if (one_size == 0) {
         return LG_STATUS_OK;
     }
@@ -19,7 +19,7 @@ lg_status lg_alloc_tensor(lg_allocator *allocator, lg_tensor *tensor) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor) {
+enum lg_status lga_FreeTensor(struct lg_allocator *allocator, struct lg_tensor *tensor) {
 #ifdef LG_SAFE
     if (tensor->data == NULL) {
         return LG_STATUS_NULL_POINTER;
@@ -30,14 +30,14 @@ lg_status lg_free_tensor(lg_allocator *allocator, lg_tensor *tensor) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_alloc_expr(
-    lg_allocator *allocator,
+enum lg_status lga_AllocExpr(
+    struct lg_allocator *allocator,
     uint8_t **out_ptr,
     lg_size *out_bytes_allocated,
-    lg_expr *expr,
+    struct lg_expr *expr,
     lg_size cap
 ) {
-    const lg_size size = cap * sizeof(lg_expr_node);
+    const lg_size size = cap * sizeof(struct lg_expr_node);
     
     uint8_t *buf = allocator->alloc(allocator->ctx, size);
     if (buf == NULL) {
@@ -50,33 +50,33 @@ lg_status lg_alloc_expr(
         *out_bytes_allocated = size;
     }
 
-    expr->nodes = (lg_expr_node*)buf;
+    expr->nodes = (struct lg_expr_node*)buf;
     expr->cap = cap;
     expr->len = 0;
 
     return LG_STATUS_OK;
 }
 
-void lg_free_expr(lg_allocator *allocator, lg_expr *expr) {
+void lga_FreeExpr(struct lg_allocator *allocator, struct lg_expr *expr) {
     allocator->free(allocator->ctx, expr->nodes);
     expr->cap = 0;
     expr->len = 0;
     expr->nodes = NULL;
 }
 
-lg_status lg_alloc_expr_data(
-    lg_allocator *perm,
-    lg_allocator *scratch,
+enum lg_status lga_AllocExprData(
+    struct lg_allocator *perm,
+    struct lg_allocator *scratch,
     lg_scalar **out_ptr,
     lg_size *out_bytes_allocated,
-    lg_expr *expr
+    struct lg_expr *expr
 ) {
     // under the conditions of a cyclomatic complexity
     // of 1 and infinite registers, lsra reaches the global
     // optimum
     // TODO: add alignment
     
-    lg_status status = LG_STATUS_OK;
+    enum lg_status status = LG_STATUS_OK;
 
     uint8_t *scratch_buf = scratch->alloc(scratch->ctx, expr->len * 4 * sizeof(lg_size));
     if (scratch_buf == NULL) {
@@ -102,7 +102,7 @@ lg_status lg_alloc_expr_data(
         if (expr->nodes[i].x1.data == NULL) {
             dead_after[expr->nodes[i].x1.born_at] = i;
         }
-        sizes[expr->nodes[i].y.born_at] = lg_desc_size_bytes(expr->nodes[i].y.desc);
+        sizes[expr->nodes[i].y.born_at] = lg_descSizeInBytes(expr->nodes[i].y.desc);
     }
     for (lg_size i = 0; i < expr->len; i++) {
         total_freed_after_time[dead_after[i]] += sizes[i];
