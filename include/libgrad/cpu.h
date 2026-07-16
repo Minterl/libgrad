@@ -26,21 +26,21 @@ void lg_cpu_contract(
 
 lg_status lg_cpu_exec(lg_expr expr) {
     for (lg_size i = 0; i < expr.len; i++) {
-        switch (expr.opcodes[i]) {
+        switch (expr.nodes[i].opcode) {
         case LG_OPCODE_NOP:
             break;
         case LG_OPCODE_ADD:
             lg_cpu_add(
-                expr.y[i].desc, expr.y[i].data,
-                expr.x0[i].desc, expr.x0[i].data,
-                expr.x1[i].desc, expr.x1[i].data
+                expr.nodes[i].y.desc, expr.nodes[i].y.data,
+                expr.nodes[i].x0.desc, expr.nodes[i].x0.data,
+                expr.nodes[i].x1.desc, expr.nodes[i].x1.data
             );
             break;
         case LG_OPCODE_CONTRACT:
             lg_cpu_contract(
-                expr.y[i].desc, expr.y[i].data,
-                expr.x0[i].desc, expr.x0[i].data,
-                expr.x1[i].desc, expr.x1[i].data
+                expr.nodes[i].y.desc, expr.nodes[i].y.data,
+                expr.nodes[i].x0.desc, expr.nodes[i].x0.data,
+                expr.nodes[i].x1.desc, expr.nodes[i].x1.data
             );
             break;
         case LG_OPCODE_SUB:

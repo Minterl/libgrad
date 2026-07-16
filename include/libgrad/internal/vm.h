@@ -3,9 +3,7 @@
 
 #include <libgrad/internal/core.h>
 
-/// Represents a single Tensor backed by `data`
-///
-/// Expressed in pure SSA form.
+/// Represents a single tensor backed by `data`
 ///
 /// Generally, these are thin handles that should 
 /// live on the stack and be shallow copied as necessary.
@@ -59,28 +57,29 @@ typedef enum lg_opcode {
     LG_OPCODE_LN,
 } lg_opcode;
 
-typedef union lg_expr_compilation_meta {
-    struct {
-        lg_size n_batch_axes;
-    } op_contract;
-} lg_expr_compilation_meta;
-
-/// An expression graph used to record operations
-///
-/// An expression is represented in memory as a structure of arrays.
+/// An IR node in an expr.
 ///
 /// If x1.data == NULL, then the node represents a unary
 /// operation.
 /// Otherwise, it represents a binary operation as expected.
+typedef struct lg_expr_node {
+    lg_opcode  opcode;
+
+    lg_tensor  y;
+    lg_tensor  x0;
+    lg_tensor  x1;
+
+    lg_size    contract_n_batch_axes;
+} lg_expr_node;
+
+/// The intermediate representation of a program.
+/// 
+/// As of right now, the exprs themselves do not support any control flow.
 typedef struct lg_expr {
-    lg_size cap;
-    lg_size len;
+    lg_size        cap;
+    lg_size        len;
     
-    lg_opcode                 *opcodes  LG_CHECK_BOUNDS(len);
-    lg_tensor                 *y        LG_CHECK_BOUNDS(len);
-    lg_tensor                 *x0       LG_CHECK_BOUNDS(len);
-    lg_tensor                 *x1       LG_CHECK_BOUNDS(len);
-    lg_expr_compilation_meta  *meta     LG_CHECK_BOUNDS(len);
+    lg_expr_node  *nodes LG_CHECK_BOUNDS(len);
 } lg_expr;
 
 /// Gets the last physical location of the tensor `x` and populates

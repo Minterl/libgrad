@@ -4,11 +4,11 @@
 lg_status lg_get_last_location(lg_expr *expr, lg_tensor *x) {
     bool found = false;
     for (lg_size i = 0; i < expr->len; i++) {
-        if (expr->y[i].born_at == x->born_at) {
+        if (expr->nodes[i].y.born_at == x->born_at) {
             // We only change the data pointer because the expr may have
             // some other `desc` that doesn't match that of the caller.
             // We do not want to mutate the caller's interpretation of the buffer.
-            x->data = expr->y[i].data; 
+            x->data = expr->nodes[i].y.data; 
             found = true;
         }
     }
@@ -18,12 +18,9 @@ lg_status lg_get_last_location(lg_expr *expr, lg_tensor *x) {
     return LG_STATUS_OK;
 }
 
-lg_status lg_expr_append(
+lg_status __lg_expr_append(
     lg_expr *expr,
-    const lg_opcode opcode,
-    const lg_tensor y,
-    const lg_tensor x0,
-    const lg_tensor x1
+    const lg_expr_node node 
 ) {
 #ifdef LG_SAFE
     if (expr->len >= expr->cap) {
@@ -33,10 +30,7 @@ lg_status lg_expr_append(
 
     lg_size next_idx = expr->len;
     expr->len += 1;
-    expr->opcodes[next_idx] = opcode;
-    expr->y[next_idx] = y;
-    expr->x0[next_idx] = x0;
-    expr->x1[next_idx] = x1;
+    expr->nodes[next_idx] = node;
 
     return LG_STATUS_OK;
 }
@@ -51,7 +45,11 @@ static inline void __lg_tensor_clone_logical_shape(lg_tensor *restrict dest, con
 }
 
 lg_status lg_nop(lg_expr *expr, lg_tensor x) {
-    return lg_expr_append(expr, LG_OPCODE_NOP, (lg_tensor){ .born_at = expr->len }, x, (lg_tensor){0});
+    return __lg_expr_append(expr, (lg_expr_node){
+        .opcode = LG_OPCODE_NOP,
+        .y = (lg_tensor){ .born_at = expr->len },
+        .x0 = x,
+    });
 }
 
 lg_status lg_add(
@@ -65,7 +63,12 @@ lg_status lg_add(
 
     __lg_tensor_clone_logical_shape(y, &x0);
     y->born_at = expr_idx;
-    status = lg_expr_append(expr, LG_OPCODE_ADD, *y, x0, x1);
+    status = __lg_expr_append(expr, (lg_expr_node){
+        .opcode = LG_OPCODE_ADD,   
+        .y = *y,
+        .x0 = x0,
+        .x1 = x1,
+    });
     if (status != LG_STATUS_OK) {
         return status;
     }
@@ -93,26 +96,30 @@ lg_status lg_contract(
     }
     y->desc.rank = rank;
 
-    status = lg_expr_append(expr, LG_OPCODE_CONTRACT, *y, x0, x1);
+    status = __lg_expr_append(expr, (lg_expr_node){
+        .opcode = LG_OPCODE_CONTRACT,   
+        .y = *y,
+        .x0 = x0,
+        .x1 = x1,
+        .contract_n_batch_axes = n_batch_axes,
+    });
     if (status != LG_STATUS_OK) {
         return status;
     }
-
-    expr->meta[expr_idx].op_contract.n_batch_axes = n_batch_axes;
 
     return LG_STATUS_OK;
 }
 
 lg_status __lg_expr_pass_assign_layouts(lg_expr *expr, lg_layout layout, lg_size unit_align) {
-    for (lg_size i_op = 0; i_op < expr->len; i_op++) {
-        if (expr->opcodes[i_op] == LG_OPCODE_NOP) {
+    for (lg_size i_node = 0; i_node < expr->len; i_node++) {
+        if (expr->nodes[i_node].opcode == LG_OPCODE_NOP) {
             continue;
         }
 
         lg_desc *const descs[3] = {
-            &expr->y[i_op].desc,
-            &expr->x0[i_op].desc,
-            &expr->x1[i_op].desc,
+            &expr->nodes[i_node].y.desc,
+            &expr->nodes[i_node].x0.desc,
+            &expr->nodes[i_node].x1.desc,
         };
 
         for (lg_size i_desc = 0; i_desc < 3; i_desc++) {
@@ -139,7 +146,7 @@ skip_layout:;
 lg_status __lg_expr_pass_precompute_strides(lg_expr *expr) {
     lg_status status;
     for (lg_size i = 0; i < expr->len; i++) {
-        switch (expr->opcodes[i]) {
+        switch (expr->nodes[i].opcode) {
         case LG_OPCODE_NOP:
             break;
 
@@ -147,9 +154,9 @@ lg_status __lg_expr_pass_precompute_strides(lg_expr *expr) {
         case LG_OPCODE_SUB:
         case LG_OPCODE_HADAMARD: {
             status = lg_desc_broadcast((lg_desc*[]){
-                &expr->y->desc,
-                &expr->x0[i].desc,
-                &expr->x1[i].desc,
+                &expr->nodes[i].y.desc,
+                &expr->nodes[i].x0.desc,
+                &expr->nodes[i].x1.desc,
             }, 3);
             if (status != LG_STATUS_OK) {
                 return status;
@@ -159,10 +166,10 @@ lg_status __lg_expr_pass_precompute_strides(lg_expr *expr) {
 
         case LG_OPCODE_CONTRACT: {
             status = lg_desc_compute_contracted_dims(
-                &expr->y[i].desc,
-                &expr->x0[i].desc,
-                &expr->x1[i].desc,
-                expr->meta[i].op_contract.n_batch_axes
+                &expr->nodes[i].y.desc,
+                &expr->nodes[i].x0.desc,
+                &expr->nodes[i].x1.desc,
+                expr->nodes[i].contract_n_batch_axes
             );
             if (status != LG_STATUS_OK) {
                 return status;
@@ -186,9 +193,9 @@ lg_status __lg_expr_pass_sort_axes(lg_expr *expr) {
     lg_status status;
     for (lg_size i = 0; i < expr->len; i++) {
         status = lg_desc_sort_axes((lg_desc*[]){
-            &expr->y[i].desc,
-            &expr->x0[i].desc,
-            &expr->x1[i].desc,
+            &expr->nodes[i].y.desc,
+            &expr->nodes[i].x0.desc,
+            &expr->nodes[i].x1.desc,
         }, 3);
         if (status != LG_STATUS_OK) {
             return status;
@@ -201,9 +208,9 @@ lg_status __lg_expr_pass_coalesce_axes(lg_expr *expr) {
     lg_status status;
     for (lg_size i = 0; i < expr->len; i++) {
         status = lg_desc_coalesce_axes((lg_desc*[]){
-            &expr->y[i].desc,
-            &expr->x0[i].desc,
-            &expr->x1[i].desc,
+            &expr->nodes[i].y.desc,
+            &expr->nodes[i].x0.desc,
+            &expr->nodes[i].x1.desc,
         }, 3);
         if (status != LG_STATUS_OK) {
             return status;

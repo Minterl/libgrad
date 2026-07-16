@@ -455,7 +455,9 @@ test_status test_expr_alloc() {
 
     lg_expr expr = {0};
     uint8_t *expr_buf;
-    lg_alloc_expr(&allocator, &expr_buf, NULL, &expr, 32);
+    lg_size expr_fields_bytes_allocated;
+    test_assert(lg_alloc_expr(&allocator, &expr_buf, &expr_fields_bytes_allocated, &expr, 32) == LG_STATUS_OK, "failed to allocate expr");
+    test_assert(0 < expr_fields_bytes_allocated, "failed to allocate expr");
 
     lg_tensor x0 = { .desc.rank = 1, .desc.dim = {4} },
               x1 = { .desc.rank = 1, .desc.dim = {4} };
@@ -480,7 +482,7 @@ test_status test_expr_alloc() {
 
     lg_scalar *data_buf;
     test_assert(lg_alloc_expr_data(&allocator, &allocator, &data_buf, NULL, &expr) == LG_STATUS_OK, "failed to allocate expr");
-    test_assert(data_buf == expr.y[0].data, "wanted %p; got %p", data_buf, expr.y[0].data);
+    test_assert(data_buf == expr.nodes[0].y.data, "wanted %p; got %p", data_buf, expr.nodes[0].y.data);
     // test_assert(data_buf == expr.y[1].data, "wanted %p; got %p", data_buf, expr.y[1].data); 
     // fuck you, gcc ubsan. corrupts the fucking pointer
     test_assert(lg_cpu_exec(expr) == LG_STATUS_OK, "failed to exectute expr");
@@ -489,7 +491,7 @@ test_status test_expr_alloc() {
     // x0 + x1 = y0 = {4, 5, 4, 8};
     // y0 + x1 = y1 = ...;
     lg_scalar expected_data[4] = {7, 8, 5, 12};
-    test_assert_array_eq(expected_data, expr.y[0].data, 4, "%f");
+    test_assert_array_eq(expected_data, expr.nodes[0].y.data, 4, "%f");
     // test_assert_array_eq(expected_data, expr.y[1].data, 4, "%f");
     // still corrupts the fucking pointer
 
