@@ -1,4 +1,5 @@
 #include "libgrad/internal/alloc.h"
+#include "libgrad/internal/core.h"
 #define LIBGRAD_IMPLEMENTATION
 #include <libgrad/libgrad.h>
 #ifndef LG_CPU_IMPLEMENTATION
@@ -34,13 +35,18 @@ int main(void) {
     };
     struct lg_ir_tensor W_0 = {
         .desc.rank = 2,
-        .desc.dim = {28 * 28, 128},
+        .desc.dim = {128, 28 * 28},
     };
     struct lg_ir_tensor b_0 = {
         .desc.rank = 1,
         .desc.dim = {128},
     };
 
+    status = LG_DescComputeStrides(&x.desc, LG_LAYOUT_ROW_MAJOR, 1);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        goto out;
+    }
     status = LG_AllocTensor(&libgrad_allocator, &x);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
@@ -48,7 +54,7 @@ int main(void) {
     }
 
     struct lg_ir_tensor y_0 = {0};
-    status = LG_IR_AppendContract(&expr, &y_0, W_0, x, 0);
+    status = LG_IR_AppendContract(&expr, &y_0, W_0, x, 1, 0);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;
@@ -66,7 +72,7 @@ int main(void) {
         goto out;
     }
 
-    status = LG_IR_CompileExpr(&expr, LG_LAYOUT_ROW_MAJOR, 1);
+    status = LG_IR_CompileExpr(&expr);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;

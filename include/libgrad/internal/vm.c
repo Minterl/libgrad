@@ -92,13 +92,14 @@ enum lg_status LG_IR_AppendContract(
     struct lg_ir_tensor *y,
     struct lg_ir_tensor x0,
     struct lg_ir_tensor x1,
-    const size_t n_batch_axes
+    size_t n_contracted_axes, 
+    size_t n_batch_axes
 ) {
     const size_t expr_idx = expr->len;
     enum lg_status status;
 
     y->born_at = expr_idx;
-    LG_ComputeContractedDims(&y->desc, x0.desc, x1.desc, n_batch_axes);
+    LG_ComputeContractedDims(&y->desc, x0.desc, x1.desc, n_contracted_axes, n_batch_axes);
     status = LG_DescComputeStrides(&y->desc, LG_LAYOUT_ROW_MAJOR, 1 /* TODO */);
     if (status != LG_STATUS_OK) {
         return status;

@@ -94,7 +94,7 @@ enum lg_status LG_IR_AppendNop(struct lg_ir_expr *expr, struct lg_ir_tensor x);
 
 enum lg_status LG_IR_AppendAdd(struct lg_ir_expr *expr, struct lg_ir_tensor *y, const struct lg_ir_tensor x0, const struct lg_ir_tensor x1);
 enum lg_status LG_IR_AppendSub(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor x0, const struct lg_ir_tensor x1);
-enum lg_status LG_IR_AppendContract(struct lg_ir_expr *expr, struct lg_ir_tensor *y, struct lg_ir_tensor x0, struct lg_ir_tensor x1, const size_t n_batch_axes);
+enum lg_status LG_IR_AppendContract(struct lg_ir_expr *expr, struct lg_ir_tensor *y, struct lg_ir_tensor x0, struct lg_ir_tensor x1, size_t n_contracted_axes, size_t n_batch_axes);
 enum lg_status LG_IR_AppendHadamard(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor x0, const struct lg_ir_tensor x1);
 
 enum lg_status LG_IR_AppendMSELoss(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor x0, const struct lg_ir_tensor x1);

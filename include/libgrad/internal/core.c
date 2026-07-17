@@ -164,14 +164,19 @@ void LG_ComputeContractedDims(
     struct lg_desc *y,
     const struct lg_desc x0,
     const struct lg_desc x1,
+    size_t n_contracted_axes,
     size_t n_batch_axes
 ) {
+    // repeated below
+    const size_t x0_first_contracted_axis = x0.rank - n_contracted_axes;
+    const size_t x1_first_free_axis = n_contracted_axes + n_batch_axes;
+
     size_t rank = 0;
-    for (size_t i = x0.rank; i > n_batch_axes; i--, rank++) {
-        y->dim[rank] = x0.dim[i - 1];
-    }
-    for (size_t i = n_batch_axes; i < x1.rank; i++, rank++) {
+    for (size_t i = n_batch_axes; i < x0_first_contracted_axis; i++, rank++) {
         y->dim[rank] = x0.dim[i];
+    }
+    for (size_t i = x1.rank - 1; i >= x1_first_free_axis; i--, rank++) {
+        y->dim[rank] = x1.dim[i];
     }
     y->rank = rank;
 }

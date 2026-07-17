@@ -112,6 +112,7 @@ void LG_ComputeContractedDims(
     struct lg_desc *y,
     const struct lg_desc x0,
     const struct lg_desc x1,
+    size_t n_contracted_axes,
     size_t n_batch_axes
 );
 
