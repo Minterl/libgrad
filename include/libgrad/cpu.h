@@ -4,7 +4,7 @@
 #include <libgrad/internal/vm.h>
 #include <libgrad/internal/core.h>
 
-enum lg_status lgrt_cpu_ExecExpr(struct lg_expr expr);
+enum lg_status lgrt_cpu_ExecExpr(struct lgvm_expr expr);
 
 /// Tensors must be sorted & broadcasted
 void lgrt_cpu_Add(
@@ -24,7 +24,7 @@ void lgrt_cpu_Contract(
 #ifdef LG_CPU_IMPLEMENTATION
 #undef LG_CPU_IMPLEMENTATION
 
-enum lg_status lgrt_cpu_ExecExpr(struct lg_expr expr) {
+enum lg_status lgrt_cpu_ExecExpr(struct lgvm_expr expr) {
     for (size_t i = 0; i < expr.len; i++) {
         switch (expr.nodes[i].opcode) {
         case LG_OPCODE_NOP:
@@ -75,7 +75,7 @@ void lgrt_cpu_Add(
         const size_t x1_idx = iter.indices[2];
 
         y[y_idx] = x0[x0_idx] + x1[x1_idx];
-   } while (lg_nditerIncrement(&iter, y_desc.rank - 1));
+   } while (LG_NDiterIncrement(&iter, y_desc.rank - 1));
 }
 
 void lgrt_cpu_Contract(
@@ -94,7 +94,7 @@ void lgrt_cpu_Contract(
         const size_t x1_idx = iter.indices[2];
 
         y[y_idx] += x0[x0_idx] * x1[x1_idx];
-    } while (lg_nditerIncrement(&iter, y_desc.rank - 1));
+    } while (LG_NDiterIncrement(&iter, y_desc.rank - 1));
 }
 
 #endif // LG_CPU_IMPLEMENTATION

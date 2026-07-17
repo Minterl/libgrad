@@ -1,7 +1,7 @@
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/debug.h>
 
-size_t lg_descSizeInBytes(struct lg_desc desc) {
+size_t LG_DescSizeInBytes(struct lg_desc desc) {
     if (desc.rank == 0) {
         return 0;
     }
@@ -16,7 +16,7 @@ size_t lg_descSizeInBytes(struct lg_desc desc) {
     return (max_offset + 1) * sizeof(lg_scalar);
 }
 
-void lg_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, size_t copy_to_dim) {
+void LG_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, size_t copy_to_dim) {
     size_t dim_offset = 0;
     for (size_t i = 0; i < copy_to_dim; i++) {
         dim_offset += desc.dim[i];
@@ -27,7 +27,7 @@ void lg_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg
     }
 }
 
-enum lg_status lg_descComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align) {
+enum lg_status LG_DescComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align) {
 #ifdef LG_SAFE
     if (desc->rank > LG_MAX_RANK) {
         return LG_STATUS_INVALID_RANK;
@@ -49,7 +49,7 @@ enum lg_status lg_descComputeLayoutStrides(struct lg_desc *desc, enum lg_layout 
     return LG_STATUS_OK;
 }
 
-bool lg_descIsIsotropic(struct lg_desc desc) {
+bool LG_DescIsIsotropic(struct lg_desc desc) {
     switch (desc.rank) {
     // All vectors are anisotropic.
     case 2:
@@ -98,7 +98,7 @@ static inline size_t __lg_descLeftPadAxes(struct lg_desc **descs, size_t n_descs
     return max_rank;
 }
     
- enum lg_status lg_ComputeBroadcastedAxes(struct lg_desc **descs, size_t n_descs) {
+ enum lg_status LG_ComputeBroadcastedAxes(struct lg_desc **descs, size_t n_descs) {
     const size_t max_rank = __lg_descLeftPadAxes(descs, n_descs);
 
     // --- Validate that all tensors are broadcast-compatible ---
@@ -160,7 +160,7 @@ static inline size_t __lg_descLeftPadAxes(struct lg_desc **descs, size_t n_descs
     return LG_STATUS_OK;
 }
 
-enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes) {
+enum lg_status LG_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes) {
     // The logical tensor axes will be laid out as follows:
     // { [batch], [x0_free], [x1_free], [contracted] }
     //    reg      reg       reg       0          | y strides
@@ -227,7 +227,7 @@ enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, s
     return LG_STATUS_OK;
 }
 
-enum lg_status lg_SortAxes(struct lg_desc **descs, size_t n_descs) {
+enum lg_status LG_SortAxes(struct lg_desc **descs, size_t n_descs) {
     size_t max_rank = 0;
     for (size_t i = 0; i < n_descs; i++) {
         if (descs[i]->rank > max_rank) {
@@ -261,7 +261,7 @@ enum lg_status lg_SortAxes(struct lg_desc **descs, size_t n_descs) {
     return LG_STATUS_OK;
 }
 
-enum lg_status lg_CoalesceAxes(struct lg_desc **descs, size_t n_descs) {
+enum lg_status LG_CoalesceAxes(struct lg_desc **descs, size_t n_descs) {
     size_t max_rank = 0;
     for (size_t i = 0; i < n_descs; i++) {
         if (descs[i]->rank > max_rank) {
@@ -320,7 +320,7 @@ enum lg_status lg_CoalesceAxes(struct lg_desc **descs, size_t n_descs) {
     return LG_STATUS_OK;
 }
 
-bool lg_nditerIncrement(struct lg_nditer *iter, size_t axis) {
+bool LG_NDiterIncrement(struct lg_nditer *iter, size_t axis) {
     const size_t rank = iter->descs[0].rank;
     const size_t first_tracked_dim = rank - iter->n_tracked_dims;
     const size_t *restrict dim = iter->descs[0].dim;
@@ -348,7 +348,7 @@ bool lg_nditerIncrement(struct lg_nditer *iter, size_t axis) {
     return false;
 }
 
-void lg_nditerGoto(struct lg_nditer *iter, size_t *coords) {
+void LG_NDiterGoto(struct lg_nditer *iter, size_t *coords) {
     for(size_t i = 0; i < iter->n_tracked_dims; i++) {
         iter->coords[i] = coords[i];
     }

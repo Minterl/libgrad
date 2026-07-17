@@ -92,23 +92,23 @@ struct lg_nditer {
 /// Increment the coordinate `axis` on `iter` and update offsets.
 /// 
 /// Does not perform any bounds checking.
-bool lg_nditerIncrement(struct lg_nditer *iter, size_t axis);
+bool LG_NDiterIncrement(struct lg_nditer *iter, size_t axis);
 
 /// Recomputes the indices in `iter` according to its `coords`.
 ///
 /// If you want to "jump" to a specific coordinate in a tensor, this is the
 /// easiest way to do it.
-void lg_nditerGoto(struct lg_nditer *iter, size_t *coords);
+void LG_NDiterGoto(struct lg_nditer *iter, size_t *coords);
 
 /// Broadcast tensor views.
 ///
-enum lg_status lg_ComputeBroadcastedAxes(struct lg_desc **descs, size_t n_descs);
+enum lg_status LG_ComputeBroadcastedAxes(struct lg_desc **descs, size_t n_descs);
 
 /// Contracts the dimensions of `y`, inferring the contracted dimensions.
 ///
 /// The contracted dimensions must be aligned at the beginning of `x0`, and `x1` with batch dimensions
 /// following.
-enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes);
+enum lg_status LG_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes);
 
 /// Sort axes such that the primary is unit stride first.
 ///
@@ -120,19 +120,19 @@ enum lg_status lg_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, s
 /// plan for the other tensors. In that, this is the tensor where it is 
 /// guaranteed that the contiguous dimension (the dimension with the unit stride)
 /// will be accessed sequentially in memory.
-enum lg_status lg_SortAxes(struct lg_desc **descs, size_t n_descs);
+enum lg_status LG_SortAxes(struct lg_desc **descs, size_t n_descs);
 
 /// Coalesce tensor axes to be as flat as possible.
 ///
 /// Inputs to this function MUST be broadcasted AND sorted from least to greatest
 /// using `lg_SortAxes`.
-enum lg_status lg_CoalesceAxes(struct lg_desc **descs, size_t n_descs);
+enum lg_status LG_CoalesceAxes(struct lg_desc **descs, size_t n_descs);
 
 /// Compute the size in bytes of a tensor's data buffer.
-size_t lg_descSizeInBytes(struct lg_desc desc);
+size_t LG_DescSizeInBytes(struct lg_desc desc);
 
 /// Copy a vector value to the dim `copy_to_dim`.
-void lg_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, size_t copy_to_axis);
+void LG_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, size_t copy_to_axis);
 
 /// Lays out a tensor with pre-populated `dim` and `rank` with the strides to be stored in
 /// the order in `layout`. In this layout, the rightmost dimension has the unit stride.
@@ -142,12 +142,12 @@ void lg_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg
 /// Does not allocate any memory; that can be done with `lg_alloc_tensor`.
 ///
 /// This is the recommended and standard way to initialize a tensor layout.
-enum lg_status lg_descComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align);
+enum lg_status LG_DescComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align);
 
 /// Returns true if a tensor is isotropic.
 /// 
 /// Tensors with a rank of zero, and all scalars are considered isotropic,
 /// while all vectors are considered anisotropic.
-bool lg_descIsIsotropic(struct lg_desc desc);
+bool LG_DescIsIsotropic(struct lg_desc desc);
 
 #endif // LG_CORE_H_

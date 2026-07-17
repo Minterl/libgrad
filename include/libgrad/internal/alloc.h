@@ -31,23 +31,23 @@ struct lg_allocator {
 /// Allocate necessary memory for `tensor`, and mutate the `data` pointer.
 /// 
 /// If a tensor is zero-sized, returns early without mutating `tensor`.
-enum lg_status lga_AllocTensor(struct lg_allocator *allocator, struct lg_tensor *tensor);
+enum lg_status LG_AllocTensor(struct lg_allocator *allocator, struct lgvm_tensor *tensor);
 
 /// Frees the buffers backing `tensor`.
-enum lg_status lga_FreeTensor(struct lg_allocator *allocator, struct lg_tensor *tensor);
+enum lg_status LG_FreeTensor(struct lg_allocator *allocator, struct lgvm_tensor *tensor);
 
 /// Allocate the memory necessary for an expr of capacity `cap`,
 /// and assign offsets into the buffer for each item in the SoA.
-enum lg_status lga_AllocExpr(
+enum lg_status LG_AllocExpr(
     struct lg_allocator *allocator,
     uint8_t **out_ptr,
     size_t *out_bytes_allocated,
-    struct lg_expr *expr,
+    struct lgvm_expr *expr,
     size_t cap
 );
 
 /// Frees the memory required for an expr.
-void lga_FreeExpr(struct lg_allocator *allocator, struct lg_expr *expr);
+void LG_FreeExpr(struct lg_allocator *allocator, struct lgvm_expr *expr);
 
 /// Allocates the minimum amount of memory necessary to execute an expression
 /// and populates the `data` pointers for any tensor where they're NULL.
@@ -56,12 +56,12 @@ void lga_FreeExpr(struct lg_allocator *allocator, struct lg_expr *expr);
 /// and allocates O(N) scratch memory using `scratch`.
 ///
 /// `out_ptr` and `out_bytes_allocated` are nullable.
-enum lg_status lga_AllocExprData(
+enum lg_status LG_AllocExprData(
     struct lg_allocator *perm,
     struct lg_allocator *scratch,
     lg_scalar **out_ptr,
     size_t *out_bytes_allocated,
-    struct lg_expr *expr
+    struct lgvm_expr *expr
 );
 
 #endif // LG_ALLOC_H_

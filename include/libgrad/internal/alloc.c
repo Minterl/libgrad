@@ -1,8 +1,8 @@
 #include <libgrad/internal/vm.h>
 #include <libgrad/internal/alloc.h>
 
-enum lg_status lga_AllocTensor(struct lg_allocator *allocator, struct lg_tensor *tensor) {
-    size_t one_size = lg_descSizeInBytes(tensor->desc);
+enum lg_status LG_AllocTensor(struct lg_allocator *allocator, struct lgvm_tensor *tensor) {
+    size_t one_size = LG_DescSizeInBytes(tensor->desc);
     if (one_size == 0) {
         return LG_STATUS_OK;
     }
@@ -19,7 +19,7 @@ enum lg_status lga_AllocTensor(struct lg_allocator *allocator, struct lg_tensor 
     return LG_STATUS_OK;
 }
 
-enum lg_status lga_FreeTensor(struct lg_allocator *allocator, struct lg_tensor *tensor) {
+enum lg_status LG_FreeTensor(struct lg_allocator *allocator, struct lgvm_tensor *tensor) {
 #ifdef LG_SAFE
     if (tensor->data == NULL) {
         return LG_STATUS_NULL_POINTER;
@@ -30,14 +30,14 @@ enum lg_status lga_FreeTensor(struct lg_allocator *allocator, struct lg_tensor *
     return LG_STATUS_OK;
 }
 
-enum lg_status lga_AllocExpr(
+enum lg_status LG_AllocExpr(
     struct lg_allocator *allocator,
     uint8_t **out_ptr,
     size_t *out_bytes_allocated,
-    struct lg_expr *expr,
+    struct lgvm_expr *expr,
     size_t cap
 ) {
-    const size_t size = cap * sizeof(struct lg_exprNode);
+    const size_t size = cap * sizeof(struct lgvm_exprNode);
     
     uint8_t *buf = allocator->alloc(allocator->ctx, size);
     if (buf == NULL) {
@@ -50,26 +50,26 @@ enum lg_status lga_AllocExpr(
         *out_bytes_allocated = size;
     }
 
-    expr->nodes = (struct lg_exprNode*)buf;
+    expr->nodes = (struct lgvm_exprNode*)buf;
     expr->cap = cap;
     expr->len = 0;
 
     return LG_STATUS_OK;
 }
 
-void lga_FreeExpr(struct lg_allocator *allocator, struct lg_expr *expr) {
+void LG_FreeExpr(struct lg_allocator *allocator, struct lgvm_expr *expr) {
     allocator->free(allocator->ctx, expr->nodes);
     expr->cap = 0;
     expr->len = 0;
     expr->nodes = NULL;
 }
 
-enum lg_status lga_AllocExprData(
+enum lg_status LG_AllocExprData(
     struct lg_allocator *perm,
     struct lg_allocator *scratch,
     lg_scalar **out_ptr,
     size_t *out_bytes_allocated,
-    struct lg_expr *expr
+    struct lgvm_expr *expr
 ) {
     // under the conditions of a cyclomatic complexity
     // of 1 and infinite registers, lsra reaches the global
@@ -102,7 +102,7 @@ enum lg_status lga_AllocExprData(
         if (expr->nodes[i].x1.data == NULL) {
             dead_after[expr->nodes[i].x1.born_at] = i;
         }
-        sizes[expr->nodes[i].y.born_at] = lg_descSizeInBytes(expr->nodes[i].y.desc);
+        sizes[expr->nodes[i].y.born_at] = LG_DescSizeInBytes(expr->nodes[i].y.desc);
     }
     for (size_t i = 0; i < expr->len; i++) {
         total_freed_after_time[dead_after[i]] += sizes[i];
