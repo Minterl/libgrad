@@ -54,8 +54,8 @@ static inline void __ArenaAsLgAllocatorFree(void *ctx, void *ptr) {
 static inline struct lg_allocator ArenaAsLgAllocator(struct arena *a) {
     return (struct lg_allocator) {
         .ctx = a,
-        .alloc = __ArenaAsLgAllocatorAlloc,
-        .free = __ArenaAsLgAllocatorFree,
+        .Alloc = __ArenaAsLgAllocatorAlloc,
+        .Free = __ArenaAsLgAllocatorFree,
     };
 }
 

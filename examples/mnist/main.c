@@ -21,22 +21,22 @@ int main(void) {
 
     enum lg_status status = LG_STATUS_OK;
 
-    struct lgvm_expr expr = {0};
+    struct lg_ir_expr expr = {0};
     status = LG_AllocExpr(&libgrad_allocator, NULL, NULL, &expr, EXPR_CAP);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         return status;
     }
 
-    struct lgvm_tensor x = {
+    struct lg_ir_tensor x = {
         .desc.rank = 1,
         .desc.dim = {28 * 28},
     };
-    struct lgvm_tensor W_0 = {
+    struct lg_ir_tensor W_0 = {
         .desc.rank = 2,
         .desc.dim = {28 * 28, 128},
     };
-    struct lgvm_tensor b_0 = {
+    struct lg_ir_tensor b_0 = {
         .desc.rank = 1,
         .desc.dim = {128},
     };
@@ -47,13 +47,13 @@ int main(void) {
         goto out;
     }
 
-    struct lgvm_tensor y_0 = {0};
+    struct lg_ir_tensor y_0 = {0};
     status = LG_IR_AppendContract(&expr, &y_0, W_0, x, 0);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;
     }
-    struct lgvm_tensor y_1 = {0};
+    struct lg_ir_tensor y_1 = {0};
     status = LG_IR_AppendAdd(&expr, &y_1, y_0, b_0);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
@@ -91,7 +91,7 @@ int main(void) {
         goto out;
     }
     
-    status = lgrt_cpu_ExecExpr(expr);
+    status = LG_RT_CPU_ExecExpr(expr);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;

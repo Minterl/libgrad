@@ -4,15 +4,15 @@
 #include <libgrad/internal/vm.h>
 #include <libgrad/internal/core.h>
 
-enum lg_status lgrt_cpu_ExecExpr(struct lgvm_expr expr);
+enum lg_status LG_RT_CPU_ExecExpr(struct lg_ir_expr expr);
 
 /// Tensors must be sorted & broadcasted
-void lgrt_cpu_Add(
+void LG_RT_CPU_Add(
     const struct lg_desc y_desc, lg_scalar *restrict y,
     const struct lg_desc x0_desc, const lg_scalar *restrict x0,
     const struct lg_desc x1_desc, const lg_scalar *restrict x1
 );
-void lgrt_cpu_Contract(
+void LG_RT_CPU_Contract(
     const struct lg_desc y_desc, lg_scalar *restrict y,
     const struct lg_desc x0_desc, const lg_scalar *restrict x0,
     const struct lg_desc x1_desc, const lg_scalar *restrict x1
@@ -24,20 +24,20 @@ void lgrt_cpu_Contract(
 #ifdef LG_CPU_IMPLEMENTATION
 #undef LG_CPU_IMPLEMENTATION
 
-enum lg_status lgrt_cpu_ExecExpr(struct lgvm_expr expr) {
+enum lg_status LG_RT_CPU_ExecExpr(struct lg_ir_expr expr) {
     for (size_t i = 0; i < expr.len; i++) {
         switch (expr.nodes[i].opcode) {
         case LG_OPCODE_NOP:
             break;
         case LG_OPCODE_ADD:
-            lgrt_cpu_Add(
+            LG_RT_CPU_Add(
                 expr.nodes[i].y.desc, expr.nodes[i].y.data,
                 expr.nodes[i].x0.desc, expr.nodes[i].x0.data,
                 expr.nodes[i].x1.desc, expr.nodes[i].x1.data
             );
             break;
         case LG_OPCODE_CONTRACT:
-            lgrt_cpu_Contract(
+            LG_RT_CPU_Contract(
                 expr.nodes[i].y.desc, expr.nodes[i].y.data,
                 expr.nodes[i].x0.desc, expr.nodes[i].x0.data,
                 expr.nodes[i].x1.desc, expr.nodes[i].x1.data
@@ -59,7 +59,7 @@ enum lg_status lgrt_cpu_ExecExpr(struct lgvm_expr expr) {
     return LG_STATUS_OK;
 }
 
-void lgrt_cpu_Add(
+void LG_RT_CPU_Add(
     const struct lg_desc y_desc, lg_scalar *restrict y,
     const struct lg_desc x0_desc, const lg_scalar *restrict x0,
     const struct lg_desc x1_desc, const lg_scalar *restrict x1
@@ -78,7 +78,7 @@ void lgrt_cpu_Add(
    } while (LG_NDiterIncrement(&iter, y_desc.rank - 1));
 }
 
-void lgrt_cpu_Contract(
+void LG_RT_CPU_Contract(
     const struct lg_desc y_desc, lg_scalar *restrict y,
     const struct lg_desc x0_desc, const lg_scalar *restrict x0,
     const struct lg_desc x1_desc, const lg_scalar *restrict x1

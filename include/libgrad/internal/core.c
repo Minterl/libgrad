@@ -71,7 +71,7 @@ bool LG_DescIsIsotropic(struct lg_desc desc) {
 }
 
 /// Returns the maximum rank of all of the descriptors
-static inline size_t __lg_descLeftPadAxes(struct lg_desc **descs, size_t n_descs) {
+static inline size_t LG__DescLeftPadAxes(struct lg_desc **descs, size_t n_descs) {
     size_t max_rank = 0;
     for (size_t i = 0; i < n_descs; i++) {
         if (descs[i]->rank > max_rank) {
@@ -99,7 +99,7 @@ static inline size_t __lg_descLeftPadAxes(struct lg_desc **descs, size_t n_descs
 }
     
  enum lg_status LG_ComputeBroadcastedAxes(struct lg_desc **descs, size_t n_descs) {
-    const size_t max_rank = __lg_descLeftPadAxes(descs, n_descs);
+    const size_t max_rank = LG__DescLeftPadAxes(descs, n_descs);
 
     // --- Validate that all tensors are broadcast-compatible ---
     // Every tensor participating in the tracking must be broadcast-compatible
