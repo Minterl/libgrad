@@ -74,7 +74,7 @@ void LG_RT_CPU_Add(
         const size_t x0_idx = iter.indices[1];
         const size_t x1_idx = iter.indices[2];
 
-        y[y_idx] = x0[x0_idx] + x1[x1_idx];
+        y[y_idx] += x0[x0_idx] + x1[x1_idx];
    } while (LG_NDiterIncrement(&iter, y_desc.rank - 1));
 }
 

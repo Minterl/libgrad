@@ -27,7 +27,7 @@ void LG_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg
     }
 }
 
-enum lg_status LG_DescComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align) {
+enum lg_status LG_DescComputeStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align) {
 #ifdef LG_SAFE
     if (desc->rank > LG_MAX_RANK) {
         return LG_STATUS_INVALID_RANK;
@@ -98,7 +98,7 @@ static inline size_t LG__DescLeftPadAxes(struct lg_desc **descs, size_t n_descs)
     return max_rank;
 }
     
- enum lg_status LG_ComputeBroadcastedAxes(struct lg_desc **descs, size_t n_descs) {
+ enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
     const size_t max_rank = LG__DescLeftPadAxes(descs, n_descs);
 
     // --- Validate that all tensors are broadcast-compatible ---
@@ -160,7 +160,28 @@ static inline size_t LG__DescLeftPadAxes(struct lg_desc **descs, size_t n_descs)
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes) {
+void LG_ComputeContractedDims(
+    struct lg_desc *y,
+    const struct lg_desc x0,
+    const struct lg_desc x1,
+    size_t n_batch_axes
+) {
+    size_t rank = 0;
+    for (size_t i = x0.rank; i > n_batch_axes; i--, rank++) {
+        y->dim[rank] = x0.dim[i - 1];
+    }
+    for (size_t i = n_batch_axes; i < x1.rank; i++, rank++) {
+        y->dim[rank] = x0.dim[i];
+    }
+    y->rank = rank;
+}
+
+enum lg_status LG_CreateContractionSpace(
+    struct lg_desc *y,
+    struct lg_desc *x0,
+    struct lg_desc *x1,
+    size_t n_batch_axes
+) {
     // The logical tensor axes will be laid out as follows:
     // { [batch], [x0_free], [x1_free], [contracted] }
     //    reg      reg       reg       0          | y strides

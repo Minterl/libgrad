@@ -68,8 +68,6 @@ struct lg_ir_expr_node {
     struct lg_ir_tensor  y;
     struct lg_ir_tensor  x0;
     struct lg_ir_tensor  x1;
-
-    size_t               contract_n_batch_axes;
 };
 
 /// The intermediate representation of a program.
@@ -108,6 +106,6 @@ enum lg_status LG_IR_AppendSigmoid(struct lg_ir_expr *expr, struct lg_ir_tensor 
 enum lg_status LG_IR_AppendLn(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor in);
 
 /// "Compiles" an expr.
-enum lg_status LG_IR_CompileExpr(struct lg_ir_expr *expr, enum lg_layout layout, size_t unit_align);
+enum lg_status LG_IR_CompileExpr(struct lg_ir_expr *expr);
 
 #endif // LG_VM_H_

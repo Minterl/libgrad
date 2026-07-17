@@ -102,13 +102,24 @@ void LG_NDiterGoto(struct lg_nditer *iter, size_t *coords);
 
 /// Broadcast tensor views.
 ///
-enum lg_status LG_ComputeBroadcastedAxes(struct lg_desc **descs, size_t n_descs);
+enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs);
+
+/// Computes the dimensions of a contraction between `x0` and `x1`,
+/// and puts the result in `y`.
+///
+/// Does not compute strides.
+void LG_ComputeContractedDims(
+    struct lg_desc *y,
+    const struct lg_desc x0,
+    const struct lg_desc x1,
+    size_t n_batch_axes
+);
 
 /// Contracts the dimensions of `y`, inferring the contracted dimensions.
 ///
 /// The contracted dimensions must be aligned at the beginning of `x0`, and `x1` with batch dimensions
 /// following.
-enum lg_status LG_ComputeContractedAxes(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes);
+enum lg_status LG_CreateContractionSpace(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes);
 
 /// Sort axes such that the primary is unit stride first.
 ///
@@ -142,7 +153,7 @@ void LG_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg
 /// Does not allocate any memory; that can be done with `lg_alloc_tensor`.
 ///
 /// This is the recommended and standard way to initialize a tensor layout.
-enum lg_status LG_DescComputeLayoutStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align);
+enum lg_status LG_DescComputeStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align);
 
 /// Returns true if a tensor is isotropic.
 /// 

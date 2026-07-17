@@ -63,6 +63,11 @@ enum lg_status LG_IR_AppendAdd(
 
     LG_IR__CloneLogicalShape(y, &x0);
     y->born_at = expr_idx;
+    status = LG_DescComputeStrides(&y->desc, LG_LAYOUT_ROW_MAJOR, 1 /* TODO */);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+
     status = LG_IR__ExprAppend(expr, (struct lg_ir_expr_node){
         .opcode = LG_OPCODE_ADD,   
         .y = *y,
@@ -72,6 +77,12 @@ enum lg_status LG_IR_AppendAdd(
     if (status != LG_STATUS_OK) {
         return status;
     }
+
+    status = LG_CreateBroadcastSpace((struct lg_desc*[]){
+        &expr->nodes[expr_idx].y.desc,
+        &expr->nodes[expr_idx].x0.desc,
+        &expr->nodes[expr_idx].x1.desc,
+    }, 3);
 
     return LG_STATUS_OK;
 }
@@ -87,105 +98,32 @@ enum lg_status LG_IR_AppendContract(
     enum lg_status status;
 
     y->born_at = expr_idx;
-    size_t rank = 0;
-    for (size_t i = x0.desc.rank; i > n_batch_axes; i--, rank++) {
-        y->desc.dim[rank] = x0.desc.dim[i - 1];
+    LG_ComputeContractedDims(&y->desc, x0.desc, x1.desc, n_batch_axes);
+    status = LG_DescComputeStrides(&y->desc, LG_LAYOUT_ROW_MAJOR, 1 /* TODO */);
+    if (status != LG_STATUS_OK) {
+        return status;
     }
-    for (size_t i = n_batch_axes; i < x1.desc.rank; i++, rank++) {
-        y->desc.dim[rank] = x0.desc.dim[i];
-    }
-    y->desc.rank = rank;
 
     status = LG_IR__ExprAppend(expr, (struct lg_ir_expr_node){
         .opcode = LG_OPCODE_CONTRACT,   
         .y = *y,
         .x0 = x0,
         .x1 = x1,
-        .contract_n_batch_axes = n_batch_axes,
     });
     if (status != LG_STATUS_OK) {
         return status;
     }
 
-    return LG_STATUS_OK;
-}
-
-enum lg_status LG_IR__AssignLayouts(struct lg_ir_expr *expr, enum lg_layout layout, size_t unit_align) {
-    for (size_t i_node = 0; i_node < expr->len; i_node++) {
-        if (expr->nodes[i_node].opcode == LG_OPCODE_NOP) {
-            continue;
-        }
-
-        struct lg_desc *const descs[3] = {
-            &expr->nodes[i_node].y.desc,
-            &expr->nodes[i_node].x0.desc,
-            &expr->nodes[i_node].x1.desc,
-        };
-
-        for (size_t i_desc = 0; i_desc < 3; i_desc++) {
-            struct lg_desc *desc = descs[i_desc];
-
-            for (size_t i_stride = 0; i_stride < LG_MAX_RANK; i_stride++) {
-                if (desc->strides[i_stride] != 0) {
-                    goto skip_layout;
-                }
-            }
-
-            enum lg_status status = LG_DescComputeLayoutStrides(desc, layout, unit_align);
-            if (status != LG_STATUS_OK) {
-                return status;
-            }
-
-skip_layout:;
-        }
+    status = LG_CreateContractionSpace(
+        &expr->nodes[expr_idx].y.desc,
+        &expr->nodes[expr_idx].x0.desc,
+        &expr->nodes[expr_idx].x1.desc,
+        n_batch_axes
+    );
+    if (status != LG_STATUS_OK) {
+        return status;
     }
 
-    return LG_STATUS_OK;
-}
-
-enum lg_status LG_IR__PrecomputeStrides(struct lg_ir_expr *expr) {
-    enum lg_status status;
-    for (size_t i = 0; i < expr->len; i++) {
-        switch (expr->nodes[i].opcode) {
-        case LG_OPCODE_NOP:
-            break;
-
-        case LG_OPCODE_ADD:
-        case LG_OPCODE_SUB:
-        case LG_OPCODE_HADAMARD: {
-            status = LG_ComputeBroadcastedAxes((struct lg_desc*[]){
-                &expr->nodes[i].y.desc,
-                &expr->nodes[i].x0.desc,
-                &expr->nodes[i].x1.desc,
-            }, 3);
-            if (status != LG_STATUS_OK) {
-                return status;
-            }
-            break;
-        }
-
-        case LG_OPCODE_CONTRACT: {
-            status = LG_ComputeContractedAxes(
-                &expr->nodes[i].y.desc,
-                &expr->nodes[i].x0.desc,
-                &expr->nodes[i].x1.desc,
-                expr->nodes[i].contract_n_batch_axes
-            );
-            if (status != LG_STATUS_OK) {
-                return status;
-            }
-            break;
-        }
-
-        case LG_OPCODE_LOSS_MSE:
-        case LG_OPCODE_LOSS_CROSS_ENTROPY:
-        case LG_OPCODE_RELU:
-        case LG_OPCODE_STABLE_SOFTMAX:
-        case LG_OPCODE_SIGMOID:
-        case LG_OPCODE_LN:
-            return LG_STATUS_UNSUPPORTED_OPCODE;
-        }
-    }
     return LG_STATUS_OK;
 }
 
@@ -219,16 +157,8 @@ enum lg_status LG_IR__CoalesceAxes(struct lg_ir_expr *expr) {
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_IR_CompileExpr(struct lg_ir_expr *expr, enum lg_layout layout, size_t unit_align) {
+enum lg_status LG_IR_CompileExpr(struct lg_ir_expr *expr) {
     enum lg_status status;
-    status = LG_IR__AssignLayouts(expr, layout, unit_align);
-    if (status != LG_STATUS_OK) {
-        return status;
-    }
-    status = LG_IR__PrecomputeStrides(expr);
-    if (status != LG_STATUS_OK) {
-        return status;
-    }
     status = LG_IR__SortAxes(expr);
     if (status != LG_STATUS_OK) {
         return status;

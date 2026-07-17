@@ -50,7 +50,7 @@ test_status test_tensor_layout() {
     {
         size_t expected_strides[] = {8, 4, 1};
         struct lg_ir_tensor ten = { .desc.dim = {3, 2, 4}, .desc.rank = 3 };
-        test_assert(LG_DescComputeLayoutStrides(&ten.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+        test_assert(LG_DescComputeStrides(&ten.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.desc.rank == 3, "got tensor rank %lu", ten.desc.rank);
         test_assert_array_eq(expected_strides, ten.desc.strides, 3, "%lu");
     }
@@ -59,7 +59,7 @@ test_status test_tensor_layout() {
     {
         size_t expected_strides[4] = {224, 32, 8, 1};
         struct lg_ir_tensor ten = { .desc.dim = {2, 7, 4, 3}, .desc.rank = 4 };
-        test_assert(LG_DescComputeLayoutStrides(&ten.desc, LG_LAYOUT_ROW_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
+        test_assert(LG_DescComputeStrides(&ten.desc, LG_LAYOUT_ROW_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.desc.rank == 4, "got tensor rank %lu", ten.desc.rank);
         test_assert_array_eq(expected_strides, ten.desc.strides, 3, "%lu");
     }
@@ -68,7 +68,7 @@ test_status test_tensor_layout() {
     {
         size_t expected_strides[] = {1, 4, 8};
         struct lg_ir_tensor ten = { .desc.dim = {3, 2, 4}, .desc.rank = 3 };
-        test_assert(LG_DescComputeLayoutStrides(&ten.desc, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+        test_assert(LG_DescComputeStrides(&ten.desc, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.desc.rank == 3, "got tensor rank %lu", ten.desc.rank);
         test_assert_array_eq(expected_strides, ten.desc.strides, 3, "%lu");
     }
@@ -77,7 +77,7 @@ test_status test_tensor_layout() {
     {
         size_t expected_strides[] = {1, 8, 32, 224};
         struct lg_ir_tensor ten = { .desc.dim = {2, 7, 4, 3}, .desc.rank = 4 };
-        test_assert(LG_DescComputeLayoutStrides(&ten.desc, LG_LAYOUT_COL_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
+        test_assert(LG_DescComputeStrides(&ten.desc, LG_LAYOUT_COL_MAJOR, 8) == LG_STATUS_OK, "failed to initialize tensor");
         test_assert(ten.desc.rank == 4, "got tensor rank %lu", ten.desc.rank);
         test_assert_array_eq(expected_strides, ten.desc.strides, 3, "%lu");
     }
@@ -105,7 +105,7 @@ test_status test_tensor_size() {
     test_assert(also_36_size == 36 * sizeof(lg_scalar), "tensor size was %lu", also_36_size);
 
     struct lg_ir_tensor padded = { .desc.dim = {3, 3, 3}, .desc.rank = 3 };
-    test_assert(LG_DescComputeLayoutStrides(&padded.desc, LG_LAYOUT_ROW_MAJOR, 4) == LG_STATUS_OK, "failed to initialize tensor");
+    test_assert(LG_DescComputeStrides(&padded.desc, LG_LAYOUT_ROW_MAJOR, 4) == LG_STATUS_OK, "failed to initialize tensor");
     size_t calculated_bytes = LG_DescSizeInBytes(padded.desc);
     // Strides should be (12, 4, 1), meaning the maximum offset at (2, 2, 2) is
     // (12 + 4 + 1) * 2, so the max size is one more than that.
@@ -118,12 +118,12 @@ test_status test_tensor_size() {
     );
 
     struct lg_ir_tensor zero_ten = {0};
-    test_assert(LG_DescComputeLayoutStrides(&zero_ten.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    test_assert(LG_DescComputeStrides(&zero_ten.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     calculated_bytes = LG_DescSizeInBytes(zero_ten.desc);
     test_assert(calculated_bytes == 0, "tensor size calculated to be %lu bytes", calculated_bytes);
 
     struct lg_ir_tensor scalar = { .desc.dim = {1}, .desc.rank = 1 };
-    test_assert(LG_DescComputeLayoutStrides(&scalar.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    test_assert(LG_DescComputeStrides(&scalar.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     calculated_bytes = LG_DescSizeInBytes(scalar.desc);
     test_assert(calculated_bytes == sizeof(lg_scalar), "tensor size calculated to be %lu bytes", calculated_bytes);
 
@@ -162,11 +162,11 @@ test_status test_alloc_tensor() {
 test_status test_tensor_aligned_views_not_compatible() {
     // 4 != 5, so these should clash and not be compatible
     struct lg_ir_tensor x0 = { .desc.dim =  {4, 4}, .desc.rank = 2 };
-    test_assert(LG_DescComputeLayoutStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    test_assert(LG_DescComputeStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     struct lg_ir_tensor x1 = { .desc.dim =  {6, 5, 4}, .desc.rank = 3 };
-    test_assert(LG_DescComputeLayoutStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    test_assert(LG_DescComputeStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
 
-    enum lg_status status = LG_ComputeBroadcastedAxes((struct lg_desc*[]){&x0.desc, &x1.desc}, 2);
+    enum lg_status status = LG_CreateBroadcastSpace((struct lg_desc*[]){&x0.desc, &x1.desc}, 2);
     test_assert(status == LG_STATUS_SHAPE_MISMATCH, "failed to detect shape mismatch");
 
     return TEST_STATUS_OK;
@@ -182,13 +182,13 @@ test_status test_tensor_aligned_views() {
     //     (m-1, n-1, k-1)
     // }
     struct lg_ir_tensor x0 = { .desc.dim = {6, 4, 4}, .desc.rank = 3 };
-    test_assert(LG_DescComputeLayoutStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    test_assert(LG_DescComputeStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
     // This is a mat44.
     // In memory, with no alignment, this should be a contiguous
     // row-major 2d array (these are (x, y) pairs, not matrix coords):
     // { (0, 0), (0, 1) ... (1, 0), (1, 1) ... (m-1, n-1) }
     struct lg_ir_tensor x1 = { .desc.dim = {4 ,4}, .desc.rank = 2 };
-    test_assert(LG_DescComputeLayoutStrides(&x1.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
+    test_assert(LG_DescComputeStrides(&x1.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to initialize tensor");
 
     test_assert(x1.desc.strides[0] == 4, "got first stride of %lu", x0.desc.strides[0]);
     test_assert(x1.desc.strides[1] == 1, "got second stride of %lu", x0.desc.strides[1]);
@@ -197,7 +197,7 @@ test_status test_tensor_aligned_views() {
     size_t expected_strides_a[] = {16, 4, 1};
     size_t expected_strides_b[] = {0, 4, 1};
 
-    test_assert(LG_ComputeBroadcastedAxes((struct lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to broadcast tensors");
+    test_assert(LG_CreateBroadcastSpace((struct lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to broadcast tensors");
     test_assert(LG_SortAxes((struct lg_desc*[]){&x0.desc, &x1.desc}, 2) == LG_STATUS_OK, "failed to sort dmis");
     test_assert_array_eq(expected_strides_a, x0.desc.strides, 3, "%llu");
     test_assert_array_eq(expected_strides_b, x1.desc.strides, 3, "%llu");
@@ -226,15 +226,15 @@ test_status test_cpu_add_basic() {
         .Free = free_libc,
     };
 
-    test_assert(LG_DescComputeLayoutStrides(&y.desc, LG_LAYOUT_ROW_MAJOR, 7) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(LG_DescComputeLayoutStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(LG_DescComputeLayoutStrides(&x1.desc, LG_LAYOUT_COL_MAJOR, 2) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&y.desc, LG_LAYOUT_ROW_MAJOR, 7) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x1.desc, LG_LAYOUT_COL_MAJOR, 2) == LG_STATUS_OK, "failed to lay out tensor");
 
     test_assert(LG_AllocTensor(&allocator, &y) == LG_STATUS_OK, "failed to allocate tensor");
     test_assert(LG_AllocTensor(&allocator, &x0) == LG_STATUS_OK, "failed to allocate tensor");
     test_assert(LG_AllocTensor(&allocator, &x1) == LG_STATUS_OK, "failed to allocate tensor");
 
-    test_assert(LG_ComputeBroadcastedAxes(((struct lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
+    test_assert(LG_CreateBroadcastSpace(((struct lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
     test_assert(LG_SortAxes(((struct lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to sort dims");
 
     size_t coords[LG_MAX_RANK] = {0};
@@ -279,15 +279,15 @@ test_status test_cpu_add_vec() {
         .Free = free_libc,
     };
 
-    test_assert(LG_DescComputeLayoutStrides(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(LG_DescComputeLayoutStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(LG_DescComputeLayoutStrides(&x1.desc, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x1.desc, LG_LAYOUT_COL_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
     test_assert(LG_AllocTensor(&allocator, &y) == LG_STATUS_OK, "failed to allocate tensor");
     test_assert(LG_AllocTensor(&allocator, &x0) == LG_STATUS_OK, "failed to allocate tensor");
     test_assert(LG_AllocTensor(&allocator, &x1) == LG_STATUS_OK, "failed to allocate tensor");
 
-    test_assert(LG_ComputeBroadcastedAxes(((struct lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
+    test_assert(LG_CreateBroadcastSpace(((struct lg_desc*[]){&y.desc, &x0.desc, &x1.desc}), 3) == LG_STATUS_OK, "failed to broadcast tensors");
 
     size_t coords[LG_MAX_RANK] = {0};
     do {
@@ -327,9 +327,9 @@ test_status test_cpu_matmul() {
               x0 = { .desc.dim = {2, 2}, .desc.rank = 2 },
               x1T = { .desc.dim = {2, 2}, .desc.rank = 2 };
 
-    test_assert(LG_DescComputeLayoutStrides(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(LG_DescComputeLayoutStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(LG_DescComputeLayoutStrides(&x1T.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x1T.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
     {
         size_t expected_dim[] = {2, 2};
@@ -352,7 +352,7 @@ test_status test_cpu_matmul() {
     y.data = y_data;
     struct lg_ir_tensor y_cpy = y;
 
-    test_assert(LG_ComputeContractedAxes(&y_cpy.desc, &x0.desc, &x1T.desc, 0) == LG_STATUS_OK, "failed to contract output dims");
+    test_assert(LG_CreateContractionSpace(&y_cpy.desc, &x0.desc, &x1T.desc, 0) == LG_STATUS_OK, "failed to contract output dims");
 
     {
         size_t expected_dim[] = {2, 2, 2};
@@ -385,9 +385,9 @@ test_status test_cpu_matmul_batch() {
               x0 = { .desc.dim = {2, 2, 2}, .desc.rank = 3 },
               x1T = { .desc.dim = {2, 2, 2}, .desc.rank = 3 };
 
-    test_assert(LG_DescComputeLayoutStrides(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(LG_DescComputeLayoutStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(LG_DescComputeLayoutStrides(&x1T.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&y.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x1T.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
     {
         size_t expected_dim[] = {2, 2, 2};
@@ -416,7 +416,7 @@ test_status test_cpu_matmul_batch() {
     y.data = y_data;
     struct lg_ir_tensor y_cpy = y;
 
-    test_assert(LG_ComputeContractedAxes(&y_cpy.desc, &x0.desc, &x1T.desc, 1) == LG_STATUS_OK, "failed to contract output dims");
+    test_assert(LG_CreateContractionSpace(&y_cpy.desc, &x0.desc, &x1T.desc, 1) == LG_STATUS_OK, "failed to contract output dims");
 
     {
         size_t expected_dim[] = {2, 2, 2, 2};
@@ -460,10 +460,10 @@ test_status test_expr_alloc() {
     test_assert(0 < expr_fields_bytes_allocated, "failed to allocate expr");
 
     struct lg_ir_tensor x0 = { .desc.rank = 1, .desc.dim = {4} },
-              x1 = { .desc.rank = 1, .desc.dim = {4} };
+                        x1 = { .desc.rank = 1, .desc.dim = {4} };
     
-    test_assert(LG_DescComputeLayoutStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
-    test_assert(LG_DescComputeLayoutStrides(&x1.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x0.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
+    test_assert(LG_DescComputeStrides(&x1.desc, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to lay out tensor");
 
     lg_scalar x0_vals[4] = {1, 2, 3, 4},
               x1_vals[4] = {3, 3, 1, 4};
@@ -478,21 +478,22 @@ test_status test_expr_alloc() {
     struct lg_ir_tensor y1;
     test_assert(LG_IR_AppendAdd(&expr, &y1, y0, x1) == LG_STATUS_OK, "failed to append add node");
 
-    test_assert(LG_IR_CompileExpr(&expr, LG_LAYOUT_ROW_MAJOR, 1) == LG_STATUS_OK, "failed to compile expr");
+    test_assert(LG_IR_CompileExpr(&expr) == LG_STATUS_OK, "failed to compile expr");
 
     lg_scalar *data_buf;
-    test_assert(LG_AllocExprData(&allocator, &allocator, &data_buf, NULL, &expr) == LG_STATUS_OK, "failed to allocate expr");
+    size_t expr_data_bytes_allocated = 0;
+    test_assert(LG_AllocExprData(&allocator, &allocator, &data_buf, &expr_data_bytes_allocated, &expr) == LG_STATUS_OK, "failed to allocate expr");
     test_assert(data_buf == expr.nodes[0].y.data, "wanted %p; got %p", data_buf, expr.nodes[0].y.data);
-    // test_assert(data_buf == expr.y[1].data, "wanted %p; got %p", data_buf, expr.y[1].data); 
+    test_assert(8 * sizeof(lg_scalar) == expr_data_bytes_allocated, "did not alias buffers, got %lu", expr_data_bytes_allocated);
+    // test_assert(data_buf == expr.nodes[1].y.data, "wanted %p; got %p", data_buf, expr.y[1].data); 
     // fuck you, gcc ubsan. corrupts the fucking pointer
     test_assert(LG_RT_CPU_ExecExpr(expr) == LG_STATUS_OK, "failed to exectute expr");
 
-    // The buffers alias, so . . .
+    // The buffers should not alias, so . . .
     // x0 + x1 = y0 = {4, 5, 4, 8};
-    // y0 + x1 = y1 = ...;
-    lg_scalar expected_data[4] = {7, 8, 5, 12};
-    test_assert_array_eq(expected_data, expr.nodes[0].y.data, 4, "%f");
-    // test_assert_array_eq(expected_data, expr.y[1].data, 4, "%f");
+    lg_scalar expected_data[4] = {4, 5, 4, 8};
+    test_assert_array_eq(expected_data, expr.nodes[0].y.data, 4, "%.2f");
+    // test_assert_array_eq(expected_data, expr.nodes[1].data, 4, "%f");
     // still corrupts the fucking pointer
 
     free(expr_buf);

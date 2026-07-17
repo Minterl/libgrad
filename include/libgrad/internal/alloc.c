@@ -83,6 +83,7 @@ enum lg_status LG_AllocExprData(
         return LG_STATUS_OUT_OF_MEMORY;
     }
 
+    // TODO: born_at based indexing is clearly very fragile
     size_t *sizes = (size_t*)scratch_buf;
     size_t *dead_after = sizes + expr->len;
     size_t *total_freed_after_time = dead_after + expr->len;
@@ -90,7 +91,7 @@ enum lg_status LG_AllocExprData(
 
     for (size_t i = 0; i < expr->len; i++) {
         sizes[i] = 0;
-        dead_after[i] = 0;
+        dead_after[i] = i;
         total_freed_after_time[i] = 0;
         offsets[i] = 0;
     }
