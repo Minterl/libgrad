@@ -98,7 +98,7 @@ static inline size_t LG__DescLeftPadAxes(struct lg_desc **descs, size_t n_descs)
     return max_rank;
 }
     
- enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
+enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
     const size_t max_rank = LG__DescLeftPadAxes(descs, n_descs);
 
     // --- Validate that all tensors are broadcast-compatible ---

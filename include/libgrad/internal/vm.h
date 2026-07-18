@@ -12,17 +12,17 @@
 /// non-zero values in `dim`.
 ///
 /// Backing buffers are stored stride-major.
-struct lg_ir_tensor {
-    /// Since the exprs are pure SSA, the time the (y) value is born at
-    /// functions as a globally unique identifier.
-    uint32_t born_at;
+// struct lg_ir_tensor {
+//     /// Since the exprs are pure SSA, the time the (y) value is born at
+//     /// functions as a globally unique identifier.
+//     uint32_t born_at;
     
-    /// The shape descriptor of the tensor.
-    struct lg_desc desc;
+//     /// The shape descriptor of the tensor.
+//     struct lg_desc desc;
     
-    /// The tensor's primary backing buffer.
-    lg_scalar *data;
-};
+//     /// The tensor's primary backing buffer.
+//     lg_scalar *data;
+// };
 
 /// Discriminator for an operation.
 ///
@@ -57,6 +57,15 @@ enum lg_ir_opcode {
     LG_OPCODE_LN,
 };
 
+struct lg_ir_symbol {
+    uint32_t  id;
+};
+
+struct lg_ir_expr_node_meta_contract {
+    size_t n_contracted_axes;
+    size_t n_batch_axes;
+};
+
 /// An IR node in an expr.
 ///
 /// If x1.data == NULL, then the node represents a unary
@@ -65,10 +74,26 @@ enum lg_ir_opcode {
 struct lg_ir_expr_node {
     enum lg_ir_opcode    opcode;
 
-    struct lg_ir_tensor  y;
-    struct lg_ir_tensor  x0;
-    struct lg_ir_tensor  x1;
+    struct lg_ir_symbol  y_logical;
+    struct lg_desc       y_physical;
+    uint32_t             y_buf_id;
+    size_t               y_offset;
+
+    struct lg_ir_symbol  x0_logical;
+    struct lg_desc       x0_physical;
+    uint32_t             x0_buf_id;
+    size_t               x0_offset;
+
+    struct lg_ir_symbol  x1_logical;
+    struct lg_desc       x1_physical;
+    uint32_t             x1_buf_id;
+    size_t               x1_offset;
+
+    union {
+        struct lg_ir_expr_node_meta_contract contract;
+    } meta_as;
 };
+
 
 /// The intermediate representation of a program.
 /// 
@@ -78,6 +103,8 @@ struct lg_ir_expr {
     size_t                   len;
     
     struct lg_ir_expr_node  *nodes LG_CHECK_BOUNDS(len);
+
+    size_t                   next_symbol_id;
 };
 
 /// Gets the last physical location of the tensor `x` and populates
@@ -88,22 +115,20 @@ struct lg_ir_expr {
 /// 
 /// If you want to make sure that is the case, append a NOP using `lgvm_Nop` to 
 /// the end of the expr.
-enum lg_status LG_IR_GetLastLocation(struct lg_ir_expr *expr, struct lg_ir_tensor *x);
+enum lg_status LG_IR_AppendNop(struct lg_ir_expr *expr, struct lg_ir_symbol x);
 
-enum lg_status LG_IR_AppendNop(struct lg_ir_expr *expr, struct lg_ir_tensor x);
+enum lg_status LG_IR_AppendAdd(struct lg_ir_expr *expr, struct lg_ir_symbol *y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
+enum lg_status LG_IR_AppendSub(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
+enum lg_status LG_IR_AppendContract(struct lg_ir_expr *expr, struct lg_ir_symbol *y, struct lg_ir_symbol x0, struct lg_ir_symbol x1, size_t n_contracted_axes, size_t n_batch_axes);
+enum lg_status LG_IR_AppendHadamard(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
 
-enum lg_status LG_IR_AppendAdd(struct lg_ir_expr *expr, struct lg_ir_tensor *y, const struct lg_ir_tensor x0, const struct lg_ir_tensor x1);
-enum lg_status LG_IR_AppendSub(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor x0, const struct lg_ir_tensor x1);
-enum lg_status LG_IR_AppendContract(struct lg_ir_expr *expr, struct lg_ir_tensor *y, struct lg_ir_tensor x0, struct lg_ir_tensor x1, size_t n_contracted_axes, size_t n_batch_axes);
-enum lg_status LG_IR_AppendHadamard(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor x0, const struct lg_ir_tensor x1);
+enum lg_status LG_IR_AppendMSELoss(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
+enum lg_status LG_IR_AppendCrossEntropyLoss(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
 
-enum lg_status LG_IR_AppendMSELoss(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor x0, const struct lg_ir_tensor x1);
-enum lg_status LG_IR_AppendCrossEntropyLoss(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor x0, const struct lg_ir_tensor x1);
-
-enum lg_status LG_IR_AppendReLU(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor in);
-enum lg_status LG_IR_AppendStableSoftmax(struct lg_ir_expr *expr, const struct lg_ir_tensor y, const struct lg_ir_tensor in);
-enum lg_status LG_IR_AppendSigmoid(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor in);
-enum lg_status LG_IR_AppendLn(struct lg_ir_expr *expr, struct lg_ir_tensor y, const struct lg_ir_tensor in);
+enum lg_status LG_IR_AppendReLU(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol in);
+enum lg_status LG_IR_AppendStableSoftmax(struct lg_ir_expr *expr, const struct lg_ir_symbol y, const struct lg_ir_symbol in);
+enum lg_status LG_IR_AppendSigmoid(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol in);
+enum lg_status LG_IR_AppendLn(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol in);
 
 /// "Compiles" an expr.
 enum lg_status LG_IR_CompileExpr(struct lg_ir_expr *expr);
