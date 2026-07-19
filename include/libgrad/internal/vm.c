@@ -78,6 +78,56 @@ enum lg_status LG_IR_AppendContract(
     return LG_STATUS_OK;
 }
 
+enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr) {
+    enum lg_status status;
+    for (size_t i = 0; i < expr->len; i++) {
+        switch (expr->nodes[i].opcode) {
+        case LG_OPCODE_NOP:
+            break;
+
+        case LG_OPCODE_ADD:
+        case LG_OPCODE_SUB: {
+            size_t rank;
+            size_t dim[LG_MAX_RANK];
+            status = LG_InferBroadcastedDims(
+                &rank,
+                dim, 
+                (const struct lg_desc*[2]){
+                    &expr->nodes[i].x0_physical,
+                    &expr->nodes[i].x1_physical,
+                },
+                2
+            );
+            if (status != LG_STATUS_OK) {
+                return status;
+            }
+
+            expr->nodes[i].y_physical.rank = rank;
+            for (size_t j = 0; j < LG_MAX_RANK; j++) {
+                expr->nodes[j].y_physical.dim[j] = dim[i];
+            }
+
+            // TODO: record this in a symbol table for a single final pass over the array
+            // using an allocator + linear probe hash map
+
+            break;
+        }
+
+        case LG_OPCODE_CONTRACT:
+        case LG_OPCODE_HADAMARD:
+        case LG_OPCODE_LOSS_MSE:
+        case LG_OPCODE_LOSS_CROSS_ENTROPY:
+        case LG_OPCODE_RELU:
+        case LG_OPCODE_STABLE_SOFTMAX:
+        case LG_OPCODE_SIGMOID:
+        case LG_OPCODE_LN:
+          break;
+        }
+    }
+
+    return LG_STATUS_OK;
+}
+
 enum lg_status LG_IR__SortAxes(struct lg_ir_expr *expr) {
     enum lg_status status;
     for (size_t i = 0; i < expr->len; i++) {
