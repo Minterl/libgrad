@@ -70,8 +70,7 @@ bool LG_DescIsIsotropic(struct lg_desc desc) {
     }
 }
 
-/// Returns the maximum rank of all of the descriptors
-static inline size_t LG__DescLeftPadAxes(struct lg_desc **descs, size_t n_descs) {
+void LG__DescLeftPadAxes(struct lg_desc **descs, size_t n_descs) {
     size_t max_rank = 0;
     for (size_t i = 0; i < n_descs; i++) {
         if (descs[i]->rank > max_rank) {
@@ -94,14 +93,21 @@ static inline size_t LG__DescLeftPadAxes(struct lg_desc **descs, size_t n_descs)
             descs[i]->rank = max_rank;
         }
     }
-    
-    return max_rank;
 }
 
-enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
-    const size_t max_rank = LG__DescLeftPadAxes(descs, n_descs);
+enum lg_status LG_InferBroadcastedDims(
+    size_t *out_max_rank,
+    size_t *out_dims,
+    const struct lg_desc **descs,
+    size_t n_descs
+) {
+    size_t max_rank = 0;
+    for (size_t i = 0; i < n_descs; i++) {
+        if (descs[i]->rank > max_rank) {
+            max_rank = descs[i]->rank;
+        }
+    }
 
-    // --- Validate that all tensors are broadcast-compatible ---
     // Every tensor participating in the tracking must be broadcast-compatible
     // with every other tensor.
     // Naively, we would perform an O(n^2) check across a matrix of all of the participating tensors.
@@ -112,31 +118,52 @@ enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
     // 1) The dimensions are the same.
     // 2) One of the dimensions is 1.
     // 3) One of the dimensions does not exist.
+    
     size_t master_dim[LG_MAX_RANK];
     for (size_t i = 0; i < max_rank; i++) {
         master_dim[i] = 1;
     }
 
     for (size_t i_desc = 0; i_desc < n_descs; i_desc++) {
-        for (size_t i_axis = 0; i_axis < max_rank; i_axis++) {
-            size_t dim_current = (i_axis < descs[i_desc]->rank) ? descs[i_desc]->dim[i_axis] : 1;
-            if (dim_current == 1) {
+        for (size_t i_axis = 0; i_axis < descs[i_desc]->rank; i_axis++) {
+            const size_t dim_desc = descs[i_desc]->dim[descs[i_desc]->rank - i_axis - 1];
+            size_t *const dim_master = &master_dim[max_rank - i_axis - 1];
+            if (dim_desc == 1) {
                 continue;
             }
-            if (master_dim[i_axis] == 1) {
-                master_dim[i_axis] = dim_current;
-            } else if (master_dim[i_axis] != dim_current) {
+            if (*dim_master == 1) {
+                *dim_master = dim_desc;
+            } else if (*dim_master != dim_desc) {
                 return LG_STATUS_SHAPE_MISMATCH;
             }
         }
     }
+
+    if (out_max_rank != NULL) {
+        *out_max_rank = max_rank;
+    }
+    if (out_dims != NULL) {
+        for (size_t i = 0; i < LG_MAX_RANK; i++) {
+            out_dims[i] = master_dim[i];
+        }
+    }
+
+    return LG_STATUS_OK;
+} 
+
+enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
+    size_t max_rank = 0;
+    size_t master_dim[LG_MAX_RANK] = {0};
+    enum lg_status status = LG_InferBroadcastedDims(&max_rank, master_dim, (const struct lg_desc**)descs, n_descs);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+
+    LG__DescLeftPadAxes(descs, n_descs);
     
     // Since we know all of the tensors are broadcast-compatible, and their
     // dims/strides are all in the same order, we can pre-bake broadcasting into the
     // strides in the views.
-    //
-    // It's important to remember that both the max_rank array and the dims in the views
-    // are right-aligned at this point.
     //
     // This is done in two parts for every tensor along each axis:
     // 1) Setting all strides less than the master to zero, causing the actual
@@ -160,7 +187,7 @@ enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
     return LG_STATUS_OK;
 }
 
-void LG_ComputeContractedDims(
+void LG_InferContractedDims(
     struct lg_desc *y,
     const struct lg_desc x0,
     const struct lg_desc x1,

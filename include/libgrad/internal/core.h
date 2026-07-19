@@ -100,15 +100,24 @@ bool LG_NDiterIncrement(struct lg_nditer *iter, size_t axis);
 /// easiest way to do it.
 void LG_NDiterGoto(struct lg_nditer *iter, size_t *coords);
 
-/// Broadcast tensor views.
-///
+/// Infers the broadcasted logical dimensions between `descs`.
+enum lg_status LG_InferBroadcastedDims(
+    size_t *out_max_rank,
+    size_t *out_dims,
+    const struct lg_desc **descs,
+    size_t n_descs
+);
+
+/// Create a shared virtual contraction space between `descs` such that element wise accumulators
+/// may function according to broadcast semantics.
 enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs);
 
+/// TODO: rewrite this function as to not mutate the caller's descriptors.
 /// Computes the dimensions of a contraction between `x0` and `x1`,
 /// and puts the result in `y`.
 ///
 /// Does not compute strides.
-void LG_ComputeContractedDims(
+void LG_InferContractedDims(
     struct lg_desc *y,
     const struct lg_desc x0,
     const struct lg_desc x1,
