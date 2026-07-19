@@ -102,8 +102,8 @@ void LG_NDiterGoto(struct lg_nditer *iter, size_t *coords);
 
 /// Infers the broadcasted logical dimensions between `descs`.
 enum lg_status LG_InferBroadcastedDims(
-    size_t *out_max_rank,
-    size_t *out_dims,
+    size_t *out_rank,
+    size_t *out_dim,
     const struct lg_desc **descs,
     size_t n_descs
 );
@@ -112,15 +112,14 @@ enum lg_status LG_InferBroadcastedDims(
 /// may function according to broadcast semantics.
 enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs);
 
-/// TODO: rewrite this function as to not mutate the caller's descriptors.
-/// Computes the dimensions of a contraction between `x0` and `x1`,
-/// and puts the result in `y`.
+/// Computes the dimensions of a contraction between `x0` and `x1`
 ///
 /// Does not compute strides.
 void LG_InferContractedDims(
-    struct lg_desc *y,
-    const struct lg_desc x0,
-    const struct lg_desc x1,
+    size_t *out_rank,
+    size_t *out_dim,
+    const struct lg_desc *x0,
+    const struct lg_desc *x1,
     size_t n_contracted_axes,
     size_t n_batch_axes
 );

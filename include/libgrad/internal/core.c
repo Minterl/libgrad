@@ -96,8 +96,8 @@ void LG__DescLeftPadAxes(struct lg_desc **descs, size_t n_descs) {
 }
 
 enum lg_status LG_InferBroadcastedDims(
-    size_t *out_max_rank,
-    size_t *out_dims,
+    size_t *out_rank,
+    size_t *out_dim,
     const struct lg_desc **descs,
     size_t n_descs
 ) {
@@ -139,12 +139,12 @@ enum lg_status LG_InferBroadcastedDims(
         }
     }
 
-    if (out_max_rank != NULL) {
-        *out_max_rank = max_rank;
+    if (out_rank != NULL) {
+        *out_rank = max_rank;
     }
-    if (out_dims != NULL) {
+    if (out_dim != NULL) {
         for (size_t i = 0; i < LG_MAX_RANK; i++) {
-            out_dims[i] = master_dim[i];
+            out_dim[i] = master_dim[i];
         }
     }
 
@@ -188,24 +188,31 @@ enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
 }
 
 void LG_InferContractedDims(
-    struct lg_desc *y,
-    const struct lg_desc x0,
-    const struct lg_desc x1,
+    size_t *out_rank,
+    size_t *out_dim,
+    const struct lg_desc *x0,
+    const struct lg_desc *x1,
     size_t n_contracted_axes,
     size_t n_batch_axes
 ) {
     // repeated below
-    const size_t x0_first_contracted_axis = x0.rank - n_contracted_axes;
+    const size_t x0_first_contracted_axis = x0->rank - n_contracted_axes;
     const size_t x1_first_free_axis = n_contracted_axes + n_batch_axes;
 
     size_t rank = 0;
-    for (size_t i = n_batch_axes; i < x0_first_contracted_axis; i++, rank++) {
-        y->dim[rank] = x0.dim[i];
+
+    if (out_dim != NULL) {
+        for (size_t i = n_batch_axes; i < x0_first_contracted_axis; i++, rank++) {
+            out_dim[rank] = x0->dim[i];
+        }
+        for (size_t i = x1->rank - 1; i >= x1_first_free_axis; i--, rank++) {
+            out_dim[rank] = x1->dim[i];
+        }
     }
-    for (size_t i = x1.rank - 1; i >= x1_first_free_axis; i--, rank++) {
-        y->dim[rank] = x1.dim[i];
+
+    if (out_rank != NULL) {
+        *out_rank = rank;
     }
-    y->rank = rank;
 }
 
 enum lg_status LG_CreateContractionSpace(
