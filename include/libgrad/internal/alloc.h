@@ -28,14 +28,6 @@ struct lg_allocator {
     void (*Free)(void *ctx, void *ptr);
 };
 
-/// Allocate necessary memory for `tensor`, and mutate the `data` pointer.
-/// 
-/// If a tensor is zero-sized, returns early without mutating `tensor`.
-enum lg_status LG_AllocTensor(struct lg_allocator *allocator, struct lg_ir_tensor *tensor);
-
-/// Frees the buffers backing `tensor`.
-enum lg_status LG_FreeTensor(struct lg_allocator *allocator, struct lg_ir_tensor *tensor);
-
 /// Allocate the memory necessary for an expr of capacity `cap`,
 /// and assign offsets into the buffer for each item in the SoA.
 enum lg_status LG_AllocExpr(

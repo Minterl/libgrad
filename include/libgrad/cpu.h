@@ -24,40 +24,41 @@ void LG_RT_CPU_Contract(
 #ifdef LG_CPU_IMPLEMENTATION
 #undef LG_CPU_IMPLEMENTATION
 
-enum lg_status LG_RT_CPU_ExecExpr(struct lg_ir_expr expr) {
-    for (size_t i = 0; i < expr.len; i++) {
-        switch (expr.nodes[i].opcode) {
-        case LG_OPCODE_NOP:
-            break;
-        case LG_OPCODE_ADD:
-            LG_RT_CPU_Add(
-                expr.nodes[i].y.desc, expr.nodes[i].y.data,
-                expr.nodes[i].x0.desc, expr.nodes[i].x0.data,
-                expr.nodes[i].x1.desc, expr.nodes[i].x1.data
-            );
-            break;
-        case LG_OPCODE_CONTRACT:
-            LG_RT_CPU_Contract(
-                expr.nodes[i].y.desc, expr.nodes[i].y.data,
-                expr.nodes[i].x0.desc, expr.nodes[i].x0.data,
-                expr.nodes[i].x1.desc, expr.nodes[i].x1.data
-            );
-            break;
-        case LG_OPCODE_SUB:
-        case LG_OPCODE_HADAMARD:
-        case LG_OPCODE_LOSS_MSE:
-        case LG_OPCODE_LOSS_CROSS_ENTROPY:
-        case LG_OPCODE_RELU:
-        case LG_OPCODE_STABLE_SOFTMAX:
-        case LG_OPCODE_SIGMOID:
-        case LG_OPCODE_LN:
-        default:
-            return LG_STATUS_UNSUPPORTED_OPCODE;
-        }
-    }
+// TODO: attach runtime context
+// enum lg_status LG_RT_CPU_ExecExpr(struct lg_ir_expr expr) {
+//     for (size_t i = 0; i < expr.len; i++) {
+//         switch (expr.nodes[i].opcode) {
+//         case LG_OPCODE_NOP:
+//             break;
+//         case LG_OPCODE_ADD:
+//             LG_RT_CPU_Add(
+//                 expr.nodes[i].y_physical, expr.nodes[i].y_data,
+//                 expr.nodes[i].x0_physical, expr.nodes[i].x0.data,
+//                 expr.nodes[i].x1_physical, expr.nodes[i].x1.data
+//             );
+//             break;
+//         case LG_OPCODE_CONTRACT:
+//             LG_RT_CPU_Contract(
+//                 expr.nodes[i].y.desc, expr.nodes[i].y.data,
+//                 expr.nodes[i].x0.desc, expr.nodes[i].x0.data,
+//                 expr.nodes[i].x1.desc, expr.nodes[i].x1.data
+//             );
+//             break;
+//         case LG_OPCODE_SUB:
+//         case LG_OPCODE_HADAMARD:
+//         case LG_OPCODE_LOSS_MSE:
+//         case LG_OPCODE_LOSS_CROSS_ENTROPY:
+//         case LG_OPCODE_RELU:
+//         case LG_OPCODE_STABLE_SOFTMAX:
+//         case LG_OPCODE_SIGMOID:
+//         case LG_OPCODE_LN:
+//         default:
+//             return LG_STATUS_UNSUPPORTED_OPCODE;
+//         }
+//     }
 
-    return LG_STATUS_OK;
-}
+//     return LG_STATUS_OK;
+// }
 
 void LG_RT_CPU_Add(
     const struct lg_desc y_desc, lg_scalar *restrict y,
