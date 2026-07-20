@@ -4,6 +4,8 @@
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/vm.h>
 
+#define LG__ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
+
 /// Helper interface for allocating tensors
 ///
 /// Many users will choose to completely omit use of this utility,
