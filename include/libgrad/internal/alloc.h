@@ -30,6 +30,22 @@ struct lg_allocator {
     void (*Free)(void *ctx, void *ptr);
 };
 
+/// Allocates `n` blocks of size `sizes[i]` and puts the resulting pointer
+/// in `out_ptrs[i]`.
+///
+/// These blocks are guaranteed to be contiguous in memory and aligned to `align`.
+///
+/// `out_ptrs[0]` is the pointer the allocated region itself i.e the pointers
+/// are allocated in the order of `out_ptrs`.
+enum lg_status LG__AllocContiguousBlocks(
+    struct lg_allocator *alloc,
+    uint8_t **out_ptrs,
+    size_t *out_bytes_allocated,
+    const size_t *sizes,
+    size_t n,
+    size_t align
+);
+
 /// Allocate the memory necessary for an expr of capacity `cap`,
 /// and assign offsets into the buffer for each item in the SoA.
 enum lg_status LG_AllocExpr(
