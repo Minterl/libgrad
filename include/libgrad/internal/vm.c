@@ -18,13 +18,13 @@ enum lg_status LG_IR__ExprAppend(
     const struct lg_ir_expr_node node 
 ) {
 #ifdef LG_SAFE
-    if (expr->len >= expr->cap) {
+    if (expr->nodes_len >= expr->nodes_cap) {
         return LG_STATUS_EXPR_OVERFLOW;
     }
 #endif // LG_SAFE
 
-    size_t next_idx = expr->len;
-    expr->len += 1;
+    size_t next_idx = expr->nodes_len;
+    expr->nodes_len += 1;
     expr->nodes[next_idx] = node;
 
     return LG_STATUS_OK;
@@ -81,20 +81,20 @@ enum lg_status LG_IR_AppendContract(
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr, struct lg_allocator *scratch) {
+enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr *expr) {
     enum lg_status status;
 
-    struct lg_desc *symtab_descs = scratch->Alloc(scratch->ctx, expr->len);
+    struct lg_desc *symtab_descs = scratch->Alloc(scratch->ctx, expr->nodes_len);
     if (symtab_descs == NULL) {
         return LG_STATUS_OUT_OF_MEMORY;
     }
     struct lg_vm__symtab symtab = {0};
-    status = LG_VM__SymtabInit(&symtab, scratch, expr->len * 2);
+    status = LG_VM__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
     if (status != LG_STATUS_OK) {
         goto out_free_descs;
     }
 
-    for (size_t i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->nodes_len; i++) {
         size_t rank;
         size_t dim[LG_MAX_RANK];
 
@@ -156,7 +156,7 @@ enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr, struct lg_allocator *sc
         }
     }
 
-    for (size_t i_node = 0; i_node < expr->len; i_node++) {
+    for (size_t i_node = 0; i_node < expr->nodes_len; i_node++) {
         const uint32_t symbol_ids[3] = {
             expr->nodes[i_node].y_logical.id,
             expr->nodes[i_node].x0_logical.id,
@@ -190,7 +190,7 @@ out_free_descs:
 }
 
 enum lg_status LG_IR__AssignLayouts(struct lg_ir_expr *expr, enum lg_layout layout, size_t unit_align) {
-    for (size_t i_node = 0; i_node < expr->len; i_node++) {
+    for (size_t i_node = 0; i_node < expr->nodes_len; i_node++) {
         if (expr->nodes[i_node].opcode == LG_OPCODE_NOP) {
             continue;
         }
@@ -238,10 +238,10 @@ enum lg_status LG_IR__Bufferize(
         scratch_bufs,
         &bytes_allocated,
         (size_t[]){
-            expr->len * sizeof(size_t),
-            expr->len * sizeof(size_t),
-            expr->len * sizeof(size_t),
-            expr->len * sizeof(size_t),
+            expr->nodes_len * sizeof(size_t),
+            expr->nodes_len * sizeof(size_t),
+            expr->nodes_len * sizeof(size_t),
+            expr->nodes_len * sizeof(size_t),
         },
         4,
         8
@@ -255,12 +255,12 @@ enum lg_status LG_IR__Bufferize(
     size_t *const symtab_offsets = (size_t*)scratch_bufs[3];
 
     struct lg_vm__symtab symtab = {0};
-    status = LG_VM__SymtabInit(&symtab, scratch, expr->len * 2);
+    status = LG_VM__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
     if (status != LG_STATUS_OK) {
         goto out_free_scratch_bufs;
     }
 
-    for (size_t i_time = 0; i_time < expr->len; i_time++) {
+    for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
         const uint32_t symbol_ids[3] = {
             expr->nodes[i_time].y_logical.id,
             expr->nodes[i_time].x0_logical.id,
@@ -281,7 +281,7 @@ enum lg_status LG_IR__Bufferize(
     }
 
     // --- Calculate physical sizes & map them to timesteps ---
-    for (size_t i_time = 0; i_time < expr->len; i_time++) {
+    for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
         const uint32_t symbol_ids[3] = {
             expr->nodes[i_time].y_logical.id,
             expr->nodes[i_time].x0_logical.id,
@@ -321,7 +321,7 @@ enum lg_status LG_IR__Bufferize(
     // --- Core LSRA ---
     size_t current_offset = 0;
     size_t max_offset = 0;
-    for (size_t i_time = 0; i_time < expr->len; i_time++) {
+    for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
         size_t y_idx = 0;
         status = LG_VM__SymtabUpsert(&symtab, &y_idx, NULL, expr->nodes[i_time].y_logical.id);
         if (status != LG_STATUS_OK) {
@@ -341,7 +341,7 @@ enum lg_status LG_IR__Bufferize(
     }
 
     // --- Finally, assign offsets to IR nodes ---
-    for (size_t i_time = 0; i_time < expr->len; i_time++) {
+    for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
         const uint32_t symbol_ids[3] = {
             expr->nodes[i_time].y_logical.id,
             expr->nodes[i_time].x0_logical.id,
@@ -379,7 +379,7 @@ out_free_scratch_bufs:
 
 enum lg_status LG_IR__SortAxes(struct lg_ir_expr *expr) {
     enum lg_status status;
-    for (size_t i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->nodes_len; i++) {
         status = LG_SortAxes((struct lg_desc*[]){
             &expr->nodes[i].y_physical,
             &expr->nodes[i].x0_physical,
@@ -394,7 +394,7 @@ enum lg_status LG_IR__SortAxes(struct lg_ir_expr *expr) {
 
 enum lg_status LG_IR__CoalesceAxes(struct lg_ir_expr *expr) {
     enum lg_status status;
-    for (size_t i = 0; i < expr->len; i++) {
+    for (size_t i = 0; i < expr->nodes_len; i++) {
         status = LG_CoalesceAxes((struct lg_desc*[]){
             &expr->nodes[i].y_physical,
             &expr->nodes[i].x0_physical,
@@ -414,7 +414,7 @@ enum lg_status LG_IR_CompileExpr(
     size_t mem_align
 ) {
     enum lg_status status;
-    status = LG_IR__InferDims(expr, scratch);
+    status = LG_IR__InferDims(scratch, expr);
     if (status != LG_STATUS_OK) {
         return status;
     }
@@ -438,36 +438,56 @@ enum lg_status LG_IR_CompileExpr(
 }
 
 enum lg_status LG_AllocExpr(
-    struct lg_allocator *allocator,
+    struct lg_allocator *perm,
     uint8_t **out_ptr,
     size_t *out_bytes_allocated,
     struct lg_ir_expr *expr,
-    size_t cap
+    size_t nodes_cap,
+    size_t bufmap_cap
 ) {
-    const size_t size = cap * sizeof(struct lg_ir_expr_node);
-    
-    uint8_t *buf = allocator->Alloc(allocator->ctx, size);
-    if (buf == NULL) {
-        return LG_STATUS_OUT_OF_MEMORY;
-    }
-    if (out_ptr != NULL) {
-        *out_ptr = buf;
-    }
-    if (out_bytes_allocated != NULL) {
-        *out_bytes_allocated = size;
+    uint8_t *ptrs[3] = {0};
+    size_t bytes_allocated = 0;
+    enum lg_status status = LG__AllocContiguousBlocks(
+        perm,
+        ptrs, 
+        &bytes_allocated,
+        (size_t[]){
+            nodes_cap * sizeof(struct lg_ir_expr_node),
+            bufmap_cap * sizeof(struct lg_ir_expr_node),
+            bufmap_cap * sizeof(struct lg_ir_expr_node),
+        },
+        3,
+        16
+    );
+    if (status != LG_STATUS_OK) {
+        return status; 
     }
 
-    expr->nodes = (struct lg_ir_expr_node*)buf;
-    expr->cap = cap;
-    expr->len = 0;
+    for (size_t i = 0; i < bytes_allocated; i++) {
+        ptrs[0][i] = 0;
+    }
+
+    expr->nodes = (struct lg_ir_expr_node*)(ptrs[0]);
+    expr->nodes_cap = nodes_cap;
+    expr->nodes_len = 0;
+    expr->bufmap_ids = (uint32_t*)(ptrs[1]);
+    expr->bufmap_bytes_required = (size_t*)(ptrs[2]);
+    expr->bufmap_cap = bufmap_cap;
+    expr->bufmap_len = 0;
+
+    if (out_bytes_allocated != NULL) {
+        *out_bytes_allocated = bytes_allocated;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = ptrs[0];
+    }
 
     return LG_STATUS_OK;
 }
 
 void LG_FreeExpr(struct lg_allocator *allocator, struct lg_ir_expr *expr) {
     allocator->Free(allocator->ctx, expr->nodes);
-    expr->cap = 0;
-    expr->len = 0;
+    expr->nodes_cap = 0;
+    expr->nodes_len = 0;
     expr->nodes = NULL;
 }
-

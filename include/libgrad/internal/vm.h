@@ -79,12 +79,16 @@ struct lg_ir_expr_node {
 /// 
 /// As of right now, the exprs themselves do not support any control flow.
 struct lg_ir_expr {
-    size_t                   cap;
-    size_t                   len;
-    
-    struct lg_ir_expr_node  *nodes LG_CHECK_BOUNDS(len);
+    size_t                   nodes_cap;
+    size_t                   nodes_len;
+    struct lg_ir_expr_node  *nodes LG_CHECK_BOUNDS(nodes_len);
 
-    size_t                   next_symbol_id;
+    size_t                   bufmap_cap;
+    size_t                   bufmap_len;
+    uint32_t                *bufmap_ids LG_CHECK_BOUNDS(bufmap_len);
+    size_t                  *bufmap_bytes_required LG_CHECK_BOUNDS(bufmap_len);
+
+    uint32_t                 next_symbol_id;
 };
 
 /// Gets the last physical location of the tensor `x` and populates
@@ -118,14 +122,15 @@ enum lg_status LG_IR_CompileExpr(
     size_t mem_align
 );
 
-/// Allocate the memory necessary for an expr of capacity `cap`,
-/// and assign offsets into the buffer for each item in the SoA.
+/// Allocate the memory necessary for an expr with the given capacities,
+/// and assign offsets into the buffer for each field.
 enum lg_status LG_AllocExpr(
-    struct lg_allocator *allocator,
+    struct lg_allocator *perm,
     uint8_t **out_ptr,
     size_t *out_bytes_allocated,
     struct lg_ir_expr *expr,
-    size_t cap
+    size_t nodes_cap,
+    size_t bufmap_cap
 );
 
 /// Frees the memory required for an expr.
