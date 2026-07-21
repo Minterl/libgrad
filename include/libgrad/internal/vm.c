@@ -152,7 +152,7 @@ enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr, struct lg_allocator *sc
         }
         symtab_descs[idx].rank = rank;
         for (size_t j = 0; j < LG_MAX_RANK; j++) {
-            symtab_descs[idx].dim[j] = dim[i];
+            symtab_descs[idx].dim[j] = dim[j];
         }
     }
 
@@ -176,7 +176,7 @@ enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr, struct lg_allocator *sc
             }
             node_descs[idx]->rank = symtab_descs[idx].rank;
             for (size_t j = 0; j < LG_MAX_RANK; j++) {
-                node_descs[idx]->dim[j] = symtab_descs[idx].dim[j];
+                node_descs[i_sym]->dim[j] = symtab_descs[idx].dim[j];
             }
         }
     }
@@ -407,8 +407,25 @@ enum lg_status LG_IR__CoalesceAxes(struct lg_ir_expr *expr) {
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_IR_CompileExpr(struct lg_ir_expr *expr) {
+enum lg_status LG_IR_CompileExpr(
+    size_t *out_bytes_required,
+    struct lg_allocator *scratch,
+    struct lg_ir_expr *expr,
+    size_t mem_align
+) {
     enum lg_status status;
+    status = LG_IR__InferDims(expr, scratch);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    status = LG_IR__AssignLayouts(expr, LG_LAYOUT_ROW_MAJOR /* TODO */, mem_align);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    status = LG_IR__Bufferize(scratch, expr, out_bytes_required, 0 /* TODO */, mem_align);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
     status = LG_IR__SortAxes(expr);
     if (status != LG_STATUS_OK) {
         return status;
@@ -419,3 +436,38 @@ enum lg_status LG_IR_CompileExpr(struct lg_ir_expr *expr) {
     }
     return LG_STATUS_OK;
 }
+
+enum lg_status LG_AllocExpr(
+    struct lg_allocator *allocator,
+    uint8_t **out_ptr,
+    size_t *out_bytes_allocated,
+    struct lg_ir_expr *expr,
+    size_t cap
+) {
+    const size_t size = cap * sizeof(struct lg_ir_expr_node);
+    
+    uint8_t *buf = allocator->Alloc(allocator->ctx, size);
+    if (buf == NULL) {
+        return LG_STATUS_OUT_OF_MEMORY;
+    }
+    if (out_ptr != NULL) {
+        *out_ptr = buf;
+    }
+    if (out_bytes_allocated != NULL) {
+        *out_bytes_allocated = size;
+    }
+
+    expr->nodes = (struct lg_ir_expr_node*)buf;
+    expr->cap = cap;
+    expr->len = 0;
+
+    return LG_STATUS_OK;
+}
+
+void LG_FreeExpr(struct lg_allocator *allocator, struct lg_ir_expr *expr) {
+    allocator->Free(allocator->ctx, expr->nodes);
+    expr->cap = 0;
+    expr->len = 0;
+    expr->nodes = NULL;
+}
+

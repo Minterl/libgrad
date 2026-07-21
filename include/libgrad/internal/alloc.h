@@ -2,7 +2,6 @@
 #define LG_ALLOC_H_
 
 #include <libgrad/internal/core.h>
-#include <libgrad/internal/vm.h>
 
 #define LG__ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
 
@@ -45,18 +44,5 @@ enum lg_status LG__AllocContiguousBlocks(
     size_t n,
     size_t align
 );
-
-/// Allocate the memory necessary for an expr of capacity `cap`,
-/// and assign offsets into the buffer for each item in the SoA.
-enum lg_status LG_AllocExpr(
-    struct lg_allocator *allocator,
-    uint8_t **out_ptr,
-    size_t *out_bytes_allocated,
-    struct lg_ir_expr *expr,
-    size_t cap
-);
-
-/// Frees the memory required for an expr.
-void LG_FreeExpr(struct lg_allocator *allocator, struct lg_ir_expr *expr);
 
 #endif // LG_ALLOC_H_

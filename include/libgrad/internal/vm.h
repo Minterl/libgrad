@@ -2,6 +2,7 @@
 #define LG_VM_H_
 
 #include <libgrad/internal/core.h>
+#include <libgrad/internal/alloc.h>
 
 /// Discriminator for an operation.
 ///
@@ -110,6 +111,24 @@ enum lg_status LG_IR_AppendSigmoid(struct lg_ir_expr *expr, struct lg_ir_symbol 
 enum lg_status LG_IR_AppendLn(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol in);
 
 /// "Compiles" an expr.
-enum lg_status LG_IR_CompileExpr(struct lg_ir_expr *expr);
+enum lg_status LG_IR_CompileExpr(
+    size_t *out_bytes_required,
+    struct lg_allocator *scratch,
+    struct lg_ir_expr *expr,
+    size_t mem_align
+);
+
+/// Allocate the memory necessary for an expr of capacity `cap`,
+/// and assign offsets into the buffer for each item in the SoA.
+enum lg_status LG_AllocExpr(
+    struct lg_allocator *allocator,
+    uint8_t **out_ptr,
+    size_t *out_bytes_allocated,
+    struct lg_ir_expr *expr,
+    size_t cap
+);
+
+/// Frees the memory required for an expr.
+void LG_FreeExpr(struct lg_allocator *allocator, struct lg_ir_expr *expr);
 
 #endif // LG_VM_H_
