@@ -23,7 +23,7 @@
 struct lg_vm__symtab {
     size_t    cap_table;
     size_t    cap_array;
-    size_t    net_array_idx;
+    size_t    next_array_idx;
 
     bool     *occupied    LG_CHECK_BOUNDS(cap_table);
     uint32_t *symbol_ids  LG_CHECK_BOUNDS(cap_table);
@@ -99,10 +99,10 @@ static inline enum lg_status LG_VM__SymtabUpsert(struct lg_vm__symtab *table, si
         if (!table->occupied[i]) {
             table->occupied[i] = true;
             table->symbol_ids[i] = symbol_id;
-            table->array_idxs[i] = table->net_array_idx;
-            table->net_array_idx++;
+            table->array_idxs[i] = table->next_array_idx;
+            table->next_array_idx++;
             if (out_idx != NULL) {
-                *out_idx = i;
+                *out_idx = table->array_idxs[i];
             }
             if (out_was_occupied != NULL) {
                 *out_was_occupied = false;
@@ -111,7 +111,7 @@ static inline enum lg_status LG_VM__SymtabUpsert(struct lg_vm__symtab *table, si
         }
         if (table->symbol_ids[i] == symbol_id) {
             if (out_idx != NULL) {
-                *out_idx = i;
+                *out_idx = table->array_idxs[i];
             }
             if (out_was_occupied != NULL) {
                 *out_was_occupied = true;

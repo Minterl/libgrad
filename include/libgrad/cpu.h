@@ -76,7 +76,7 @@ void LG_RT_CPU_Add(
         const size_t x1_idx = iter.indices[2];
 
         y[y_idx] += x0[x0_idx] + x1[x1_idx];
-   } while (LG_NDiterIncrement(&iter, y_desc.rank - 1));
+   } while (LG_NDIterIncrement(&iter, y_desc.rank - 1));
 }
 
 void LG_RT_CPU_Contract(
@@ -95,7 +95,7 @@ void LG_RT_CPU_Contract(
         const size_t x1_idx = iter.indices[2];
 
         y[y_idx] += x0[x0_idx] * x1[x1_idx];
-    } while (LG_NDiterIncrement(&iter, y_desc.rank - 1));
+    } while (LG_NDIterIncrement(&iter, y_desc.rank - 1));
 }
 
 #endif // LG_CPU_IMPLEMENTATION

@@ -92,13 +92,13 @@ struct lg_nditer {
 /// Increment the coordinate `axis` on `iter` and update offsets.
 /// 
 /// Does not perform any bounds checking.
-bool LG_NDiterIncrement(struct lg_nditer *iter, size_t axis);
+bool LG_NDIterIncrement(struct lg_nditer *iter, size_t axis);
 
 /// Recomputes the indices in `iter` according to its `coords`.
 ///
 /// If you want to "jump" to a specific coordinate in a tensor, this is the
 /// easiest way to do it.
-void LG_NDiterGoto(struct lg_nditer *iter, size_t *coords);
+void LG_NDIterGoto(struct lg_nditer *iter, size_t *coords);
 
 /// Infers the broadcasted logical dimensions between `descs`.
 enum lg_status LG_InferBroadcastedDims(

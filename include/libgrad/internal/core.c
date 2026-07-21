@@ -380,7 +380,7 @@ enum lg_status LG_CoalesceAxes(struct lg_desc **descs, size_t n_descs) {
     return LG_STATUS_OK;
 }
 
-bool LG_NDiterIncrement(struct lg_nditer *iter, size_t axis) {
+bool LG_NDIterIncrement(struct lg_nditer *iter, size_t axis) {
     const size_t rank = iter->descs[0].rank;
     const size_t first_tracked_dim = rank - iter->n_tracked_dims;
     const size_t *restrict dim = iter->descs[0].dim;
@@ -408,7 +408,7 @@ bool LG_NDiterIncrement(struct lg_nditer *iter, size_t axis) {
     return false;
 }
 
-void LG_NDiterGoto(struct lg_nditer *iter, size_t *coords) {
+void LG_NDIterGoto(struct lg_nditer *iter, size_t *coords) {
     for(size_t i = 0; i < iter->n_tracked_dims; i++) {
         iter->coords[i] = coords[i];
     }

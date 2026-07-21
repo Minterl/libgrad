@@ -59,19 +59,4 @@ enum lg_status LG_AllocExpr(
 /// Frees the memory required for an expr.
 void LG_FreeExpr(struct lg_allocator *allocator, struct lg_ir_expr *expr);
 
-/// Allocates the minimum amount of memory necessary to execute an expression
-/// and populates the `data` pointers for any tensor where they're NULL.
-///
-/// Allocates the expression backing buffer monolithically using `perm` and returns 
-/// and allocates O(N) scratch memory using `scratch`.
-///
-/// `out_ptr` and `out_bytes_allocated` are nullable.
-enum lg_status LG_AllocExprData(
-    struct lg_allocator *perm,
-    struct lg_allocator *scratch,
-    lg_scalar **out_ptr,
-    size_t *out_bytes_allocated,
-    struct lg_ir_expr *expr
-);
-
 #endif // LG_ALLOC_H_

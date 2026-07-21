@@ -123,14 +123,41 @@ enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr) {
         case LG_OPCODE_STABLE_SOFTMAX:
         case LG_OPCODE_SIGMOID:
         case LG_OPCODE_LN:
-          break;
+            break;
         }
     }
 
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_VM__Bufferize(
+enum lg_status LG_IR__AssignLayouts(struct lg_ir_expr *expr, enum lg_layout layout, size_t unit_align) {
+    for (size_t i_node = 0; i_node < expr->len; i_node++) {
+        if (expr->nodes[i_node].opcode == LG_OPCODE_NOP) {
+            continue;
+        }
+        struct lg_desc *const descs[3] = {
+            &expr->nodes[i_node].y_physical,
+            &expr->nodes[i_node].x0_physical,
+            &expr->nodes[i_node].x1_physical,
+        };
+        for (size_t i_desc = 0; i_desc < 3; i_desc++) {
+            struct lg_desc *desc = descs[i_desc];
+            for (size_t i_stride = 0; i_stride < LG_MAX_RANK; i_stride++) {
+                if (desc->strides[i_stride] != 0) {
+                    goto skip_layout;
+                }
+            }
+            enum lg_status status = LG_DescComputeStrides(desc, layout, unit_align);
+            if (status != LG_STATUS_OK) {
+                return status;
+            }
+skip_layout:;
+        }
+    }
+    return LG_STATUS_OK;
+}
+
+enum lg_status LG_IR__Bufferize(
     struct lg_allocator *scratch,
     struct lg_ir_expr *expr,
     size_t *out_bytes_required,
@@ -195,54 +222,52 @@ enum lg_status LG_VM__Bufferize(
     }
 
     // --- Calculate physical sizes & map them to timesteps ---
-    {
-        for (size_t i_time = 0; i_time < expr->len; i_time++) {
-            const uint32_t symbol_ids[3] = {
-                expr->nodes[i_time].y_logical.id,
-                expr->nodes[i_time].x0_logical.id,
-                expr->nodes[i_time].x1_logical.id,
-            };
-            const struct lg_desc *const descs[3] = {
-                &expr->nodes[i_time].y_physical,
-                &expr->nodes[i_time].x0_physical,
-                &expr->nodes[i_time].x1_physical,
-            };
-            const uint32_t buf_ids[3] = {
-                expr->nodes[i_time].y_buf_id,
-                expr->nodes[i_time].x0_buf_id,
-                expr->nodes[i_time].x1_buf_id,
-            };
-            for (size_t i_sym = 0; i_sym < 3; i_sym++) {
-                size_t idx = 0;
-                status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
-                if (status != LG_STATUS_OK) {
-                    goto out_free_symtab;
-                }
-                if (buf_ids[i_sym] == buf_id) {
-                    const size_t size = LG_DescSizeInBytes(*descs[i_sym]);
-                    sym_sizes[idx] = LG__ALIGN_UP(size, align);
-                }
+    for (size_t i_time = 0; i_time < expr->len; i_time++) {
+        const uint32_t symbol_ids[3] = {
+            expr->nodes[i_time].y_logical.id,
+            expr->nodes[i_time].x0_logical.id,
+            expr->nodes[i_time].x1_logical.id,
+        };
+        const struct lg_desc *const descs[3] = {
+            &expr->nodes[i_time].y_physical,
+            &expr->nodes[i_time].x0_physical,
+            &expr->nodes[i_time].x1_physical,
+        };
+        const uint32_t buf_ids[3] = {
+            expr->nodes[i_time].y_buf_id,
+            expr->nodes[i_time].x0_buf_id,
+            expr->nodes[i_time].x1_buf_id,
+        };
+        for (size_t i_sym = 0; i_sym < 3; i_sym++) {
+            size_t idx = 0;
+            status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
+            if (status != LG_STATUS_OK) {
+                goto out_free_symtab;
+            }
+            if (buf_ids[i_sym] == buf_id) {
+                const size_t size = LG_DescSizeInBytes(*descs[i_sym]);
+                sym_sizes[idx] = LG__ALIGN_UP(size, align);
             }
         }
-        for (size_t i = 0; i < symtab.cap_table; i++) {
-            if (!symtab.occupied[i]) {
-                continue;
-            }
-            const size_t idx = symtab.array_idxs[i];
-            total_freed_after_time[sym_dead_after[idx]] += sym_sizes[idx];
+    }
+    for (size_t i = 0; i < symtab.cap_table; i++) {
+        if (!symtab.occupied[i]) {
+            continue;
         }
+        const size_t idx = symtab.array_idxs[i];
+        total_freed_after_time[sym_dead_after[idx]] += sym_sizes[idx];
     }
 
     // --- Core LSRA ---
     size_t current_offset = 0;
     size_t max_offset = 0;
     for (size_t i_time = 0; i_time < expr->len; i_time++) {
-        offsets[i_time] = current_offset;
         size_t y_idx = 0;
         status = LG_VM__SymtabUpsert(&symtab, &y_idx, NULL, expr->nodes[i_time].y_logical.id);
         if (status != LG_STATUS_OK) {
             goto out_free_symtab;
         }
+        offsets[y_idx] = current_offset;
         current_offset += sym_sizes[y_idx];
         if (current_offset > max_offset) {
             max_offset = current_offset;

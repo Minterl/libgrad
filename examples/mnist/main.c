@@ -109,7 +109,7 @@ int main(void) {
     };
     do {
         printf("i %lu v %.2f\n", iter.indices[0], y_1.data[iter.indices[0]]);
-    } while (LG_NDiterIncrement(&iter, y_1.desc.rank - 1));
+    } while (LG_NDIterIncrement(&iter, y_1.desc.rank - 1));
 
 out:
     ArenaDestroy(&alloc);
