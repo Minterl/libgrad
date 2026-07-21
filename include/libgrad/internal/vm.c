@@ -80,17 +80,30 @@ enum lg_status LG_IR_AppendContract(
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr) {
+enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr, struct lg_allocator *scratch) {
     enum lg_status status;
+
+    struct lg_desc *symtab_descs = scratch->Alloc(scratch->ctx, expr->len);
+    if (symtab_descs == NULL) {
+        return LG_STATUS_OUT_OF_MEMORY;
+    }
+    struct lg_vm__symtab symtab = {0};
+    status = LG_VM__SymtabInit(&symtab, scratch, expr->len * 2);
+    if (status != LG_STATUS_OK) {
+        goto out_free_descs;
+    }
+
     for (size_t i = 0; i < expr->len; i++) {
+        size_t rank;
+        size_t dim[LG_MAX_RANK];
+
         switch (expr->nodes[i].opcode) {
         case LG_OPCODE_NOP:
-            break;
+            continue;
 
         case LG_OPCODE_ADD:
-        case LG_OPCODE_SUB: {
-            size_t rank;
-            size_t dim[LG_MAX_RANK];
+        case LG_OPCODE_SUB: 
+        {
             status = LG_InferBroadcastedDims(
                 &rank,
                 dim, 
@@ -103,19 +116,22 @@ enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr) {
             if (status != LG_STATUS_OK) {
                 return status;
             }
-
-            expr->nodes[i].y_physical.rank = rank;
-            for (size_t j = 0; j < LG_MAX_RANK; j++) {
-                expr->nodes[j].y_physical.dim[j] = dim[i];
-            }
-
-            // TODO: record this in a symbol table for a single final pass over the array
-            // using an allocator + linear probe hash map
-
             break;
         }
 
         case LG_OPCODE_CONTRACT:
+        {
+            LG_InferContractedDims(
+                &rank,
+                dim, 
+                &expr->nodes[i].x0_physical,
+                &expr->nodes[i].x1_physical,
+                expr->nodes[i].meta_as.contract.n_contracted_axes,
+                expr->nodes[i].meta_as.contract.n_batch_axes
+            );
+            break;
+        }
+
         case LG_OPCODE_HADAMARD:
         case LG_OPCODE_LOSS_MSE:
         case LG_OPCODE_LOSS_CROSS_ENTROPY:
@@ -123,11 +139,51 @@ enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr) {
         case LG_OPCODE_STABLE_SOFTMAX:
         case LG_OPCODE_SIGMOID:
         case LG_OPCODE_LN:
-            break;
+            status = LG_STATUS_UNSUPPORTED_OPCODE;
+            goto out_deinit_symtab;
+        }
+
+        size_t idx = 0;
+        status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, expr->nodes[i].y_logical.id);
+        if (status != LG_STATUS_OK) {
+            goto out_deinit_symtab;
+        }
+        symtab_descs[idx].rank = rank;
+        for (size_t j = 0; j < LG_MAX_RANK; j++) {
+            symtab_descs[idx].dim[j] = dim[i];
         }
     }
 
-    return LG_STATUS_OK;
+    for (size_t i_node = 0; i_node < expr->len; i_node++) {
+        const uint32_t symbol_ids[3] = {
+            expr->nodes[i_node].y_logical.id,
+            expr->nodes[i_node].x0_logical.id,
+            expr->nodes[i_node].x1_logical.id,
+        };
+        struct lg_desc *const node_descs[3] = {
+            &expr->nodes[i_node].y_physical,
+            &expr->nodes[i_node].x0_physical,
+            &expr->nodes[i_node].x1_physical,
+        };
+        for (size_t i_sym = 0; i_sym < 3; i_sym++) {
+            size_t idx = 0;
+            status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
+            if (status != LG_STATUS_OK) {
+                goto out_deinit_symtab;
+            }
+            node_descs[idx]->rank = symtab_descs[idx].rank;
+            for (size_t j = 0; j < LG_MAX_RANK; j++) {
+                node_descs[idx]->dim[j] = symtab_descs[idx].dim[j];
+            }
+        }
+    }
+
+out_deinit_symtab:
+    LG_VM__SymtabDeinit(&symtab, scratch);
+out_free_descs:
+    scratch->Free(scratch->ctx, symtab_descs);
+
+    return status;
 }
 
 enum lg_status LG_IR__AssignLayouts(struct lg_ir_expr *expr, enum lg_layout layout, size_t unit_align) {
@@ -212,7 +268,7 @@ enum lg_status LG_IR__Bufferize(
             status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
                 // TODO: assert this path never should be taken
-                goto out_free_symtab;
+                goto out_deinit_symtab;
             }
             sym_sizes[idx] = 0;
             sym_dead_after[idx] = i_time;
@@ -242,7 +298,7 @@ enum lg_status LG_IR__Bufferize(
             size_t idx = 0;
             status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
-                goto out_free_symtab;
+                goto out_deinit_symtab;
             }
             if (buf_ids[i_sym] == buf_id) {
                 const size_t size = LG_DescSizeInBytes(*descs[i_sym]);
@@ -265,7 +321,7 @@ enum lg_status LG_IR__Bufferize(
         size_t y_idx = 0;
         status = LG_VM__SymtabUpsert(&symtab, &y_idx, NULL, expr->nodes[i_time].y_logical.id);
         if (status != LG_STATUS_OK) {
-            goto out_free_symtab;
+            goto out_deinit_symtab;
         }
         offsets[y_idx] = current_offset;
         current_offset += sym_sizes[y_idx];
@@ -300,7 +356,7 @@ enum lg_status LG_IR__Bufferize(
             size_t idx = 0;
             status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
-                goto out_free_symtab;
+                goto out_deinit_symtab;
             }
             if (buf_ids[i_sym] == buf_id) {
                 *node_offsets[i_sym] = offsets[idx];
@@ -308,7 +364,7 @@ enum lg_status LG_IR__Bufferize(
         }
     }
 
-out_free_symtab:
+out_deinit_symtab:
     LG_VM__SymtabDeinit(&symtab, scratch);
 out_free_scratch_bufs:
     scratch->Free(scratch->ctx, scratch_bufs[0]);
