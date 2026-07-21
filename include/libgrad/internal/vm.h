@@ -3,27 +3,6 @@
 
 #include <libgrad/internal/core.h>
 
-/// Represents a single tensor backed by `data`
-///
-/// Generally, these are thin handles that should 
-/// live on the stack and be shallow copied as necessary.
-///
-/// The size `data`, respectively, should product of the
-/// non-zero values in `dim`.
-///
-/// Backing buffers are stored stride-major.
-// struct lg_ir_tensor {
-//     /// Since the exprs are pure SSA, the time the (y) value is born at
-//     /// functions as a globally unique identifier.
-//     uint32_t born_at;
-    
-//     /// The shape descriptor of the tensor.
-//     struct lg_desc desc;
-    
-//     /// The tensor's primary backing buffer.
-//     lg_scalar *data;
-// };
-
 /// Discriminator for an operation.
 ///
 /// The integer representations of opcodes are not designed

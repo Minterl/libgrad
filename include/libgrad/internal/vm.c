@@ -2,6 +2,7 @@
 #include <libgrad/internal/alloc.h>
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/vm.h>
+#include <libgrad/internal/debug.h>
 
 struct lg_ir_symbol LG_IR__CreateSymbol(struct lg_ir_expr *expr) {
     const size_t id = expr->next_symbol_id;
@@ -146,6 +147,7 @@ enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr, struct lg_allocator *sc
         size_t idx = 0;
         status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, expr->nodes[i].y_logical.id);
         if (status != LG_STATUS_OK) {
+            LG__Unreachable("should compute max size properly");
             goto out_deinit_symtab;
         }
         symtab_descs[idx].rank = rank;
@@ -169,6 +171,7 @@ enum lg_status LG_IR__InferDims(struct lg_ir_expr *expr, struct lg_allocator *sc
             size_t idx = 0;
             status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
+                LG__Unreachable("should compute max size properly");
                 goto out_deinit_symtab;
             }
             node_descs[idx]->rank = symtab_descs[idx].rank;
@@ -246,10 +249,10 @@ enum lg_status LG_IR__Bufferize(
     if (status != LG_STATUS_OK) {
         return status;
     }
-    size_t *const sym_sizes = (size_t*)scratch_bufs[0];
-    size_t *const sym_dead_after = (size_t*)scratch_bufs[1];
+    size_t *const symtab_sizes = (size_t*)scratch_bufs[0];
+    size_t *const symtab_dead_after = (size_t*)scratch_bufs[1];
     size_t *const total_freed_after_time = (size_t*)scratch_bufs[2];
-    size_t *const offsets = (size_t*)scratch_bufs[3];
+    size_t *const symtab_offsets = (size_t*)scratch_bufs[3];
 
     struct lg_vm__symtab symtab = {0};
     status = LG_VM__SymtabInit(&symtab, scratch, expr->len * 2);
@@ -267,13 +270,13 @@ enum lg_status LG_IR__Bufferize(
             size_t idx = 0;
             status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
-                // TODO: assert this path never should be taken
+                LG__Unreachable("should compute max size properly");
                 goto out_deinit_symtab;
             }
-            sym_sizes[idx] = 0;
-            sym_dead_after[idx] = i_time;
+            symtab_sizes[idx] = 0;
+            symtab_dead_after[idx] = i_time;
+            symtab_offsets[idx] = 0;
         }
-        offsets[i_time] = 0;
         total_freed_after_time[i_time] = 0;
     }
 
@@ -298,11 +301,12 @@ enum lg_status LG_IR__Bufferize(
             size_t idx = 0;
             status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
+                LG__Unreachable("should compute max size properly");
                 goto out_deinit_symtab;
             }
             if (buf_ids[i_sym] == buf_id) {
                 const size_t size = LG_DescSizeInBytes(*descs[i_sym]);
-                sym_sizes[idx] = LG__ALIGN_UP(size, align);
+                symtab_sizes[idx] = LG__ALIGN_UP(size, align);
             }
         }
     }
@@ -311,7 +315,7 @@ enum lg_status LG_IR__Bufferize(
             continue;
         }
         const size_t idx = symtab.array_idxs[i];
-        total_freed_after_time[sym_dead_after[idx]] += sym_sizes[idx];
+        total_freed_after_time[symtab_dead_after[idx]] += symtab_sizes[idx];
     }
 
     // --- Core LSRA ---
@@ -321,10 +325,11 @@ enum lg_status LG_IR__Bufferize(
         size_t y_idx = 0;
         status = LG_VM__SymtabUpsert(&symtab, &y_idx, NULL, expr->nodes[i_time].y_logical.id);
         if (status != LG_STATUS_OK) {
+            LG__Unreachable("should compute max size properly");
             goto out_deinit_symtab;
         }
-        offsets[y_idx] = current_offset;
-        current_offset += sym_sizes[y_idx];
+        symtab_offsets[y_idx] = current_offset;
+        current_offset += symtab_sizes[y_idx];
         if (current_offset > max_offset) {
             max_offset = current_offset;
         }
@@ -356,10 +361,11 @@ enum lg_status LG_IR__Bufferize(
             size_t idx = 0;
             status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
+                LG__Unreachable("isn't inserting");
                 goto out_deinit_symtab;
             }
             if (buf_ids[i_sym] == buf_id) {
-                *node_offsets[i_sym] = offsets[idx];
+                *node_offsets[i_sym] = symtab_offsets[idx];
             }
         }
     }

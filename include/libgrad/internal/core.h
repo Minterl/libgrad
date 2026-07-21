@@ -145,7 +145,7 @@ enum lg_status LG_SortAxes(struct lg_desc **descs, size_t n_descs);
 /// Coalesce tensor axes to be as flat as possible.
 ///
 /// Inputs to this function MUST be broadcasted AND sorted from least to greatest
-/// using `lg_SortAxes`.
+/// using `LG_SortAxes`.
 enum lg_status LG_CoalesceAxes(struct lg_desc **descs, size_t n_descs);
 
 /// Compute the size in bytes of a tensor's data buffer.
