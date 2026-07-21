@@ -23,6 +23,12 @@
 #   define lg_scalar float
 #endif // lg_scalar
 
+#if defined(__has_feature) && __has_feature(nullability)
+#   define LG_NULLABLE _Nullable
+#else
+#   define LG_NULLABLE 
+#endif // defined(__has_attribute) && __has_attribute(nullability)
+
 /// Bounds checking
 #ifdef __cplusplus
 #   define LG_CHECK_BOUNDS(x) /* nothing */
@@ -102,8 +108,8 @@ void LG_NDIterGoto(struct lg_nditer *iter, size_t *coords);
 
 /// Infers the broadcasted logical dimensions between `descs`.
 enum lg_status LG_InferBroadcastedDims(
-    size_t *out_rank,
-    size_t *out_dim,
+    size_t *LG_NULLABLE out_rank,
+    size_t *LG_NULLABLE out_dim,
     const struct lg_desc **descs,
     size_t n_descs
 );
@@ -116,8 +122,8 @@ enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs);
 ///
 /// Does not compute strides.
 void LG_InferContractedDims(
-    size_t *out_rank,
-    size_t *out_dim,
+    size_t *LG_NULLABLE out_rank,
+    size_t *LG_NULLABLE out_dim,
     const struct lg_desc *x0,
     const struct lg_desc *x1,
     size_t n_contracted_axes,

@@ -4,7 +4,7 @@
 enum lg_status LG__AllocContiguousBlocks(
     struct lg_allocator *alloc,
     uint8_t **out_ptrs,
-    size_t *out_bytes_allocated,
+    size_t *LG_NULLABLE out_bytes_allocated,
     const size_t *sizes,
     size_t n,
     size_t align

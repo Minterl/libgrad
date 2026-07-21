@@ -96,8 +96,8 @@ void LG__DescLeftPadAxes(struct lg_desc **descs, size_t n_descs) {
 }
 
 enum lg_status LG_InferBroadcastedDims(
-    size_t *out_rank,
-    size_t *out_dim,
+    size_t *LG_NULLABLE out_rank,
+    size_t *LG_NULLABLE out_dim,
     const struct lg_desc **descs,
     size_t n_descs
 ) {
@@ -188,8 +188,8 @@ enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
 }
 
 void LG_InferContractedDims(
-    size_t *out_rank,
-    size_t *out_dim,
+    size_t *LG_NULLABLE out_rank,
+    size_t *LG_NULLABLE out_dim,
     const struct lg_desc *x0,
     const struct lg_desc *x1,
     size_t n_contracted_axes,

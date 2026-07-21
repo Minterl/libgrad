@@ -116,7 +116,7 @@ enum lg_status LG_IR_AppendLn(struct lg_ir_expr *expr, struct lg_ir_symbol y, co
 
 /// "Compiles" an expr.
 enum lg_status LG_IR_CompileExpr(
-    size_t *out_bytes_required,
+    size_t *LG_NULLABLE out_bytes_required,
     struct lg_allocator *scratch,
     struct lg_ir_expr *expr,
     size_t mem_align
@@ -126,8 +126,8 @@ enum lg_status LG_IR_CompileExpr(
 /// and assign offsets into the buffer for each field.
 enum lg_status LG_AllocExpr(
     struct lg_allocator *perm,
-    uint8_t **out_ptr,
-    size_t *out_bytes_allocated,
+    uint8_t *LG_NULLABLE *out_ptr,
+    size_t *LG_NULLABLE out_bytes_allocated,
     struct lg_ir_expr *expr,
     size_t nodes_cap,
     size_t bufmap_cap

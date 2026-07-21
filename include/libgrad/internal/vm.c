@@ -219,13 +219,10 @@ skip_layout:;
 enum lg_status LG_IR__Bufferize(
     struct lg_allocator *scratch,
     struct lg_ir_expr *expr,
-    size_t *out_bytes_required,
+    size_t *LG_NULLABLE out_bytes_required,
     uint32_t buf_id,
     size_t align
 ) {
-    // under the conditions of a cyclomatic complexity
-    // of 1 and infinite registers, lsra reaches the global
-    // optimum
     // TODO: we need a better representation for unaries
     
     enum lg_status status = LG_STATUS_OK;
@@ -249,10 +246,10 @@ enum lg_status LG_IR__Bufferize(
     if (status != LG_STATUS_OK) {
         return status;
     }
-    size_t *const symtab_sizes = (size_t*)scratch_bufs[0];
-    size_t *const symtab_dead_after = (size_t*)scratch_bufs[1];
-    size_t *const total_freed_after_time = (size_t*)scratch_bufs[2];
-    size_t *const symtab_offsets = (size_t*)scratch_bufs[3];
+    size_t *const restrict symtab_sizes = (size_t*)scratch_bufs[0];
+    size_t *const restrict symtab_dead_after = (size_t*)scratch_bufs[1];
+    size_t *const restrict total_freed_after_time = (size_t*)scratch_bufs[2];
+    size_t *const restrict symtab_offsets = (size_t*)scratch_bufs[3];
 
     struct lg_vm__symtab symtab = {0};
     status = LG_VM__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
@@ -408,7 +405,7 @@ enum lg_status LG_IR__CoalesceAxes(struct lg_ir_expr *expr) {
 }
 
 enum lg_status LG_IR_CompileExpr(
-    size_t *out_bytes_required,
+    size_t *LG_NULLABLE out_bytes_required,
     struct lg_allocator *scratch,
     struct lg_ir_expr *expr,
     size_t mem_align
@@ -439,8 +436,8 @@ enum lg_status LG_IR_CompileExpr(
 
 enum lg_status LG_AllocExpr(
     struct lg_allocator *perm,
-    uint8_t **out_ptr,
-    size_t *out_bytes_allocated,
+    uint8_t *LG_NULLABLE *out_ptr,
+    size_t *LG_NULLABLE out_bytes_allocated,
     struct lg_ir_expr *expr,
     size_t nodes_cap,
     size_t bufmap_cap

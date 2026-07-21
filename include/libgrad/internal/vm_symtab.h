@@ -85,7 +85,12 @@ static inline void LG_VM__SymtabDeinit(struct lg_vm__symtab *table, struct lg_al
     table->array_idxs = NULL;
 }
 
-static inline enum lg_status LG_VM__SymtabUpsert(struct lg_vm__symtab *table, size_t *out_idx, bool *out_was_occupied, uint32_t symbol_id) {
+static inline enum lg_status LG_VM__SymtabUpsert(
+    struct lg_vm__symtab *table,
+    size_t *LG_NULLABLE out_idx,
+    bool *LG_NULLABLE out_was_occupied,
+    uint32_t symbol_id
+) {
     if (table->cap_table == 0) {
         return LG_STATUS_NOT_FOUND;
     }
