@@ -13,6 +13,7 @@ extern "C" {
 #undef LIBGRAD_IMPLEMENTATION
 #   include <libgrad/internal/core.c>
 #   include <libgrad/internal/vm.c>
+#   include <libgrad/internal/vm_symtab.c>
 #   include <libgrad/internal/alloc.c>
 #   include <libgrad/internal/debug.c>
 #endif // LIBGRAD_IMPLEMENTATION

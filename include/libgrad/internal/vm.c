@@ -139,8 +139,8 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
     if (symtab_descs == NULL) {
         return LG_STATUS_OUT_OF_MEMORY;
     }
-    struct lg_vm__symtab symtab = {0};
-    status = LG_VM__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
+    struct lg_ir__symtab symtab = {0};
+    status = LG_IR__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
     if (status != LG_STATUS_OK) {
         goto out_free_descs;
     }
@@ -197,7 +197,7 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
         }
 
         size_t idx = 0;
-        status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, expr->nodes[i].y_logical.id);
+        status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, expr->nodes[i].y_logical.id);
         if (status != LG_STATUS_OK) {
             LG__Unreachable("should compute max size properly");
             goto out_deinit_symtab;
@@ -221,7 +221,7 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
         };
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t idx = 0;
-            status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
+            status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
                 LG__Unreachable("should compute max size properly");
                 goto out_deinit_symtab;
@@ -234,7 +234,7 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
     }
 
 out_deinit_symtab:
-    LG_VM__SymtabDeinit(&symtab, scratch);
+    LG_IR__SymtabDeinit(&symtab, scratch);
 out_free_descs:
     scratch->Free(scratch->ctx, symtab_descs);
 
@@ -303,8 +303,8 @@ enum lg_status LG_IR__Bufferize(
     size_t *const restrict total_freed_after_time = (size_t*)scratch_bufs[2];
     size_t *const restrict symtab_offsets = (size_t*)scratch_bufs[3];
 
-    struct lg_vm__symtab symtab = {0};
-    status = LG_VM__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
+    struct lg_ir__symtab symtab = {0};
+    status = LG_IR__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
     if (status != LG_STATUS_OK) {
         goto out_free_scratch_bufs;
     }
@@ -317,7 +317,7 @@ enum lg_status LG_IR__Bufferize(
         };
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t idx = 0;
-            status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
+            status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
                 LG__Unreachable("should compute max size properly");
                 goto out_deinit_symtab;
@@ -348,7 +348,7 @@ enum lg_status LG_IR__Bufferize(
         };
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t idx = 0;
-            status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
+            status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
                 LG__Unreachable("should compute max size properly");
                 goto out_deinit_symtab;
@@ -372,7 +372,7 @@ enum lg_status LG_IR__Bufferize(
     size_t max_offset = 0;
     for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
         size_t y_idx = 0;
-        status = LG_VM__SymtabUpsert(&symtab, &y_idx, NULL, expr->nodes[i_time].y_logical.id);
+        status = LG_IR__SymtabUpsert(&symtab, &y_idx, NULL, expr->nodes[i_time].y_logical.id);
         if (status != LG_STATUS_OK) {
             LG__Unreachable("should compute max size properly");
             goto out_deinit_symtab;
@@ -408,7 +408,7 @@ enum lg_status LG_IR__Bufferize(
         };
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t idx = 0;
-            status = LG_VM__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
+            status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
             if (status != LG_STATUS_OK) {
                 LG__Unreachable("isn't inserting");
                 goto out_deinit_symtab;
@@ -420,7 +420,7 @@ enum lg_status LG_IR__Bufferize(
     }
 
 out_deinit_symtab:
-    LG_VM__SymtabDeinit(&symtab, scratch);
+    LG_IR__SymtabDeinit(&symtab, scratch);
 out_free_scratch_bufs:
     scratch->Free(scratch->ctx, scratch_bufs[0]);
     return status;
