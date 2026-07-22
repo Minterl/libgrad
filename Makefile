@@ -1,5 +1,5 @@
 CFLAGS = \
-	-Wall -Wextra -g -std=c99 \
+	-Wall -Werror -Wextra -g -std=c99 \
 	-Iinclude \
 	-Itest \
 	-DLG_SAFE \

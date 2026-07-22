@@ -13,25 +13,76 @@ struct lg_ir_symbol LG_IR__CreateSymbol(struct lg_ir_expr *expr) {
     return s;
 }
 
-enum lg_status LG_IR__ExprAppend(
+enum lg_status LG_IR__ExprAppendNode(
     struct lg_ir_expr *expr,
     const struct lg_ir_expr_node node 
 ) {
-#ifdef LG_SAFE
-    if (expr->nodes_len >= expr->nodes_cap) {
+    if (expr->nodes_len + 1 >= expr->nodes_cap) {
         return LG_STATUS_EXPR_OVERFLOW;
     }
-#endif // LG_SAFE
-
     size_t next_idx = expr->nodes_len;
     expr->nodes_len += 1;
     expr->nodes[next_idx] = node;
+    return LG_STATUS_OK;
+}
+
+enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id, size_t bytes_required) {
+    if (expr->buf_table_len >= expr->buf_table_cap) {
+        return LG_STATUS_EXPR_OVERFLOW;
+    }
+    for (size_t i = 0; i < expr->buf_table_len; i++) {
+        if (expr->buf_table_ids[i] == id) {
+            return LG_STATUS_DUPLICATE_KEY;
+        }
+    }
+    size_t next_idx = expr->buf_table_len;
+    expr->buf_table_len += 1;
+    expr->buf_table_ids[next_idx] = id;
+    expr->buf_table_bytes_required[next_idx] = bytes_required;
+    return LG_STATUS_OK;
+}
+
+enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_ir_expr *expr, uint32_t id) {
+    for (size_t i = 0; i < expr->buf_table_len; i++) {
+        if (expr->buf_table_ids[i] == id) {
+            if (out_idx != NULL) {
+                *out_idx = i;
+            }
+            return LG_STATUS_OK;
+        }
+    }
+    return LG_STATUS_NOT_FOUND;
+}
+
+enum lg_status LG_IR_CreateSourceSymbol(
+    struct lg_ir_symbol *out_symbol,
+    struct lg_ir_expr *expr,
+    uint32_t buf_id
+) {
+    if (out_symbol == NULL) {
+        return LG_STATUS_INVALID_ARGUMENT;
+    }
+
+    size_t buf_idx = 0;
+    enum lg_status status = LG_IR_BuftabGetIdx(&buf_idx, expr, buf_id);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+
+    struct lg_ir_symbol sym = LG_IR__CreateSymbol(expr);
+    status = LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
+        .opcode = LG_OPCODE_SOURCE,
+        .x0_logical = sym,
+    });
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
 
     return LG_STATUS_OK;
 }
 
 enum lg_status LG_IR_AppendNop(struct lg_ir_expr *expr, struct lg_ir_symbol x) {
-    return LG_IR__ExprAppend(expr, (struct lg_ir_expr_node){
+    return LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
         .opcode = LG_OPCODE_NOP,
         .x0_logical = x,
     });
@@ -44,7 +95,7 @@ enum lg_status LG_IR_AppendAdd(
     const struct lg_ir_symbol x1
 ) {
     struct lg_ir_symbol y_ = LG_IR__CreateSymbol(expr);
-    enum lg_status status = LG_IR__ExprAppend(expr, (struct lg_ir_expr_node){
+    enum lg_status status = LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
         .opcode = LG_OPCODE_ADD,   
         .y_logical = y_,
         .x0_logical = x0,
@@ -66,7 +117,7 @@ enum lg_status LG_IR_AppendContract(
     size_t n_batch_axes
 ) {
     struct lg_ir_symbol y_ = LG_IR__CreateSymbol(expr);
-    enum lg_status status = LG_IR__ExprAppend(expr, (struct lg_ir_expr_node){
+    enum lg_status status = LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
         .opcode = LG_OPCODE_CONTRACT,   
         .y_logical = y_,
         .x0_logical = x0,
@@ -100,6 +151,7 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
 
         switch (expr->nodes[i].opcode) {
         case LG_OPCODE_NOP:
+        case LG_OPCODE_SOURCE:
             continue;
 
         case LG_OPCODE_ADD:
@@ -467,10 +519,10 @@ enum lg_status LG_AllocExpr(
     expr->nodes = (struct lg_ir_expr_node*)(ptrs[0]);
     expr->nodes_cap = nodes_cap;
     expr->nodes_len = 0;
-    expr->bufmap_ids = (uint32_t*)(ptrs[1]);
-    expr->bufmap_bytes_required = (size_t*)(ptrs[2]);
-    expr->bufmap_cap = bufmap_cap;
-    expr->bufmap_len = 0;
+    expr->buf_table_ids = (uint32_t*)(ptrs[1]);
+    expr->buf_table_bytes_required = (size_t*)(ptrs[2]);
+    expr->buf_table_cap = bufmap_cap;
+    expr->buf_table_len = 0;
 
     if (out_bytes_allocated != NULL) {
         *out_bytes_allocated = bytes_allocated;

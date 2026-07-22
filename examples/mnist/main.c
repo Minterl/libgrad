@@ -23,7 +23,7 @@ int main(void) {
     enum lg_status status = LG_STATUS_OK;
 
     struct lg_ir_expr expr = {0};
-    status = LG_AllocExpr(&libgrad_allocator, NULL, NULL, &expr, EXPR_CAP);
+    status = LG_AllocExpr(&libgrad_allocator, NULL, NULL, &expr, EXPR_CAP, EXPR_CAP);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         return status;

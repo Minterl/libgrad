@@ -9,6 +9,9 @@
 /// The integer representations of opcodes are not designed
 /// to be stable and should not be serialized.
 enum lg_ir_opcode {
+    /// --- Symbolic Operations ---
+    LG_OPCODE_SOURCE,
+
     /// --- BINARY OPERATIONS ---
     /// Element-wise tensor addition
     LG_OPCODE_ADD,
@@ -83,10 +86,10 @@ struct lg_ir_expr {
     size_t                   nodes_len;
     struct lg_ir_expr_node  *nodes LG_CHECK_BOUNDS(nodes_len);
 
-    size_t                   bufmap_cap;
-    size_t                   bufmap_len;
-    uint32_t                *bufmap_ids LG_CHECK_BOUNDS(bufmap_len);
-    size_t                  *bufmap_bytes_required LG_CHECK_BOUNDS(bufmap_len);
+    size_t                   buf_table_cap;
+    size_t                   buf_table_len;
+    uint32_t                *buf_table_ids LG_CHECK_BOUNDS(buf_table_len);
+    size_t                  *buf_table_bytes_required LG_CHECK_BOUNDS(buf_table_len);
 
     uint32_t                 next_symbol_id;
 };
