@@ -56,6 +56,7 @@ enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_i
 
 enum lg_status LG_IR_CreateSourceSymbol(
     struct lg_ir_symbol *out_symbol,
+    struct lg_desc physical_desc,
     struct lg_ir_expr *expr,
     uint32_t buf_id
 ) {
@@ -73,6 +74,7 @@ enum lg_status LG_IR_CreateSourceSymbol(
     status = LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
         .opcode = LG_OPCODE_SOURCE,
         .x0_logical = sym,
+        .x0_physical = physical_desc,
     });
     if (status != LG_STATUS_OK) {
         return status;
@@ -146,12 +148,34 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
     }
 
     for (size_t i = 0; i < expr->nodes_len; i++) {
+        if (expr->nodes[i].opcode == LG_OPCODE_SOURCE) {
+            size_t symtab_idx;
+            status = LG_IR__SymtabUpsert(&symtab, &symtab_idx, NULL, expr->nodes[i].x0_logical.id);
+            LG__Assert(status == LG_STATUS_OK);
+            symtab_descs[symtab_idx] = expr->nodes[i].x0_physical;
+            continue;
+        }
+
+        bool was_occupied = 0;
+        size_t x0_symtab_idx;
+        size_t x1_symtab_idx;
+        status = LG_IR__SymtabUpsert(&symtab, &x0_symtab_idx, &was_occupied, expr->nodes[i].x0_logical.id);
+        LG__Assert(status == LG_STATUS_OK);
+        LG__Assert(status == was_occupied);
+        // TODO: unaries also need to be considered here
+        status = LG_IR__SymtabUpsert(&symtab, &x1_symtab_idx, &was_occupied, expr->nodes[i].x1_logical.id);
+        LG__Assert(status == LG_STATUS_OK);
+        LG__Assert(status == was_occupied);
+
         size_t rank;
         size_t dim[LG_MAX_RANK];
 
         switch (expr->nodes[i].opcode) {
-        case LG_OPCODE_NOP:
         case LG_OPCODE_SOURCE:
+            LG__Unreachable();
+            continue;
+
+        case LG_OPCODE_NOP:
             continue;
 
         case LG_OPCODE_ADD:
@@ -161,8 +185,8 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
                 &rank,
                 dim, 
                 (const struct lg_desc*[2]){
-                    &expr->nodes[i].x0_physical,
-                    &expr->nodes[i].x1_physical,
+                    &symtab_descs[x0_symtab_idx],
+                    &symtab_descs[x1_symtab_idx],
                 },
                 2
             );
@@ -196,15 +220,12 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
             goto out_deinit_symtab;
         }
 
-        size_t idx = 0;
-        status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, expr->nodes[i].y_logical.id);
-        if (status != LG_STATUS_OK) {
-            LG__Unreachable("should compute max size properly");
-            goto out_deinit_symtab;
-        }
-        symtab_descs[idx].rank = rank;
+        size_t y_symtab_idx = 0;
+        status = LG_IR__SymtabUpsert(&symtab, &y_symtab_idx, NULL, expr->nodes[i].y_logical.id);
+        LG__Assert(status == LG_STATUS_OK);
+        symtab_descs[y_symtab_idx].rank = rank;
         for (size_t j = 0; j < LG_MAX_RANK; j++) {
-            symtab_descs[idx].dim[j] = dim[j];
+            symtab_descs[y_symtab_idx].dim[j] = dim[j];
         }
     }
 
@@ -219,13 +240,14 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
             &expr->nodes[i_node].x0_physical,
             &expr->nodes[i_node].x1_physical,
         };
+
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
+            bool was_occupied = 0;
             size_t idx = 0;
-            status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
-            if (status != LG_STATUS_OK) {
-                LG__Unreachable("should compute max size properly");
-                goto out_deinit_symtab;
-            }
+            status = LG_IR__SymtabUpsert(&symtab, &idx, &was_occupied, symbol_ids[i_sym]);
+            LG__Assert(status == LG_STATUS_OK);
+            LG__Assert(was_occupied == true);
+
             node_descs[idx]->rank = symtab_descs[idx].rank;
             for (size_t j = 0; j < LG_MAX_RANK; j++) {
                 node_descs[i_sym]->dim[j] = symtab_descs[idx].dim[j];
@@ -318,10 +340,7 @@ enum lg_status LG_IR__Bufferize(
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t idx = 0;
             status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
-            if (status != LG_STATUS_OK) {
-                LG__Unreachable("should compute max size properly");
-                goto out_deinit_symtab;
-            }
+            LG__Assert(status == LG_STATUS_OK);
             symtab_sizes[idx] = 0;
             symtab_dead_after[idx] = i_time;
             symtab_offsets[idx] = 0;
@@ -349,10 +368,7 @@ enum lg_status LG_IR__Bufferize(
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t idx = 0;
             status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
-            if (status != LG_STATUS_OK) {
-                LG__Unreachable("should compute max size properly");
-                goto out_deinit_symtab;
-            }
+            LG__Assert(status == LG_STATUS_OK);
             if (buf_ids[i_sym] == buf_id) {
                 const size_t size = LG_DescSizeInBytes(*descs[i_sym]);
                 symtab_sizes[idx] = LG__ALIGN_UP(size, align);
@@ -368,15 +384,13 @@ enum lg_status LG_IR__Bufferize(
     }
 
     // --- Core LSRA ---
+    // TODO: this is obviously terrible and should just be linear strip packing
     size_t current_offset = 0;
     size_t max_offset = 0;
     for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
         size_t y_idx = 0;
         status = LG_IR__SymtabUpsert(&symtab, &y_idx, NULL, expr->nodes[i_time].y_logical.id);
-        if (status != LG_STATUS_OK) {
-            LG__Unreachable("should compute max size properly");
-            goto out_deinit_symtab;
-        }
+        LG__Assert(status == LG_STATUS_OK);
         symtab_offsets[y_idx] = current_offset;
         current_offset += symtab_sizes[y_idx];
         if (current_offset > max_offset) {
@@ -409,10 +423,7 @@ enum lg_status LG_IR__Bufferize(
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t idx = 0;
             status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
-            if (status != LG_STATUS_OK) {
-                LG__Unreachable("isn't inserting");
-                goto out_deinit_symtab;
-            }
+            LG__Assert(status == LG_STATUS_OK);
             if (buf_ids[i_sym] == buf_id) {
                 *node_offsets[i_sym] = symtab_offsets[idx];
             }
