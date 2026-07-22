@@ -9,11 +9,25 @@
 /// The integer representations of opcodes are not designed
 /// to be stable and should not be serialized.
 enum lg_ir_opcode {
-    /// --- Symbolic Operations ---
+    /// --- Symbolic Unary Operations ---
+#   define LG__FIRST_UNARY_OP LG_OPCODE_SOURCE
     LG_OPCODE_SOURCE,
     LG_OPCODE_SINK,
 
-    /// --- BINARY OPERATIONS ---
+    /// --- Non-Symbolic Unary Operations ---
+    LG_OPCODE_NOP,
+    /// Element-wise ReLU
+    LG_OPCODE_RELU,
+    /// Element-wise stable softmax
+    LG_OPCODE_STABLE_SOFTMAX,
+    /// Element-wise sigmoid
+    LG_OPCODE_SIGMOID,
+    /// Element-wise natural log
+    LG_OPCODE_LN,
+#   define LG__LAST_UNARY_OP LG_OPCODE_LN
+
+    /// --- Binary Operations ---
+#   define LG__FIRST_BINARY_OP LG_OPCODE_ADD
     /// Element-wise tensor addition
     LG_OPCODE_ADD,
     /// Element-wise tensor subtraction
@@ -28,18 +42,13 @@ enum lg_ir_opcode {
     LG_OPCODE_LOSS_MSE,
     /// Cross-entropy loss
     LG_OPCODE_LOSS_CROSS_ENTROPY,
-
-    /// --- UNARY OPERATIONS ---
-    LG_OPCODE_NOP,
-    /// Element-wise ReLU
-    LG_OPCODE_RELU,
-    /// Element-wise stable softmax
-    LG_OPCODE_STABLE_SOFTMAX,
-    /// Element-wise sigmoid
-    LG_OPCODE_SIGMOID,
-    /// Element-wise natural log
-    LG_OPCODE_LN,
+#   define LG__LAST_BINARY_OP LG_OPCODE_LOSS_CROSS_ENTROPY
 };
+
+_Static_assert(LG__LAST_UNARY_OP + 1 == LG__FIRST_BINARY_OP, "opcodes must be contigugous");
+
+#define LG__OPCODE_IS_UNARY(op) ((LG__FIRST_UNARY_OP <= (op)) && ((op) <= LG__LAST_UNARY_OP))
+#define LG__OPCODE_IS_BINARY(op) ((LG__FIRST_BINARY_OP <= (op)) && ((op) <= LG__LAST_BINARY_OP))
 
 struct lg_ir_symbol {
     uint32_t  id;

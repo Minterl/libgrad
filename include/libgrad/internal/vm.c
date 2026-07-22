@@ -233,10 +233,11 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
         status = LG_IR__SymtabUpsert(&symtab, &x0_symtab_idx, &was_occupied, expr->nodes[i].x0_logical.id);
         LG__Assert(status == LG_STATUS_OK);
         LG__Assert(status == was_occupied);
-        // TODO: unaries also need to be considered here
-        status = LG_IR__SymtabUpsert(&symtab, &x1_symtab_idx, &was_occupied, expr->nodes[i].x1_logical.id);
-        LG__Assert(status == LG_STATUS_OK);
-        LG__Assert(status == was_occupied);
+        if (!LG__OPCODE_IS_BINARY(expr->nodes[i].opcode)) {
+            status = LG_IR__SymtabUpsert(&symtab, &x1_symtab_idx, &was_occupied, expr->nodes[i].x1_logical.id);
+            LG__Assert(status == LG_STATUS_OK);
+            LG__Assert(status == was_occupied);
+        }
 
         size_t rank;
         size_t dim[LG_MAX_RANK];
@@ -287,6 +288,7 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
         case LG_OPCODE_SIGMOID:
         case LG_OPCODE_LN:
             status = LG_STATUS_UNSUPPORTED_OPCODE;
+            LG__Unreachable("TODO");
             goto out_deinit_symtab;
         }
 

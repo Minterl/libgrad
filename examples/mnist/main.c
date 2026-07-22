@@ -43,7 +43,7 @@ int main(void) {
     status = LG_IR_DeclareSource(&x, (struct lg_desc){
         .rank = 1,
         .dim = {128},
-    }, &expr, 101);
+    }, &expr, 102);
 
     struct lg_ir_symbol y_0 = {0};
     status = LG_IR_AppendContract(&expr, &y_0, W_0, x, 1, 0);
