@@ -119,7 +119,7 @@ enum lg_status LG_IR_GetSinkLocation(
     struct lg_ir_expr *expr
 );
 
-enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id, size_t bytes_required);
+enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id);
 enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_ir_expr *expr, uint32_t id);
 
 /// Gets the last physical location of the tensor `x` and populates

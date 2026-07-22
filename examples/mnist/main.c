@@ -29,21 +29,49 @@ int main(void) {
         return status;
     }
 
+    status = LG_IR_BuftabInsert(&expr, 100);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        return status;
+    }
+    status = LG_IR_BuftabInsert(&expr, 101);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        return status;
+    }
+    status = LG_IR_BuftabInsert(&expr, 102);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        return status;
+    }
+
     struct lg_ir_symbol x = {0};
     status = LG_IR_DeclareSource(&x, (struct lg_desc){
         .rank = 1,
         .dim = {28 * 28},
     }, &expr, 100);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        return status;
+    }
     struct lg_ir_symbol W_0 = {0};
-    status = LG_IR_DeclareSource(&x, (struct lg_desc){
+    status = LG_IR_DeclareSource(&W_0, (struct lg_desc){
         .rank = 2,
         .dim = {128, 28 * 28},
     }, &expr, 101);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        return status;
+    }
     struct lg_ir_symbol b_0 = {0};
-    status = LG_IR_DeclareSource(&x, (struct lg_desc){
+    status = LG_IR_DeclareSource(&b_0, (struct lg_desc){
         .rank = 1,
         .dim = {128},
     }, &expr, 102);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        return status;
+    }
 
     struct lg_ir_symbol y_0 = {0};
     status = LG_IR_AppendContract(&expr, &y_0, W_0, x, 1, 0);
@@ -84,6 +112,8 @@ int main(void) {
         FAILF("status: %d", status);
         goto out;
     }
+
+    printf("status: %d\n", status);
 
 out:
     ArenaDestroy(&arena);

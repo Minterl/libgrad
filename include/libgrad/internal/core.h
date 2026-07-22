@@ -123,7 +123,7 @@ enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs);
 /// Computes the dimensions of a contraction between `x0` and `x1`
 ///
 /// Does not compute strides.
-void LG_InferContractedDims(
+enum lg_status LG_InferContractedDims(
     size_t *LG_NULLABLE out_rank,
     size_t *LG_NULLABLE out_dim,
     const struct lg_desc *x0,

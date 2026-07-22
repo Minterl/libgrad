@@ -77,7 +77,7 @@ enum lg_status LG_IR__SymtabUpsert(
         return LG_STATUS_NOT_FOUND;
     }
 
-    const size_t start_idx = (table->cap_table <= 8) ? 0 : (LG_IR__MurmurHash(symbol_id) % table->cap_table);
+    const size_t start_idx = (table->cap_table <= 8) ? (symbol_id % table->cap_table) : (LG_IR__MurmurHash(symbol_id) % table->cap_table);
     for (
         size_t i = start_idx, n_visited = 0;
         n_visited < table->cap_table;

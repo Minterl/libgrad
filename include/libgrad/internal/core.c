@@ -187,7 +187,7 @@ enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs) {
     return LG_STATUS_OK;
 }
 
-void LG_InferContractedDims(
+enum lg_status LG_InferContractedDims(
     size_t *LG_NULLABLE out_rank,
     size_t *LG_NULLABLE out_dim,
     const struct lg_desc *x0,
@@ -195,24 +195,34 @@ void LG_InferContractedDims(
     size_t n_contracted_axes,
     size_t n_batch_axes
 ) {
+    if (x0->rank < n_contracted_axes || n_contracted_axes + n_batch_axes > x1->rank) {
+        return LG_STATUS_INVALID_ARGUMENT;
+    }
+
     // repeated below
     const size_t x0_first_contracted_axis = x0->rank - n_contracted_axes;
     const size_t x1_first_free_axis = n_contracted_axes + n_batch_axes;
 
     size_t rank = 0;
 
-    if (out_dim != NULL) {
-        for (size_t i = n_batch_axes; i < x0_first_contracted_axis; i++, rank++) {
-            out_dim[rank] = x0->dim[i];
-        }
-        for (size_t i = x1->rank - 1; i >= x1_first_free_axis; i--, rank++) {
-            out_dim[rank] = x1->dim[i];
-        }
+    size_t dim[LG_MAX_RANK] = {0};
+    for (size_t i = n_batch_axes; i < x0_first_contracted_axis; i++, rank++) {
+        dim[rank] = x0->dim[i];
+    }
+    for (size_t i = x1->rank; i > x1_first_free_axis; i--, rank++) {
+        dim[rank] = x1->dim[i - 1];
     }
 
+    if (out_dim != NULL) {
+        for (size_t i = 0; i < rank; i++) {
+            out_dim[i] = dim[i];
+        }
+    }
     if (out_rank != NULL) {
         *out_rank = rank;
     }
+
+    return LG_STATUS_OK;
 }
 
 enum lg_status LG_CreateContractionSpace(
