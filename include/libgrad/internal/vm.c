@@ -32,7 +32,7 @@ enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id, size_t b
     }
     for (size_t i = 0; i < expr->buf_table_len; i++) {
         if (expr->buf_table_ids[i] == id) {
-            return LG_STATUS_DUPLICATE_KEY;
+            return LG_STATUS_DUPLICATE;
         }
     }
     size_t next_idx = expr->buf_table_len;
@@ -54,7 +54,7 @@ enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_i
     return LG_STATUS_NOT_FOUND;
 }
 
-enum lg_status LG_IR_DeclareSourceSymbol(
+enum lg_status LG_IR_DeclareSource(
     struct lg_ir_symbol *out_symbol,
     struct lg_desc physical_desc,
     struct lg_ir_expr *expr,
@@ -78,6 +78,77 @@ enum lg_status LG_IR_DeclareSourceSymbol(
     });
     if (status != LG_STATUS_OK) {
         return status;
+    }
+
+    return LG_STATUS_OK;
+}
+
+enum lg_status LG_IR_DeclareSink(struct lg_ir_symbol sym, struct lg_ir_expr *expr) {
+    for (size_t i = 0; i < expr->nodes_len; i++) {
+        if (
+            expr->nodes[i].y_logical.id == sym.id ||
+            expr->nodes[i].x0_logical.id == sym.id ||
+            expr->nodes[i].x1_logical.id == sym.id 
+        ) {
+            if (expr->nodes[i].opcode == LG_OPCODE_SINK) {
+                return LG_STATUS_DUPLICATE;
+            }
+            enum lg_status status = LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
+                .opcode = LG_OPCODE_SINK,
+                .x0_logical = sym,
+            });
+            return status;
+        }
+    }
+
+    return LG_STATUS_NOT_FOUND;
+}
+
+enum lg_status LG_IR_GetSinkLocation(
+    uint32_t *LG_NULLABLE out_buf_id,
+    size_t *LG_NULLABLE out_offset,
+    struct lg_desc *LG_NULLABLE out_desc,
+    struct lg_ir_symbol sym,
+    struct lg_ir_expr *expr
+) {
+    uint32_t buf_id = 0;
+    size_t offset = 0;
+    struct lg_desc desc = {0};
+
+    for (size_t i = 0; i < expr->nodes_len; i++) {
+        if (expr->nodes[i].opcode != LG_OPCODE_SINK) {
+            continue;
+        }
+        if (expr->nodes[i].y_logical.id == sym.id) {
+            buf_id = expr->nodes[i].y_buf_id;
+            offset = expr->nodes[i].y_offset;
+            desc = expr->nodes[i].y_physical;
+            goto found;
+        }
+        if (expr->nodes[i].x0_logical.id == sym.id) {
+            buf_id = expr->nodes[i].x0_buf_id;
+            offset = expr->nodes[i].x0_offset;
+            desc = expr->nodes[i].x0_physical;
+            goto found;
+        }
+        if (expr->nodes[i].x1_logical.id == sym.id) {
+            buf_id = expr->nodes[i].x1_buf_id;
+            offset = expr->nodes[i].x1_offset;
+            desc = expr->nodes[i].x1_physical;
+            goto found;
+        }
+    }
+    return LG_STATUS_NOT_FOUND;
+
+found:;
+    if (out_buf_id != NULL) {
+        *out_buf_id = buf_id;
+    }
+    if (out_offset != NULL) {
+        *out_offset = offset;
+    }
+    if (out_desc != NULL) {
+        *out_desc = desc;
     }
 
     return LG_STATUS_OK;
@@ -176,11 +247,11 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
             continue;
 
         case LG_OPCODE_NOP:
+        case LG_OPCODE_SINK:
             continue;
 
         case LG_OPCODE_ADD:
-        case LG_OPCODE_SUB: 
-        {
+        case LG_OPCODE_SUB: {
             status = LG_InferBroadcastedDims(
                 &rank,
                 dim, 
@@ -196,8 +267,7 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
             break;
         }
 
-        case LG_OPCODE_CONTRACT:
-        {
+        case LG_OPCODE_CONTRACT: {
             LG_InferContractedDims(
                 &rank,
                 dim, 

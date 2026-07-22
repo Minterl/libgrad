@@ -11,6 +11,7 @@
 enum lg_ir_opcode {
     /// --- Symbolic Operations ---
     LG_OPCODE_SOURCE,
+    LG_OPCODE_SINK,
 
     /// --- BINARY OPERATIONS ---
     /// Element-wise tensor addition
@@ -94,11 +95,19 @@ struct lg_ir_expr {
     uint32_t                 next_symbol_id;
 };
 
-enum lg_status LG_IR_DeclareSourceSymbol(
+enum lg_status LG_IR_DeclareSource(
     struct lg_ir_symbol *out_symbol,
     struct lg_desc physical_desc,
     struct lg_ir_expr *expr,
     uint32_t buf_id
+);
+enum lg_status LG_IR_DeclareSink(struct lg_ir_symbol sym, struct lg_ir_expr *expr);
+enum lg_status LG_IR_GetSinkLocation(
+    uint32_t *LG_NULLABLE out_buf_id,
+    size_t *LG_NULLABLE out_offset,
+    struct lg_desc *LG_NULLABLE out_desc,
+    struct lg_ir_symbol sym,
+    struct lg_ir_expr *expr
 );
 
 enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id, size_t bytes_required);
