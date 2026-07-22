@@ -8,7 +8,6 @@
 #include <libgrad/cpu.h>
 
 #include <assert.h>
-#include <stdio.h>
 #include <common/arena.h>
 #include <common/macros.h>
 
@@ -16,50 +15,42 @@
 #define EXPR_CAP 32
 
 int main(void) {
-    struct arena alloc = {0};
-    assert(ArenaInit(&alloc, ARENA_CAP) == 0);
-    struct lg_allocator libgrad_allocator = ArenaAsLgAllocator(&alloc);
+    struct arena arena = {0};
+    assert(ArenaInit(&arena, ARENA_CAP) == 0);
+    struct lg_allocator allocator = ArenaAsLgAllocator(&arena);
 
     enum lg_status status = LG_STATUS_OK;
 
     struct lg_ir_expr expr = {0};
-    status = LG_AllocExpr(&libgrad_allocator, NULL, NULL, &expr, EXPR_CAP, EXPR_CAP);
+    status = LG_AllocExpr(&allocator, NULL, NULL, &expr, EXPR_CAP, EXPR_CAP);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         return status;
     }
 
-    struct lg_ir_tensor x = {
-        .desc.rank = 1,
-        .desc.dim = {28 * 28},
-    };
-    struct lg_ir_tensor W_0 = {
-        .desc.rank = 2,
-        .desc.dim = {128, 28 * 28},
-    };
-    struct lg_ir_tensor b_0 = {
-        .desc.rank = 1,
-        .desc.dim = {128},
-    };
+    struct lg_ir_symbol x = {0};
+    status = LG_IR_DeclareSourceSymbol(&x, (struct lg_desc){
+        .rank = 1,
+        .dim = {28 * 28},
+    }, &expr, 100);
+    struct lg_ir_symbol W_0 = {0};
+    status = LG_IR_DeclareSourceSymbol(&x, (struct lg_desc){
+        .rank = 2,
+        .dim = {128, 28 * 28},
+    }, &expr, 101);
+    struct lg_ir_symbol b_0 = {0};
+    status = LG_IR_DeclareSourceSymbol(&x, (struct lg_desc){
+        .rank = 1,
+        .dim = {128},
+    }, &expr, 101);
 
-    status = LG_DescComputeStrides(&x.desc, LG_LAYOUT_ROW_MAJOR, 1);
-    if (status != LG_STATUS_OK) {
-        FAILF("status: %d", status);
-        goto out;
-    }
-    status = LG_AllocTensor(&libgrad_allocator, &x);
-    if (status != LG_STATUS_OK) {
-        FAILF("status: %d", status);
-        goto out;
-    }
-
-    struct lg_ir_tensor y_0 = {0};
+    struct lg_ir_symbol y_0 = {0};
     status = LG_IR_AppendContract(&expr, &y_0, W_0, x, 1, 0);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;
     }
-    struct lg_ir_tensor y_1 = {0};
+    struct lg_ir_symbol y_1 = {0};
     status = LG_IR_AppendAdd(&expr, &y_1, y_0, b_0);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
@@ -72,47 +63,20 @@ int main(void) {
         goto out;
     }
 
-    status = LG_IR_CompileExpr(&expr);
+    status = LG_IR_CompileExpr(NULL, &allocator, &expr, 16);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;
     }
 
-    lg_scalar *data = NULL;
-    status = LG_AllocExprData(
-        &libgrad_allocator,
-        &libgrad_allocator,
-        &data,
-        NULL,
-        &expr
-    );
-    if (status != LG_STATUS_OK) {
-        FAILF("status: %d", status);
-        goto out;
-    }
-
-    status = LG_IR_GetLastLocationOfTensor(&expr, &y_1);
-    if (status != LG_STATUS_OK) {
-        FAILF("status: %d", status);
-        goto out;
-    }
-    
     status = LG_RT_CPU_ExecExpr(expr);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;
     }
 
-    struct lg_nditer iter = {
-        .descs = {y_1.desc},
-        .n_tracked_dims = y_1.desc.rank,
-    };
-    do {
-        printf("i %lu v %.2f\n", iter.indices[0], y_1.data[iter.indices[0]]);
-    } while (LG_NDIterIncrement(&iter, y_1.desc.rank - 1));
-
 out:
-    ArenaDestroy(&alloc);
+    ArenaDestroy(&arena);
 
     return status;
 }

@@ -54,7 +54,7 @@ enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_i
     return LG_STATUS_NOT_FOUND;
 }
 
-enum lg_status LG_IR_CreateSourceSymbol(
+enum lg_status LG_IR_DeclareSourceSymbol(
     struct lg_ir_symbol *out_symbol,
     struct lg_desc physical_desc,
     struct lg_ir_expr *expr,
@@ -430,7 +430,6 @@ enum lg_status LG_IR__Bufferize(
         }
     }
 
-out_deinit_symtab:
     LG_IR__SymtabDeinit(&symtab, scratch);
 out_free_scratch_bufs:
     scratch->Free(scratch->ctx, scratch_bufs[0]);

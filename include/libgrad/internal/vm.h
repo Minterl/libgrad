@@ -94,6 +94,16 @@ struct lg_ir_expr {
     uint32_t                 next_symbol_id;
 };
 
+enum lg_status LG_IR_DeclareSourceSymbol(
+    struct lg_ir_symbol *out_symbol,
+    struct lg_desc physical_desc,
+    struct lg_ir_expr *expr,
+    uint32_t buf_id
+);
+
+enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id, size_t bytes_required);
+enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_ir_expr *expr, uint32_t id);
+
 /// Gets the last physical location of the tensor `x` and populates
 /// its `data` pointer if found.
 ///
