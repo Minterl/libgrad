@@ -1,6 +1,15 @@
 #include <libgrad/internal/vm.h>
 #include <libgrad/internal/alloc.h>
 
+uint8_t *LG__AllocZero(struct lg_allocator *alloc, size_t size_bytes) {
+    uint8_t *ptr = alloc->Alloc(alloc->ctx, size_bytes);
+    if (ptr == NULL) {
+        return ptr;
+    }
+    LG__ZERO(ptr, size_bytes);
+    return ptr;
+}
+
 enum lg_status LG__AllocContiguousBlocks(
     struct lg_allocator *alloc,
     uint8_t **out_ptrs,
@@ -14,7 +23,7 @@ enum lg_status LG__AllocContiguousBlocks(
         size += LG__ALIGN_UP(sizes[i], align);
     }
 
-    uint8_t *ptr = alloc->Alloc(alloc->ctx, size);
+    uint8_t *ptr = LG__AllocZero(alloc, size);
     if (ptr == NULL) {
         return LG_STATUS_OUT_OF_MEMORY;
     }

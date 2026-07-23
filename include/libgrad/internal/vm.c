@@ -18,7 +18,7 @@ enum lg_status LG_IR__ExprAppendNode(
     struct lg_ir_expr *expr,
     const struct lg_ir_expr_node node 
 ) {
-    if (expr->nodes_len + 1 >= expr->nodes_cap) {
+    if (expr->nodes_len >= expr->nodes_cap) {
         return LG_STATUS_EXPR_OVERFLOW;
     }
     size_t next_idx = expr->nodes_len;
@@ -247,7 +247,7 @@ enum lg_status LG_IR__ValidateExprStructure(struct lg_allocator *scratch, struct
 
         const size_t seen_ids_cap = expr->nodes_len * 3;
         size_t seen_ids_len = 0;
-        uint32_t *seen_ids = scratch->Alloc(scratch->ctx, seen_ids_cap);
+        uint32_t *seen_ids = (uint32_t*)LG__AllocZero(scratch, seen_ids_cap * sizeof(uint32_t));
         if (seen_ids == NULL) {
             return LG_STATUS_OUT_OF_MEMORY;
         }
@@ -566,6 +566,8 @@ enum lg_status LG_IR__Bufferize(
         if (current_offset > max_offset) {
             max_offset = current_offset;
         }
+        // it's worth putting an explicit underflow check here
+        LG__Assert(current_offset >= total_freed_after_time[i_time]);
         current_offset -= total_freed_after_time[i_time];
     }
 

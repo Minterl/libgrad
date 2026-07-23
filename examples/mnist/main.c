@@ -115,6 +115,12 @@ int main(void) {
 
     printf("status: %d\n", status);
 
+    for (size_t i = 0; i < expr.nodes_len; i++) {
+        printf("y.offset = %lu ", expr.nodes[i].y_offset);
+        printf("x0.offset = %lu ", expr.nodes[i].x0_offset);
+        printf("x1.offset = %lu\n", expr.nodes[i].x1_offset);
+    }
+
 out:
     ArenaDestroy(&arena);
 

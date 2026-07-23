@@ -4,6 +4,11 @@
 #include <libgrad/internal/core.h>
 
 #define LG__ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
+#if defined(__has_builtin) && __has_builtin(__builtin_memset)
+#   define LG__ZERO(ptr, len) __builtin_memset(ptr, 0, len) 
+#else
+// #   define LG__ZERO(ptr, len) do { for(size_t LG__MACRO_ITER__ = 0; LG__MACRO_ITER__ < (len); LG__MACRO_ITER__++) { ((uint8_t*)(ptr))[LG__MACRO_ITER__] = 0; } } while(0)
+#endif // defined(__has_builtin) && __has_builtin(memset)
 
 /// Helper interface for allocating tensors
 ///
@@ -28,6 +33,8 @@ struct lg_allocator {
     /// Free the memory at `ptr`.
     void (*Free)(void *ctx, void *ptr);
 };
+
+uint8_t *LG__AllocZero(struct lg_allocator *alloc, size_t size_bytes);
 
 /// Allocates `n` blocks of size `sizes[i]` and puts the resulting pointer
 /// in `out_ptrs[i]`.
