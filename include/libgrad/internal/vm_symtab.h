@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-struct lg_ir__symtab {
+struct lg_ir_symtab {
     size_t    cap_table;
     size_t    cap_array;
     size_t    next_array_idx;
@@ -16,14 +16,16 @@ struct lg_ir__symtab {
     bool     *occupied    LG_CHECK_BOUNDS(cap_table);
     uint32_t *symbol_ids  LG_CHECK_BOUNDS(cap_table);
     size_t   *array_idxs  LG_CHECK_BOUNDS(cap_table);
+
+    struct lg_desc *descs LG_CHECK_BOUNDS(cap_array);
 };
 
-enum lg_status LG_IR__SymtabInit(struct lg_ir__symtab *table, struct lg_allocator *alloc, size_t cap);
+enum lg_status LG_IR__SymtabInit(struct lg_ir_symtab *table, struct lg_allocator *alloc, size_t cap);
 
-void LG_IR__SymtabDeinit(struct lg_ir__symtab *table, struct lg_allocator *alloc);
+void LG_IR__SymtabDeinit(struct lg_ir_symtab *table, struct lg_allocator *alloc);
 
 enum lg_status LG_IR__SymtabUpsert(
-    struct lg_ir__symtab *table,
+    struct lg_ir_symtab *table,
     size_t *LG_NULLABLE out_idx,
     bool *LG_NULLABLE out_was_occupied,
     uint32_t symbol_id

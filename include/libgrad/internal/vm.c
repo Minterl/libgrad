@@ -3,6 +3,7 @@
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/vm.h>
 #include <libgrad/internal/debug.h>
+
 #include <stdint.h>
 
 struct lg_ir_symbol LG_IR__CreateSymbol(struct lg_ir_expr *expr) {
@@ -208,35 +209,35 @@ enum lg_status LG_IR_AppendContract(
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_IR__ValidateExprStructure(struct lg_allocator *scratch, struct lg_ir_expr *expr) {
+enum lg_status LG_IR__ValidateExprStructure(struct lg_ir_compilation_context *ctx) {
     // Source/sink rules
     {
         bool sources_begin = false;
         bool sources_end = false;
         bool sinks_begin = false;
             
-        for (size_t i = 0; i < expr->nodes_len; i++) {
-            // Source declarations must be the first section of the expr,
+        for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
+            // Source declarations must be the first section of the ctx->expr,
             // while sink declarations must be at the end.
-            if (expr->nodes[i].opcode == LG_OPCODE_SOURCE && !sources_begin) {
+            if (ctx->expr->nodes[i].opcode == LG_OPCODE_SOURCE && !sources_begin) {
                 if (i != 0) {
                     return LG_STATUS_INVALID_ARGUMENT;
                 }
                 sources_begin = true;
-            } else if (expr->nodes[i].opcode == LG_OPCODE_SOURCE && sources_end) {
+            } else if (ctx->expr->nodes[i].opcode == LG_OPCODE_SOURCE && sources_end) {
                 return LG_STATUS_INVALID_ARGUMENT;
-            } else if (expr->nodes[i].opcode != LG_OPCODE_SOURCE && sources_begin) {
+            } else if (ctx->expr->nodes[i].opcode != LG_OPCODE_SOURCE && sources_begin) {
                 sources_end = true;
             }
 
             // Sink declarations must also always be followed by a sink
-            // declaration or be the end of the expr
-            if (sinks_begin && expr->nodes[i].opcode != LG_OPCODE_SINK) {
+            // declaration or be the end of the ctx->expr
+            if (sinks_begin && ctx->expr->nodes[i].opcode != LG_OPCODE_SINK) {
                 return LG_STATUS_INVALID_ARGUMENT;
             }
         }
 
-        if (sinks_begin && expr->nodes[expr->nodes_len - 1].opcode != LG_OPCODE_SINK) {
+        if (sinks_begin && ctx->expr->nodes[ctx->expr->nodes_len - 1].opcode != LG_OPCODE_SINK) {
             return LG_STATUS_INVALID_ARGUMENT;
         }
     }
@@ -245,9 +246,9 @@ enum lg_status LG_IR__ValidateExprStructure(struct lg_allocator *scratch, struct
     {
         enum lg_status status = LG_STATUS_OK;
 
-        const size_t seen_ids_cap = expr->nodes_len * 3;
+        const size_t seen_ids_cap = ctx->expr->nodes_len * 3;
         size_t seen_ids_len = 0;
-        uint32_t *seen_ids = (uint32_t*)LG__AllocZero(scratch, seen_ids_cap * sizeof(uint32_t));
+        uint32_t *seen_ids = (uint32_t*)LG__AllocZero(ctx->scratch, seen_ids_cap * sizeof(uint32_t));
         if (seen_ids == NULL) {
             return LG_STATUS_OUT_OF_MEMORY;
         }
@@ -255,30 +256,30 @@ enum lg_status LG_IR__ValidateExprStructure(struct lg_allocator *scratch, struct
             seen_ids[i] = 0;
         }
 
-        for (size_t i = 0; i < expr->nodes_len; i++) {
+        for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
             uint32_t new_id = 0;
 
-            if (expr->nodes[i].opcode == LG_OPCODE_SOURCE) {
-                new_id = expr->nodes[i].x0_logical.id;
+            if (ctx->expr->nodes[i].opcode == LG_OPCODE_SOURCE) {
+                new_id = ctx->expr->nodes[i].x0_logical.id;
                 goto push_id;
             }
 
             bool found_x0 = false;
             bool found_x1 = false;
             for (size_t j = 0; j < seen_ids_len; j++) {
-                if (seen_ids[j] == expr->nodes[i].x0_logical.id) {
+                if (seen_ids[j] == ctx->expr->nodes[i].x0_logical.id) {
                     found_x0 = true;
-                } else if (seen_ids[j] == expr->nodes[i].x1_logical.id) {
+                } else if (seen_ids[j] == ctx->expr->nodes[i].x1_logical.id) {
                     found_x1 = true;
                 }
             }
 
-            if (!found_x0 || (!found_x1 && LG__OPCODE_IS_BINARY(expr->nodes[i].opcode))) {
+            if (!found_x0 || (!found_x1 && LG__OPCODE_IS_BINARY(ctx->expr->nodes[i].opcode))) {
                 status = LG_STATUS_INVALID_ARGUMENT;
                 goto out_free_seen_ids;
             }
 
-            new_id = expr->nodes[i].y_logical.id;
+            new_id = ctx->expr->nodes[i].y_logical.id;
 
 push_id:
             LG__Assert(seen_ids_len + 1 < seen_ids_cap);
@@ -287,7 +288,7 @@ push_id:
         }
 
 out_free_seen_ids:    
-        scratch->Free(scratch->ctx, seen_ids);
+        ctx->scratch->Free(ctx->scratch->ctx, seen_ids);
         if (status != LG_STATUS_OK) {
             return status;
         }
@@ -296,39 +297,26 @@ out_free_seen_ids:
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr *expr) {
-    enum lg_status status;
+enum lg_status LG_IR__InferDims(struct lg_ir_compilation_context *ctx) {
+    enum lg_status status = LG_STATUS_OK;
 
-    struct lg_desc *symtab_descs = scratch->Alloc(scratch->ctx, expr->nodes_len * sizeof(struct lg_desc));
-    if (symtab_descs == NULL) {
-        return LG_STATUS_OUT_OF_MEMORY;
-    }
-    for (size_t i = 0; i < expr->nodes_len; i++) {
-        symtab_descs[i] = (struct lg_desc){0};
-    }
-    struct lg_ir__symtab symtab = {0};
-    status = LG_IR__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
-    if (status != LG_STATUS_OK) {
-        goto out_free_descs;
-    }
-
-    for (size_t i = 0; i < expr->nodes_len; i++) {
-        if (expr->nodes[i].opcode == LG_OPCODE_SOURCE) {
+    for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
+        if (ctx->expr->nodes[i].opcode == LG_OPCODE_SOURCE) {
             size_t symtab_idx;
-            status = LG_IR__SymtabUpsert(&symtab, &symtab_idx, NULL, expr->nodes[i].x0_logical.id);
+            status = LG_IR__SymtabUpsert(&ctx->symtab, &symtab_idx, NULL, ctx->expr->nodes[i].x0_logical.id);
             LG__Assert(status == LG_STATUS_OK);
-            symtab_descs[symtab_idx] = expr->nodes[i].x0_physical;
+            ctx->symtab.descs[symtab_idx] = ctx->expr->nodes[i].x0_physical;
             continue;
         }
 
         bool was_occupied = false;
         size_t x0_symtab_idx = 0;
         size_t x1_symtab_idx = 0;
-        status = LG_IR__SymtabUpsert(&symtab, &x0_symtab_idx, &was_occupied, expr->nodes[i].x0_logical.id);
+        status = LG_IR__SymtabUpsert(&ctx->symtab, &x0_symtab_idx, &was_occupied, ctx->expr->nodes[i].x0_logical.id);
         LG__Assert(status == LG_STATUS_OK);
         LG__Assert(was_occupied);
-        if (LG__OPCODE_IS_BINARY(expr->nodes[i].opcode)) {
-            status = LG_IR__SymtabUpsert(&symtab, &x1_symtab_idx, &was_occupied, expr->nodes[i].x1_logical.id);
+        if (LG__OPCODE_IS_BINARY(ctx->expr->nodes[i].opcode)) {
+            status = LG_IR__SymtabUpsert(&ctx->symtab, &x1_symtab_idx, &was_occupied, ctx->expr->nodes[i].x1_logical.id);
             LG__Assert(status == LG_STATUS_OK);
             LG__Assert(was_occupied);
         }
@@ -337,7 +325,7 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
         size_t rank = {0};
         size_t dim[LG_MAX_RANK] = {0};
 
-        switch (expr->nodes[i].opcode) {
+        switch (ctx->expr->nodes[i].opcode) {
         case LG_OPCODE_SOURCE:
             LG__Unreachable();
             continue;
@@ -352,13 +340,13 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
                 &rank,
                 dim, 
                 (const struct lg_desc*[2]){
-                    &symtab_descs[x0_symtab_idx],
-                    &symtab_descs[x1_symtab_idx],
+                    &ctx->symtab.descs[x0_symtab_idx],
+                    &ctx->symtab.descs[x1_symtab_idx],
                 },
                 2
             );
             if (status != LG_STATUS_OK) {
-                goto out_deinit_symtab;
+                return status;
             }
             break;
         }
@@ -367,13 +355,13 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
             status = LG_InferContractedDims(
                 &rank,
                 dim, 
-                &symtab_descs[x0_symtab_idx],
-                &symtab_descs[x1_symtab_idx],
-                expr->nodes[i].meta_as.contract.n_contracted_axes,
-                expr->nodes[i].meta_as.contract.n_batch_axes
+                &ctx->symtab.descs[x0_symtab_idx],
+                &ctx->symtab.descs[x1_symtab_idx],
+                ctx->expr->nodes[i].meta_as.contract.n_contracted_axes,
+                ctx->expr->nodes[i].meta_as.contract.n_batch_axes
             );
             if (status != LG_STATUS_OK) {
-                goto out_deinit_symtab;
+                return status;
             }
             break;
         }
@@ -387,61 +375,29 @@ enum lg_status LG_IR__InferDims(struct lg_allocator *scratch, struct lg_ir_expr 
         case LG_OPCODE_LN:
             status = LG_STATUS_UNSUPPORTED_OPCODE;
             LG__Unreachable("TODO");
-            goto out_deinit_symtab;
         }
 
         size_t y_symtab_idx = 0;
-        status = LG_IR__SymtabUpsert(&symtab, &y_symtab_idx, NULL, expr->nodes[i].y_logical.id);
+        status = LG_IR__SymtabUpsert(&ctx->symtab, &y_symtab_idx, NULL, ctx->expr->nodes[i].y_logical.id);
         LG__Assert(status == LG_STATUS_OK);
-        symtab_descs[y_symtab_idx].rank = rank;
+        ctx->symtab.descs[y_symtab_idx].rank = rank;
         for (size_t j = 0; j < LG_MAX_RANK; j++) {
-            symtab_descs[y_symtab_idx].dim[j] = dim[j];
+            ctx->symtab.descs[y_symtab_idx].dim[j] = dim[j];
         }
     }
 
-    for (size_t i_node = 0; i_node < expr->nodes_len; i_node++) {
-        const uint32_t symbol_ids[3] = {
-            expr->nodes[i_node].y_logical.id,
-            expr->nodes[i_node].x0_logical.id,
-            expr->nodes[i_node].x1_logical.id,
-        };
-        struct lg_desc *const node_descs[3] = {
-            &expr->nodes[i_node].y_physical,
-            &expr->nodes[i_node].x0_physical,
-            &expr->nodes[i_node].x1_physical,
-        };
-
-        for (size_t i_sym = 0; i_sym < 3; i_sym++) {
-            bool was_occupied = false;
-            size_t idx = 0;
-            status = LG_IR__SymtabUpsert(&symtab, &idx, &was_occupied, symbol_ids[i_sym]);
-            LG__Assert(status == LG_STATUS_OK);
-            LG__Assert(was_occupied);
-
-            node_descs[i_sym]->rank = symtab_descs[idx].rank;
-            for (size_t j = 0; j < LG_MAX_RANK; j++) {
-                node_descs[i_sym]->dim[j] = symtab_descs[idx].dim[j];
-            }
-        }
-    }
-
-out_deinit_symtab:
-    LG_IR__SymtabDeinit(&symtab, scratch);
-out_free_descs:
-    scratch->Free(scratch->ctx, symtab_descs);
-
-    return status;
+    return LG_STATUS_OK;
 }
 
-enum lg_status LG_IR__AssignLayouts(struct lg_ir_expr *expr, enum lg_layout layout, size_t unit_align) {
-    for (size_t i_node = 0; i_node < expr->nodes_len; i_node++) {
-        if (expr->nodes[i_node].opcode == LG_OPCODE_NOP) {
+void LG_IR__AssignLayouts(struct lg_ir_compilation_context *ctx, enum lg_layout layout, size_t unit_align) {
+    for (size_t i_node = 0; i_node < ctx->expr->nodes_len; i_node++) {
+        if (ctx->expr->nodes[i_node].opcode == LG_OPCODE_NOP) {
             continue;
         }
         struct lg_desc *const descs[3] = {
-            &expr->nodes[i_node].y_physical,
-            &expr->nodes[i_node].x0_physical,
-            &expr->nodes[i_node].x1_physical,
+            &ctx->expr->nodes[i_node].y_physical,
+            &ctx->expr->nodes[i_node].x0_physical,
+            &ctx->expr->nodes[i_node].x1_physical,
         };
         for (size_t i_desc = 0; i_desc < 3; i_desc++) {
             struct lg_desc *desc = descs[i_desc];
@@ -451,13 +407,10 @@ enum lg_status LG_IR__AssignLayouts(struct lg_ir_expr *expr, enum lg_layout layo
                 }
             }
             enum lg_status status = LG_DescComputeStrides(desc, layout, unit_align);
-            if (status != LG_STATUS_OK) {
-                return status;
-            }
+            LG__Assert(status == LG_STATUS_OK);
 skip_layout:;
         }
     }
-    return LG_STATUS_OK;
 }
 
 enum lg_status LG_IR__Bufferize(
@@ -495,7 +448,7 @@ enum lg_status LG_IR__Bufferize(
     size_t *const restrict total_freed_after_time = (size_t*)scratch_bufs[2];
     size_t *const restrict symtab_offsets = (size_t*)scratch_bufs[3];
 
-    struct lg_ir__symtab symtab = {0};
+    struct lg_ir_symtab symtab = {0};
     status = LG_IR__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
     if (status != LG_STATUS_OK) {
         goto out_free_scratch_bufs;
@@ -639,24 +592,21 @@ enum lg_status LG_IR__CoalesceAxes(struct lg_ir_expr *expr) {
 }
 
 enum lg_status LG_IR_CompileExpr(
+    struct lg_ir_compilation_context *ctx,
     size_t *LG_NULLABLE out_bytes_required,
     struct lg_allocator *scratch,
-    struct lg_ir_expr *expr,
     size_t mem_align
 ) {
     enum lg_status status;
-    status = LG_IR__ValidateExprStructure(scratch, expr);
+    status = LG_IR__ValidateExprStructure(ctx);
     if (status != LG_STATUS_OK) {
         return status;
     }
-    status = LG_IR__InferDims(scratch, expr);
+    status = LG_IR__InferDims(ctx);
     if (status != LG_STATUS_OK) {
         return status;
     }
-    status = LG_IR__AssignLayouts(expr, LG_LAYOUT_ROW_MAJOR /* TODO */, mem_align);
-    if (status != LG_STATUS_OK) {
-        return status;
-    }
+    LG_IR__AssignLayouts(ctx, LG_LAYOUT_ROW_MAJOR /* TODO */, mem_align);
     status = LG_IR__Bufferize(scratch, expr, out_bytes_required, 0 /* TODO */, mem_align);
     if (status != LG_STATUS_OK) {
         return status;

@@ -3,6 +3,9 @@
 
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/alloc.h>
+#include <libgrad/internal/vm_symtab.h>
+
+#define LG_IR_MAX_ERR_LEN 1024
 
 /// Discriminator for an operation.
 ///
@@ -87,7 +90,6 @@ struct lg_ir_expr_node {
     } meta_as;
 };
 
-
 /// The intermediate representation of a program.
 /// 
 /// As of right now, the exprs themselves do not support any control flow.
@@ -102,6 +104,18 @@ struct lg_ir_expr {
     size_t                  *buf_table_bytes_required LG_CHECK_BOUNDS(buf_table_len);
 
     uint32_t                 next_symbol_id;
+};
+
+struct lg_ir_error_reporter {
+    uint8_t msg[LG_IR_MAX_ERR_LEN];
+};
+
+struct lg_ir_compilation_context {
+    struct lg_ir_expr           *expr;
+    struct lg_allocator         *scratch;
+    struct lg_ir_error_reporter  reporter;
+
+    struct lg_ir_symtab          symtab;
 };
 
 enum lg_status LG_IR_DeclareSource(
@@ -147,9 +161,9 @@ enum lg_status LG_IR_AppendLn(struct lg_ir_expr *expr, struct lg_ir_symbol y, co
 
 /// "Compiles" an expr.
 enum lg_status LG_IR_CompileExpr(
+    struct lg_ir_compilation_context *ctx,
     size_t *LG_NULLABLE out_bytes_required,
     struct lg_allocator *scratch,
-    struct lg_ir_expr *expr,
     size_t mem_align
 );
 

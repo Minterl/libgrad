@@ -26,7 +26,7 @@ uint32_t LG_IR__MurmurHash(uint32_t kh) {
     return kh;
 }
 
-enum lg_status LG_IR__SymtabInit(struct lg_ir__symtab *table, struct lg_allocator *alloc, size_t cap) {
+enum lg_status LG_IR__SymtabInit(struct lg_ir_symtab *table, struct lg_allocator *alloc, size_t cap) {
     const size_t align = 16;
 
     const size_t sz_occupied = LG__ALIGN_UP(cap * sizeof(bool), align);
@@ -59,7 +59,7 @@ enum lg_status LG_IR__SymtabInit(struct lg_ir__symtab *table, struct lg_allocato
     return LG_STATUS_OK;
 }
 
-void LG_IR__SymtabDeinit(struct lg_ir__symtab *table, struct lg_allocator *alloc) {
+void LG_IR__SymtabDeinit(struct lg_ir_symtab *table, struct lg_allocator *alloc) {
     alloc->Free(alloc->ctx, table->occupied);
     table->cap_table = 0;
     table->occupied = NULL;
@@ -68,7 +68,7 @@ void LG_IR__SymtabDeinit(struct lg_ir__symtab *table, struct lg_allocator *alloc
 }
 
 enum lg_status LG_IR__SymtabUpsert(
-    struct lg_ir__symtab *table,
+    struct lg_ir_symtab *table,
     size_t *LG_NULLABLE out_idx,
     bool *LG_NULLABLE out_was_occupied,
     uint32_t symbol_id
