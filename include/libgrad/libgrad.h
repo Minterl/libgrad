@@ -8,6 +8,7 @@ extern "C" {
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/vm.h>
 #include <libgrad/internal/alloc.h>
+#include <libgrad/internal/strings.h>
 
 #ifdef LIBGRAD_IMPLEMENTATION
 #undef LIBGRAD_IMPLEMENTATION
@@ -16,6 +17,7 @@ extern "C" {
 #   include <libgrad/internal/vm_symtab.c>
 #   include <libgrad/internal/alloc.c>
 #   include <libgrad/internal/debug.c>
+#   include <libgrad/internal/strings.c>
 #endif // LIBGRAD_IMPLEMENTATION
 
 #ifdef __cplusplus

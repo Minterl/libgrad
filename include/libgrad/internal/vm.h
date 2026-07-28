@@ -4,6 +4,7 @@
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/alloc.h>
 #include <libgrad/internal/vm_symtab.h>
+#include <libgrad/internal/strings.h>
 
 #define LG_IR_MAX_ERR_LEN 1024
 
@@ -106,16 +107,13 @@ struct lg_ir_expr {
     uint32_t                 next_symbol_id;
 };
 
-struct lg_ir_error_reporter {
-    uint8_t msg[LG_IR_MAX_ERR_LEN];
-};
-
 struct lg_ir_compilation_context {
-    struct lg_ir_expr           *expr;
-    struct lg_allocator         *scratch;
-    struct lg_ir_error_reporter  reporter;
+    struct lg_ir_expr    *expr;
+    struct lg_allocator  *scratch;
+    struct lg_ir_symtab   symtab;
 
-    struct lg_ir_symtab          symtab;
+    size_t                err_msg_len;
+    uint8_t               err_msg_backing_buf[LG_IR_MAX_ERR_LEN];
 };
 
 enum lg_status LG_IR_DeclareSource(

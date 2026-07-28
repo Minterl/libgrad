@@ -1,6 +1,5 @@
 #ifndef LIBGRAD_IMPLEMENTATION
 #define LIBGRAD_IMPLEMENTATION
-#include "libgrad/internal/core.h"
 #endif // LIBGRAD_IMPLEMENTATION
 #ifndef LG_CPU_IMPLEMENTATION
 #define LG_CPU_IMPLEMENTATION

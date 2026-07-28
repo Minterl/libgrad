@@ -3,6 +3,7 @@
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/vm.h>
 #include <libgrad/internal/debug.h>
+#include <libgrad/internal/strings.h>
 
 #include <stdint.h>
 
@@ -26,6 +27,30 @@ enum lg_status LG_IR__ExprAppendNode(
     expr->nodes_len += 1;
     expr->nodes[next_idx] = node;
     return LG_STATUS_OK;
+}
+
+size_t LG_IR__ReportError_Write(void *ctx_, struct lg_string str) {
+    struct lg_ir_compilation_context *ctx = ctx_;
+    size_t bytes_written = LG_Strcpy((struct lg_string){
+        .len = LG_IR_MAX_ERR_LEN - ctx->err_msg_len,
+        .p = ctx->err_msg_backing_buf + ctx->err_msg_len,
+    }, str);
+    ctx->err_msg_len += bytes_written;
+    return bytes_written;
+}
+
+// Reports error on a best-effort basis, filling the buffer as much as possible.
+void LG_IR__ReportError(struct lg_ir_compilation_context *ctx, struct lg_string fmt, ...) {
+    ctx->err_msg_len = 0;
+    struct lg_writer w = {
+        .ctx = (void*)ctx,
+        .Write = LG_IR__ReportError_Write,
+    };
+    va_list ap;
+    va_start(ap, fmt);
+    enum lg_status _ = LG_VPrintf(&w, fmt, ap);
+    (void)_;
+    va_end(ap);
 }
 
 enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id) {

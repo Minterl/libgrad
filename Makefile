@@ -7,12 +7,26 @@ CFLAGS = \
 
 .PHONY: test
 test:
+	@make test/core
+	@make test/strings
+
+.PHONY: test/core
+test/core:
 	mkdir -p out && \
 	cc -o out/test-core.out \
 		$(CFLAGS) \
 		-fsanitize=address \
 		-fsanitize=bounds \
 		test/core.c
+
+.PHONY: test/strings
+test/strings:
+	mkdir -p out && \
+	cc -o out/test-strings.out \
+		$(CFLAGS) \
+		-fsanitize=address \
+		-fsanitize=bounds \
+		test/strings.c
 
 .PHONY: examples/mnist
 examples/mnist:
