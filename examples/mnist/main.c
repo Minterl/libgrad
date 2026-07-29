@@ -1,6 +1,7 @@
 #include "libgrad/internal/alloc.h"
 #include "libgrad/internal/core.h"
 #include "libgrad/internal/vm.h"
+#include "libgrad/internal/vm_symtab.h"
 #define LIBGRAD_IMPLEMENTATION
 #include <libgrad/libgrad.h>
 // #ifndef LG_CPU_IMPLEMENTATION
@@ -45,54 +46,65 @@ int main(void) {
         return status;
     }
 
+    // TODO: this should be given its own initializer
+    struct lg_ir_compilation_context ctx = {
+        .expr = &expr,
+        .scratch = &allocator,
+    };
+    status = LG_IR__SymtabInit(&ctx.symtab, &allocator, EXPR_CAP);
+    if (status != LG_STATUS_OK) {
+        FAILF("status: %d", status);
+        return status;
+    }
+
     struct lg_ir_symbol x = {0};
-    status = LG_IR_DeclareSource(&x, (struct lg_desc){
+    status = LG_IR_DeclareSource(&ctx, &x, (struct lg_desc){
         .rank = 1,
         .dim = {28 * 28},
-    }, &expr, 100);
+    }, 100);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         return status;
     }
     struct lg_ir_symbol W_0 = {0};
-    status = LG_IR_DeclareSource(&W_0, (struct lg_desc){
+    status = LG_IR_DeclareSource(&ctx, &W_0, (struct lg_desc){
         .rank = 2,
         .dim = {128, 28 * 28},
-    }, &expr, 101);
+    }, 101);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         return status;
     }
     struct lg_ir_symbol b_0 = {0};
-    status = LG_IR_DeclareSource(&b_0, (struct lg_desc){
+    status = LG_IR_DeclareSource(&ctx, &b_0, (struct lg_desc){
         .rank = 1,
         .dim = {128},
-    }, &expr, 102);
+    }, 102);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         return status;
     }
 
     struct lg_ir_symbol y_0 = {0};
-    status = LG_IR_AppendContract(&expr, &y_0, W_0, x, 1, 0);
+    status = LG_IR_AppendContract(&ctx, &y_0, W_0, x, 1, 0);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;
     }
     struct lg_ir_symbol y_1 = {0};
-    status = LG_IR_AppendAdd(&expr, &y_1, y_0, b_0);
+    status = LG_IR_AppendAdd(&ctx, &y_1, y_0, b_0);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;
     }
 
-    status = LG_IR_DeclareSink(y_1, &expr);
+    status = LG_IR_DeclareSink(&ctx,y_1);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;
     }
 
-    status = LG_IR_CompileExpr(NULL, &allocator, &expr, 16);
+    status = LG_IR_CompileExpr(&ctx, 16);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         goto out;

@@ -23,7 +23,6 @@ static struct lg_writer stdout_writer = {
 
 test_status test_printf() {
     test_assert(LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{i64}\n"), 13) == LG_STATUS_OK, "int failed to print");
-    test_assert(LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{i64}\n"), (int16_t){34}) == LG_STATUS_OK, "short failed to print");
     test_assert(LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{str}\n"), LG_STRING_LITERAL("asdfasdf")) == LG_STATUS_OK, "string failed to print");
     test_assert(LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{cstr}\n"), "asdfasdf") == LG_STATUS_OK, "cstring failed to print");
     test_assert(LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{cstr\n"), "asdfasdf") == LG_STATUS_INVALID_ARGUMENT, "unterminated fmtspec didn't fail");

@@ -7,13 +7,19 @@
 
 #include <stdint.h>
 
-struct lg_ir_symbol LG_IR__CreateSymbol(struct lg_ir_expr *expr) {
-    const size_t id = expr->next_symbol_id;
-    expr->next_symbol_id++;
-    struct lg_ir_symbol s = {
+enum lg_status LG_IR__CreateSymbol(struct lg_ir_compilation_context *ctx, struct lg_ir_symbol *out) {
+    const size_t id = ctx->next_symbol_id;
+    ctx->next_symbol_id++;
+    *out = (struct lg_ir_symbol){
         .id = id,
     };
-    return s;
+    bool was_occupied;
+    enum lg_status status = LG_IR__SymtabUpsert(&ctx->symtab, NULL, &was_occupied, id);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    LG__Assert(!was_occupied);
+    return LG_STATUS_OK;
 }
 
 enum lg_status LG_IR__ExprAppendNode(
@@ -69,8 +75,9 @@ enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id) {
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_ir_expr *expr, uint32_t id) {
-    for (size_t i = 0; i < expr->buf_table_len; i++) {
+enum lg_status LG_IR_BuftabGetIdx(const struct lg_ir_expr *expr, size_t *LG_NULLABLE out_idx, uint32_t id) {
+    for (size_t i = 0; i < expr->buf_table_len; i++) 
+    {
         if (expr->buf_table_ids[i] == id) {
             if (out_idx != NULL) {
                 *out_idx = i;
@@ -82,9 +89,9 @@ enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_i
 }
 
 enum lg_status LG_IR_DeclareSource(
+    struct lg_ir_compilation_context *ctx,
     struct lg_ir_symbol *out_symbol,
     struct lg_desc physical_desc,
-    struct lg_ir_expr *expr,
     uint32_t buf_id
 ) {
     if (out_symbol == NULL) {
@@ -92,13 +99,18 @@ enum lg_status LG_IR_DeclareSource(
     }
 
     size_t buf_idx = 0;
-    enum lg_status status = LG_IR_BuftabGetIdx(&buf_idx, expr, buf_id);
+    enum lg_status status = LG_IR_BuftabGetIdx(ctx->expr, &buf_idx, buf_id);
     if (status != LG_STATUS_OK) {
         return status;
     }
 
-    struct lg_ir_symbol sym = LG_IR__CreateSymbol(expr);
-    status = LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
+    struct lg_ir_symbol sym;
+    status = LG_IR__CreateSymbol(ctx, &sym);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+
+    status = LG_IR__ExprAppendNode(ctx->expr, (struct lg_ir_expr_node){
         .opcode = LG_OPCODE_SOURCE,
         .x0_logical = sym,
         .x0_physical = physical_desc,
@@ -112,17 +124,17 @@ enum lg_status LG_IR_DeclareSource(
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_IR_DeclareSink(struct lg_ir_symbol sym, struct lg_ir_expr *expr) {
-    for (size_t i = 0; i < expr->nodes_len; i++) {
+enum lg_status LG_IR_DeclareSink(struct lg_ir_compilation_context *ctx, struct lg_ir_symbol sym) {
+    for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
         if (
-            expr->nodes[i].y_logical.id == sym.id ||
-            expr->nodes[i].x0_logical.id == sym.id ||
-            expr->nodes[i].x1_logical.id == sym.id 
+            ctx->expr->nodes[i].y_logical.id == sym.id ||
+            ctx->expr->nodes[i].x0_logical.id == sym.id ||
+            ctx->expr->nodes[i].x1_logical.id == sym.id 
         ) {
-            if (expr->nodes[i].opcode == LG_OPCODE_SINK) {
+            if (ctx->expr->nodes[i].opcode == LG_OPCODE_SINK) {
                 return LG_STATUS_DUPLICATE;
             }
-            enum lg_status status = LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
+            enum lg_status status = LG_IR__ExprAppendNode(ctx->expr, (struct lg_ir_expr_node){
                 .opcode = LG_OPCODE_SINK,
                 .x0_logical = sym,
             });
@@ -191,13 +203,18 @@ enum lg_status LG_IR_AppendNop(struct lg_ir_expr *expr, struct lg_ir_symbol x) {
 }
 
 enum lg_status LG_IR_AppendAdd(
-    struct lg_ir_expr *expr,
+    struct lg_ir_compilation_context *ctx,
     struct lg_ir_symbol *y,
     const struct lg_ir_symbol x0,
     const struct lg_ir_symbol x1
 ) {
-    struct lg_ir_symbol y_ = LG_IR__CreateSymbol(expr);
-    enum lg_status status = LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
+    enum lg_status status;
+    struct lg_ir_symbol y_;
+    status = LG_IR__CreateSymbol(ctx, &y_);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    status = LG_IR__ExprAppendNode(ctx->expr, (struct lg_ir_expr_node){
         .opcode = LG_OPCODE_ADD,   
         .y_logical = y_,
         .x0_logical = x0,
@@ -211,15 +228,20 @@ enum lg_status LG_IR_AppendAdd(
 }
 
 enum lg_status LG_IR_AppendContract(
-    struct lg_ir_expr *expr,
+    struct lg_ir_compilation_context *ctx,
     struct lg_ir_symbol *y,
     struct lg_ir_symbol x0,
     struct lg_ir_symbol x1,
     size_t n_contracted_axes, 
     size_t n_batch_axes
 ) {
-    struct lg_ir_symbol y_ = LG_IR__CreateSymbol(expr);
-    enum lg_status status = LG_IR__ExprAppendNode(expr, (struct lg_ir_expr_node){
+    enum lg_status status;
+    struct lg_ir_symbol y_;
+    status = LG_IR__CreateSymbol(ctx, &y_);
+    if (status != LG_STATUS_OK) {
+        return status;
+    }
+    status = LG_IR__ExprAppendNode(ctx->expr, (struct lg_ir_expr_node){
         .opcode = LG_OPCODE_CONTRACT,   
         .y_logical = y_,
         .x0_logical = x0,
@@ -276,9 +298,6 @@ enum lg_status LG_IR__ValidateExprStructure(struct lg_ir_compilation_context *ct
         uint32_t *seen_ids = (uint32_t*)LG__AllocZero(ctx->scratch, seen_ids_cap * sizeof(uint32_t));
         if (seen_ids == NULL) {
             return LG_STATUS_OUT_OF_MEMORY;
-        }
-        for (size_t i = 0; i < seen_ids_cap; i++) {
-            seen_ids[i] = 0;
         }
 
         for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
@@ -398,7 +417,6 @@ enum lg_status LG_IR__InferDims(struct lg_ir_compilation_context *ctx) {
         case LG_OPCODE_STABLE_SOFTMAX:
         case LG_OPCODE_SIGMOID:
         case LG_OPCODE_LN:
-            status = LG_STATUS_UNSUPPORTED_OPCODE;
             LG__Unreachable("TODO");
         }
 
@@ -439,30 +457,24 @@ skip_layout:;
 }
 
 enum lg_status LG_IR__Bufferize(
-    struct lg_allocator *scratch,
-    struct lg_ir_expr *expr,
-    size_t *LG_NULLABLE out_bytes_required,
+    struct lg_ir_compilation_context *ctx,
     uint32_t buf_id,
     size_t align
 ) {
-    // TODO: we need a better representation for unaries
-    
     enum lg_status status = LG_STATUS_OK;
 
     // --- Initialize symbol table & zero pools ---
-    uint8_t *scratch_bufs[4] = {0};
-    size_t bytes_allocated = 0;
-    status = LG__AllocContiguousBlocks(
-        scratch,
+    uint8_t *scratch_bufs[3] = {0};
+    status = LG__AllocContiguousBlocks( // TODO: this mode of allocation is fragile and stupid
+        ctx->scratch,
         scratch_bufs,
-        &bytes_allocated,
+        NULL,
         (size_t[]){
-            expr->nodes_len * sizeof(size_t),
-            expr->nodes_len * sizeof(size_t),
-            expr->nodes_len * sizeof(size_t),
-            expr->nodes_len * sizeof(size_t),
+            ctx->expr->nodes_len * sizeof(size_t),
+            ctx->expr->nodes_len * sizeof(size_t),
+            ctx->expr->nodes_len * sizeof(size_t),
         },
-        4,
+        3,
         8
     );
     if (status != LG_STATUS_OK) {
@@ -471,51 +483,43 @@ enum lg_status LG_IR__Bufferize(
     size_t *const restrict symtab_sizes = (size_t*)scratch_bufs[0];
     size_t *const restrict symtab_dead_after = (size_t*)scratch_bufs[1];
     size_t *const restrict total_freed_after_time = (size_t*)scratch_bufs[2];
-    size_t *const restrict symtab_offsets = (size_t*)scratch_bufs[3];
 
-    struct lg_ir_symtab symtab = {0};
-    status = LG_IR__SymtabInit(&symtab, scratch, expr->nodes_len * 2);
-    if (status != LG_STATUS_OK) {
-        goto out_free_scratch_bufs;
-    }
-
-    for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
+    for (size_t i_time = 0; i_time < ctx->expr->nodes_len; i_time++) {
         const uint32_t symbol_ids[3] = {
-            expr->nodes[i_time].y_logical.id,
-            expr->nodes[i_time].x0_logical.id,
-            expr->nodes[i_time].x1_logical.id,
+            ctx->expr->nodes[i_time].y_logical.id,
+            ctx->expr->nodes[i_time].x0_logical.id,
+            ctx->expr->nodes[i_time].x1_logical.id,
         };
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t idx = 0;
-            status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
+            status = LG_IR__SymtabUpsert(&ctx->symtab, &idx, NULL, symbol_ids[i_sym]);
             LG__Assert(status == LG_STATUS_OK);
-            symtab_sizes[idx] = 0;
+            // We initialize the time a symbol is dead after to the time it is born at by default
+            // because a symbol cannot die before it is born.
             symtab_dead_after[idx] = i_time;
-            symtab_offsets[idx] = 0;
         }
-        total_freed_after_time[i_time] = 0;
     }
 
     // --- Calculate physical sizes & map them to timesteps ---
-    for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
+    for (size_t i_time = 0; i_time < ctx->expr->nodes_len; i_time++) {
         const uint32_t symbol_ids[3] = {
-            expr->nodes[i_time].y_logical.id,
-            expr->nodes[i_time].x0_logical.id,
-            expr->nodes[i_time].x1_logical.id,
+            ctx->expr->nodes[i_time].y_logical.id,
+            ctx->expr->nodes[i_time].x0_logical.id,
+            ctx->expr->nodes[i_time].x1_logical.id,
         };
         const struct lg_desc *const descs[3] = {
-            &expr->nodes[i_time].y_physical,
-            &expr->nodes[i_time].x0_physical,
-            &expr->nodes[i_time].x1_physical,
+            &ctx->expr->nodes[i_time].y_physical,
+            &ctx->expr->nodes[i_time].x0_physical,
+            &ctx->expr->nodes[i_time].x1_physical,
         };
         const uint32_t buf_ids[3] = {
-            expr->nodes[i_time].y_buf_id,
-            expr->nodes[i_time].x0_buf_id,
-            expr->nodes[i_time].x1_buf_id,
+            ctx->expr->nodes[i_time].y_buf_id,
+            ctx->expr->nodes[i_time].x0_buf_id,
+            ctx->expr->nodes[i_time].x1_buf_id,
         };
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t idx = 0;
-            status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
+            status = LG_IR__SymtabUpsert(&ctx->symtab, &idx, NULL, symbol_ids[i_sym]);
             LG__Assert(status == LG_STATUS_OK);
             if (buf_ids[i_sym] == buf_id) {
                 const size_t size = LG_DescSizeInBytes(*descs[i_sym]);
@@ -523,11 +527,11 @@ enum lg_status LG_IR__Bufferize(
             }
         }
     }
-    for (size_t i = 0; i < symtab.cap_table; i++) {
-        if (!symtab.occupied[i]) {
+    for (size_t i = 0; i < ctx->symtab.table_cap; i++) {
+        if (!ctx->symtab.occupied[i]) {
             continue;
         }
-        const size_t idx = symtab.array_idxs[i];
+        const size_t idx = ctx->symtab.array_idxs[i];
         total_freed_after_time[symtab_dead_after[idx]] += symtab_sizes[idx];
     }
 
@@ -535,11 +539,11 @@ enum lg_status LG_IR__Bufferize(
     // TODO: this is obviously terrible and should just be linear strip packing
     size_t current_offset = 0;
     size_t max_offset = 0;
-    for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
+    for (size_t i_time = 0; i_time < ctx->expr->nodes_len; i_time++) {
         size_t y_idx = 0;
-        status = LG_IR__SymtabUpsert(&symtab, &y_idx, NULL, expr->nodes[i_time].y_logical.id);
+        status = LG_IR__SymtabUpsert(&ctx->symtab, &y_idx, NULL, ctx->expr->nodes[i_time].y_logical.id);
         LG__Assert(status == LG_STATUS_OK);
-        symtab_offsets[y_idx] = current_offset;
+        ctx->symtab.buffer_offsets[y_idx] = current_offset;
         current_offset += symtab_sizes[y_idx];
         if (current_offset > max_offset) {
             max_offset = current_offset;
@@ -549,41 +553,93 @@ enum lg_status LG_IR__Bufferize(
         current_offset -= total_freed_after_time[i_time];
     }
 
-    if (out_bytes_required != NULL) {
-        *out_bytes_required = max_offset;
-    }
+    size_t buftab_idx;
+    status = LG_IR_BuftabGetIdx(ctx->expr, &buftab_idx, buf_id);
+    LG__Assert(status == LG_STATUS_OK); // We should only ever be passed valid buffer ids.
+    ctx->expr->buf_table_bytes_required[buftab_idx] = max_offset;
 
-    // --- Finally, assign offsets to IR nodes ---
-    for (size_t i_time = 0; i_time < expr->nodes_len; i_time++) {
+    ctx->scratch->Free(ctx->scratch->ctx, scratch_bufs[0]);
+    return LG_STATUS_OK;
+}
+
+void LG_IR__DecorateNodes(struct lg_ir_compilation_context *ctx) {
+    enum lg_status status;
+
+    for (size_t i_node = 0; i_node < ctx->expr->nodes_len; i_node++) {
         const uint32_t symbol_ids[3] = {
-            expr->nodes[i_time].y_logical.id,
-            expr->nodes[i_time].x0_logical.id,
-            expr->nodes[i_time].x1_logical.id,
+            ctx->expr->nodes[i_node].y_logical.id,
+            ctx->expr->nodes[i_node].x0_logical.id,
+            ctx->expr->nodes[i_node].x1_logical.id,
         };
-        size_t *const node_offsets[3] = {
-            &expr->nodes[i_time].y_offset,
-            &expr->nodes[i_time].x0_offset,
-            &expr->nodes[i_time].x1_offset,
+        struct lg_desc *const desc_ptrs[3] = {
+            &ctx->expr->nodes[i_node].y_physical,
+            &ctx->expr->nodes[i_node].x0_physical,
+            &ctx->expr->nodes[i_node].x1_physical,
         };
-        const uint32_t buf_ids[3] = {
-            expr->nodes[i_time].y_buf_id,
-            expr->nodes[i_time].x0_buf_id,
-            expr->nodes[i_time].x1_buf_id,
+        size_t *const offset_ptrs[3] = {
+            &ctx->expr->nodes[i_node].y_offset,
+            &ctx->expr->nodes[i_node].x0_offset,
+            &ctx->expr->nodes[i_node].x1_offset,
         };
+        size_t *const bufid_ptrs[3] = {
+            &ctx->expr->nodes[i_node].y_offset,
+            &ctx->expr->nodes[i_node].x0_offset,
+            &ctx->expr->nodes[i_node].x1_offset,
+        };
+
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
-            size_t idx = 0;
-            status = LG_IR__SymtabUpsert(&symtab, &idx, NULL, symbol_ids[i_sym]);
+            size_t symtab_array_idx;
+            bool was_occupied;
+            status = LG_IR__SymtabUpsert(&ctx->symtab, &symtab_array_idx, &was_occupied, symbol_ids[i_sym]);
             LG__Assert(status == LG_STATUS_OK);
-            if (buf_ids[i_sym] == buf_id) {
-                *node_offsets[i_sym] = symtab_offsets[idx];
-            }
+            LG__Assert(was_occupied);
+
+            *(desc_ptrs[i_sym]) = ctx->symtab.descs[symtab_array_idx];
+            *(offset_ptrs[i_sym]) = ctx->symtab.buffer_offsets[symtab_array_idx];
+            *(bufid_ptrs[i_sym]) = ctx->symtab.buffer_ids[symtab_array_idx];
         }
     }
+}
 
-    LG_IR__SymtabDeinit(&symtab, scratch);
-out_free_scratch_bufs:
-    scratch->Free(scratch->ctx, scratch_bufs[0]);
-    return status;
+void LG_IR__DecorateWithMaps(struct lg_ir_compilation_context *ctx) {
+    for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
+        switch (ctx->expr->nodes[i].opcode) {
+        case LG_OPCODE_SOURCE:
+        case LG_OPCODE_SINK:
+        case LG_OPCODE_NOP:
+            continue;
+        case LG_OPCODE_ADD:
+        case LG_OPCODE_SUB: {
+            enum lg_status status = LG_CreateBroadcastSpace((struct lg_desc*[]){
+                &ctx->expr->nodes[i].y_physical,         
+                &ctx->expr->nodes[i].x0_physical,         
+                &ctx->expr->nodes[i].x1_physical,         
+            }, 3);
+            LG__Assert(status == LG_STATUS_OK);
+            break;
+        }
+
+        case LG_OPCODE_CONTRACT: {
+            enum lg_status status = LG_CreateContractionSpace(
+                &ctx->expr->nodes[i].y_physical,
+                &ctx->expr->nodes[i].x0_physical,         
+                &ctx->expr->nodes[i].x1_physical,
+                ctx->expr->nodes[i].meta_as.contract.n_batch_axes
+            );
+            LG__Assert(status == LG_STATUS_OK);
+            break;
+        }
+
+        case LG_OPCODE_RELU:
+        case LG_OPCODE_STABLE_SOFTMAX:
+        case LG_OPCODE_SIGMOID:
+        case LG_OPCODE_LN:
+        case LG_OPCODE_HADAMARD:
+        case LG_OPCODE_LOSS_MSE:
+        case LG_OPCODE_LOSS_CROSS_ENTROPY:
+            LG__Unreachable("TODO");
+        }
+    }
 }
 
 enum lg_status LG_IR__SortAxes(struct lg_ir_expr *expr) {
@@ -618,8 +674,6 @@ enum lg_status LG_IR__CoalesceAxes(struct lg_ir_expr *expr) {
 
 enum lg_status LG_IR_CompileExpr(
     struct lg_ir_compilation_context *ctx,
-    size_t *LG_NULLABLE out_bytes_required,
-    struct lg_allocator *scratch,
     size_t mem_align
 ) {
     enum lg_status status;
@@ -632,18 +686,24 @@ enum lg_status LG_IR_CompileExpr(
         return status;
     }
     LG_IR__AssignLayouts(ctx, LG_LAYOUT_ROW_MAJOR /* TODO */, mem_align);
-    status = LG_IR__Bufferize(scratch, expr, out_bytes_required, 0 /* TODO */, mem_align);
-    if (status != LG_STATUS_OK) {
-        return status;
+    for (size_t i = 0; i <ctx->expr->buf_table_len; i++) {
+        const uint32_t buf_id = ctx->expr->buf_table_ids[i];
+        status = LG_IR__Bufferize(ctx, buf_id, mem_align);
+        if (status != LG_STATUS_OK) {
+            return status;
+        }
     }
-    status = LG_IR__SortAxes(expr);
-    if (status != LG_STATUS_OK) {
-        return status;
-    }
-    status = LG_IR__CoalesceAxes(expr);
-    if (status != LG_STATUS_OK) {
-        return status;
-    }
+    // TODO: these functions really need better names
+    LG_IR__DecorateNodes(ctx);
+    LG_IR__DecorateWithMaps(ctx);
+    // status = LG_IR__SortAxes(expr);
+    // if (status != LG_STATUS_OK) {
+    //     return status;
+    // }
+    // status = LG_IR__CoalesceAxes(expr);
+    // if (status != LG_STATUS_OK) {
+    //     return status;
+    // }
     return LG_STATUS_OK;
 }
 

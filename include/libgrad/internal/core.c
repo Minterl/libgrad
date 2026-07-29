@@ -231,6 +231,14 @@ enum lg_status LG_CreateContractionSpace(
     struct lg_desc *x1,
     size_t n_batch_axes
 ) {
+    if (
+        n_batch_axes > y->rank ||
+        n_batch_axes > x0->rank ||
+        n_batch_axes > x1->rank
+    ) {
+        return LG_STATUS_INVALID_ARGUMENT;
+    }
+
     // The logical tensor axes will be laid out as follows:
     // { [batch], [x0_free], [x1_free], [contracted] }
     //    reg      reg       reg       0          | y strides
@@ -248,6 +256,10 @@ enum lg_status LG_CreateContractionSpace(
     const size_t n_contracted_axes = (x0->rank + x1->rank - y->rank - n_batch_axes) / 2;
     const size_t x0_first_contracted_axis = x0->rank - n_contracted_axes;
     const size_t x1_first_free_axis = n_contracted_axes + n_batch_axes;
+
+    LG__Assert(n_contracted_axes < LG_MAX_RANK);
+    LG__Assert(x0_first_contracted_axis < LG_MAX_RANK);
+    LG__Assert(x1_first_free_axis < LG_MAX_RANK);
 
     // Batch axes are already in place
     size_t r = n_batch_axes;

@@ -29,18 +29,28 @@ uint32_t LG_IR__MurmurHash(uint32_t kh) {
 enum lg_status LG_IR__SymtabInit(struct lg_ir_symtab *table, struct lg_allocator *alloc, size_t cap) {
     const size_t align = 16;
 
-    const size_t sz_occupied = LG__ALIGN_UP(cap * sizeof(bool), align);
-    const size_t sz_symbol_ids = LG__ALIGN_UP(cap * sizeof(uint32_t), align);
-    const size_t sz_array_idxs = LG__ALIGN_UP(cap * sizeof(size_t), align);
+    const size_t sz_occupied = cap * sizeof(bool);
+    const size_t sz_symbol_ids = cap * sizeof(uint32_t);
+    const size_t sz_array_idxs = cap * sizeof(size_t);
+    const size_t sz_descs = cap * sizeof(struct lg_desc);
+    const size_t sz_buffer_ids = cap * sizeof(uint32_t);
+    const size_t sz_buffer_offsets = cap * sizeof(size_t);
 
-    uint8_t *ptrs[3] = {0};
+    uint8_t *ptrs[6] = {0};
     size_t bytes_allocated = 0;
     enum lg_status status = LG__AllocContiguousBlocks(
         alloc, 
         ptrs,
         &bytes_allocated,
-        (size_t[]){sz_occupied, sz_symbol_ids, sz_array_idxs},
-        3,
+        (size_t[]){
+            sz_occupied,
+            sz_symbol_ids,
+            sz_array_idxs,
+            sz_descs,
+            sz_buffer_ids,
+            sz_buffer_offsets,
+        },
+        6,
         align
     );
     if (status != LG_STATUS_OK) {
@@ -51,20 +61,22 @@ enum lg_status LG_IR__SymtabInit(struct lg_ir_symtab *table, struct lg_allocator
         ptrs[0][i] = 0;
     }
 
-    table->cap_table = cap;
+    table->table_cap = cap;
+    table->array_cap = cap;
     table->occupied = (bool*)ptrs[0];
     table->symbol_ids = (uint32_t*)ptrs[1];
     table->array_idxs = (size_t*)ptrs[2];
+    table->descs = (struct lg_desc*)ptrs[3];
+    table->buffer_ids = (uint32_t*)ptrs[4];
+    table->buffer_offsets = (size_t*)ptrs[5];
 
     return LG_STATUS_OK;
 }
 
 void LG_IR__SymtabDeinit(struct lg_ir_symtab *table, struct lg_allocator *alloc) {
     alloc->Free(alloc->ctx, table->occupied);
-    table->cap_table = 0;
-    table->occupied = NULL;
-    table->symbol_ids = NULL;
-    table->array_idxs = NULL;
+    alloc->Free(alloc->ctx, table->descs);
+    LG__ZERO(table, sizeof(struct lg_ir_symtab));
 }
 
 enum lg_status LG_IR__SymtabUpsert(
@@ -73,15 +85,15 @@ enum lg_status LG_IR__SymtabUpsert(
     bool *LG_NULLABLE out_was_occupied,
     uint32_t symbol_id
 ) {
-    if (table->cap_table == 0) {
+    if (table->table_cap == 0) {
         return LG_STATUS_NOT_FOUND;
     }
 
-    const size_t start_idx = (table->cap_table <= 8) ? (symbol_id % table->cap_table) : (LG_IR__MurmurHash(symbol_id) % table->cap_table);
+    const size_t start_idx = (table->table_cap <= 8) ? (symbol_id % table->table_cap) : (LG_IR__MurmurHash(symbol_id) % table->table_cap);
     for (
         size_t i = start_idx, n_visited = 0;
-        n_visited < table->cap_table;
-        i = (i + 1) % table->cap_table, n_visited++
+        n_visited < table->table_cap;
+        i = (i + 1) % table->table_cap, n_visited++
     ) {
         if (!table->occupied[i]) {
             table->occupied[i] = true;

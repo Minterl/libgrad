@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include <libgrad/internal/fnv.h>
 
 /// Maximum possible Tensor rank
 /// All tensors will have an array of this size to store
@@ -45,7 +44,7 @@
 #       define LG_CHECK_BOUNDS_NULLABLE(x) /* nothing */
 #   endif
 #endif
-
+ 
 enum lg_status {
     LG_STATUS_OK = 0,
     LG_STATUS_INVALID_ARGUMENT,
@@ -67,10 +66,6 @@ enum lg_layout {
     LG_LAYOUT_ROW_MAJOR,
     LG_LAYOUT_COL_MAJOR,
 };
-
-/// Define a tensor ID using an eight-character
-/// literal.
-#define LG_TENSOR_ID_8 LG_HASH_LITERAL_8
 
 /// Tensor shape descriptor
 struct lg_desc {

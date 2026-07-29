@@ -103,8 +103,6 @@ struct lg_ir_expr {
     size_t                   buf_table_len;
     uint32_t                *buf_table_ids LG_CHECK_BOUNDS(buf_table_len);
     size_t                  *buf_table_bytes_required LG_CHECK_BOUNDS(buf_table_len);
-
-    uint32_t                 next_symbol_id;
 };
 
 struct lg_ir_compilation_context {
@@ -114,15 +112,17 @@ struct lg_ir_compilation_context {
 
     size_t                err_msg_len;
     uint8_t               err_msg_backing_buf[LG_IR_MAX_ERR_LEN];
+
+    uint32_t              next_symbol_id;
 };
 
 enum lg_status LG_IR_DeclareSource(
+    struct lg_ir_compilation_context *ctx,
     struct lg_ir_symbol *out_symbol,
     struct lg_desc physical_desc,
-    struct lg_ir_expr *expr,
     uint32_t buf_id
 );
-enum lg_status LG_IR_DeclareSink(struct lg_ir_symbol sym, struct lg_ir_expr *expr);
+enum lg_status LG_IR_DeclareSink(struct lg_ir_compilation_context *ctx, struct lg_ir_symbol sym);
 enum lg_status LG_IR_GetSinkLocation(
     uint32_t *LG_NULLABLE out_buf_id,
     size_t *LG_NULLABLE out_offset,
@@ -132,7 +132,7 @@ enum lg_status LG_IR_GetSinkLocation(
 );
 
 enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id);
-enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_ir_expr *expr, uint32_t id);
+enum lg_status LG_IR_BuftabGetIdx(const struct lg_ir_expr *expr, size_t *LG_NULLABLE out_idx, uint32_t id);
 
 /// Gets the last physical location of the tensor `x` and populates
 /// its `data` pointer if found.
@@ -144,9 +144,21 @@ enum lg_status LG_IR_BuftabGetIdx(size_t *LG_NULLABLE out_idx, const struct lg_i
 /// the end of the expr.
 enum lg_status LG_IR_AppendNop(struct lg_ir_expr *expr, struct lg_ir_symbol x);
 
-enum lg_status LG_IR_AppendAdd(struct lg_ir_expr *expr, struct lg_ir_symbol *y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
+enum lg_status LG_IR_AppendAdd(
+    struct lg_ir_compilation_context *ctx,
+    struct lg_ir_symbol *y,
+    const struct lg_ir_symbol x0,
+    const struct lg_ir_symbol x1
+);
 enum lg_status LG_IR_AppendSub(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
-enum lg_status LG_IR_AppendContract(struct lg_ir_expr *expr, struct lg_ir_symbol *y, struct lg_ir_symbol x0, struct lg_ir_symbol x1, size_t n_contracted_axes, size_t n_batch_axes);
+enum lg_status LG_IR_AppendContract(
+    struct lg_ir_compilation_context *ctx,
+    struct lg_ir_symbol *y,
+    struct lg_ir_symbol x0,
+    struct lg_ir_symbol x1,
+    size_t n_contracted_axes, 
+    size_t n_batch_axes
+);
 enum lg_status LG_IR_AppendHadamard(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
 
 enum lg_status LG_IR_AppendMSELoss(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
@@ -160,8 +172,6 @@ enum lg_status LG_IR_AppendLn(struct lg_ir_expr *expr, struct lg_ir_symbol y, co
 /// "Compiles" an expr.
 enum lg_status LG_IR_CompileExpr(
     struct lg_ir_compilation_context *ctx,
-    size_t *LG_NULLABLE out_bytes_required,
-    struct lg_allocator *scratch,
     size_t mem_align
 );
 
