@@ -257,6 +257,9 @@ enum lg_status LG_IR_AppendContract(
 }
 
 enum lg_status LG_IR__ValidateExprStructure(struct lg_ir_compilation_context *ctx) {
+    enum lg_status status = LG_STATUS_OK;
+    struct lg_scratch_node *waypoint = LG__AcquireScratch(ctx->scratch);
+
     // Source/sink rules
     {
         bool sources_begin = false;
@@ -291,11 +294,9 @@ enum lg_status LG_IR__ValidateExprStructure(struct lg_ir_compilation_context *ct
 
     // Scope validation
     {
-        enum lg_status status = LG_STATUS_OK;
-
         const size_t seen_ids_cap = ctx->expr->nodes_len * 3;
         size_t seen_ids_len = 0;
-        uint32_t *seen_ids = (uint32_t*)LG__AllocZero(ctx->scratch, seen_ids_cap * sizeof(uint32_t));
+        uint32_t *seen_ids = (uint32_t*)LG__AllocScratch(ctx->scratch, &waypoint, seen_ids_cap * sizeof(uint32_t));
         if (seen_ids == NULL) {
             return LG_STATUS_OUT_OF_MEMORY;
         }
@@ -305,40 +306,40 @@ enum lg_status LG_IR__ValidateExprStructure(struct lg_ir_compilation_context *ct
 
             if (ctx->expr->nodes[i].opcode == LG_OPCODE_SOURCE) {
                 new_id = ctx->expr->nodes[i].x0_logical.id;
-                goto push_id;
-            }
-
-            bool found_x0 = false;
-            bool found_x1 = false;
-            for (size_t j = 0; j < seen_ids_len; j++) {
-                if (seen_ids[j] == ctx->expr->nodes[i].x0_logical.id) {
-                    found_x0 = true;
-                } else if (seen_ids[j] == ctx->expr->nodes[i].x1_logical.id) {
-                    found_x1 = true;
+                for (size_t j = 0; j < seen_ids_len; j++) {
+                    if (seen_ids[j] == new_id) {
+                        status = LG_STATUS_INVALID_ARGUMENT;
+                        goto out_release_scratch;
+                    }
                 }
+            } else {
+                bool found_x0 = false;
+                bool found_x1 = false;
+                for (size_t j = 0; j < seen_ids_len; j++) {
+                    if (seen_ids[j] == ctx->expr->nodes[i].x0_logical.id) {
+                        found_x0 = true;
+                    } else if (seen_ids[j] == ctx->expr->nodes[i].x1_logical.id) {
+                        found_x1 = true;
+                    }
+                }
+
+                if (!found_x0 || (!found_x1 && LG__OPCODE_IS_BINARY(ctx->expr->nodes[i].opcode))) {
+                    status = LG_STATUS_INVALID_ARGUMENT;
+                    goto out_release_scratch;
+                }
+
+                new_id = ctx->expr->nodes[i].y_logical.id;
             }
 
-            if (!found_x0 || (!found_x1 && LG__OPCODE_IS_BINARY(ctx->expr->nodes[i].opcode))) {
-                status = LG_STATUS_INVALID_ARGUMENT;
-                goto out_free_seen_ids;
-            }
-
-            new_id = ctx->expr->nodes[i].y_logical.id;
-
-push_id:
-            LG__Assert(seen_ids_len + 1 < seen_ids_cap);
+            LG__Assert(seen_ids_len + 1 <= seen_ids_cap);
             seen_ids[seen_ids_len] = new_id;
             seen_ids_len++;
         }
-
-out_free_seen_ids:    
-        ctx->scratch->Free(ctx->scratch->ctx, seen_ids);
-        if (status != LG_STATUS_OK) {
-            return status;
-        }
     }
 
-    return LG_STATUS_OK;
+out_release_scratch:
+    LG__ReleaseScratch(ctx->scratch, &waypoint);
+    return status;
 }
 
 enum lg_status LG_IR__InferDims(struct lg_ir_compilation_context *ctx) {
@@ -366,7 +367,7 @@ enum lg_status LG_IR__InferDims(struct lg_ir_compilation_context *ctx) {
         }
         LG__Assert(x0_symtab_idx != x1_symtab_idx);
 
-        size_t rank = {0};
+        size_t rank = 0;
         size_t dim[LG_MAX_RANK] = {0};
 
         switch (ctx->expr->nodes[i].opcode) {
@@ -462,27 +463,14 @@ enum lg_status LG_IR__Bufferize(
     size_t align
 ) {
     enum lg_status status = LG_STATUS_OK;
+    struct lg_scratch_node *waypoint = LG__AcquireScratch(ctx->scratch);
 
-    // --- Initialize symbol table & zero pools ---
-    uint8_t *scratch_bufs[3] = {0};
-    status = LG__AllocContiguousBlocks( // TODO: this mode of allocation is fragile and stupid
-        ctx->scratch,
-        scratch_bufs,
-        NULL,
-        (size_t[]){
-            ctx->expr->nodes_len * sizeof(size_t),
-            ctx->expr->nodes_len * sizeof(size_t),
-            ctx->expr->nodes_len * sizeof(size_t),
-        },
-        3,
-        8
-    );
-    if (status != LG_STATUS_OK) {
-        return status;
+    size_t *const restrict symtab_sizes = (size_t*)LG__AllocScratch(ctx->scratch, &waypoint, ctx->expr->nodes_len * sizeof(size_t));
+    size_t *const restrict symtab_dead_after = (size_t*)LG__AllocScratch(ctx->scratch, &waypoint, ctx->expr->nodes_len * sizeof(size_t));
+    size_t *const restrict total_freed_after_time = (size_t*)LG__AllocScratch(ctx->scratch, &waypoint, ctx->expr->nodes_len * sizeof(size_t));
+    if (symtab_sizes == NULL || symtab_dead_after == NULL || total_freed_after_time == NULL) {
+        return LG_STATUS_OUT_OF_MEMORY;
     }
-    size_t *const restrict symtab_sizes = (size_t*)scratch_bufs[0];
-    size_t *const restrict symtab_dead_after = (size_t*)scratch_bufs[1];
-    size_t *const restrict total_freed_after_time = (size_t*)scratch_bufs[2];
 
     for (size_t i_time = 0; i_time < ctx->expr->nodes_len; i_time++) {
         const uint32_t symbol_ids[3] = {
@@ -543,11 +531,12 @@ enum lg_status LG_IR__Bufferize(
         size_t y_idx = 0;
         status = LG_IR__SymtabUpsert(&ctx->symtab, &y_idx, NULL, ctx->expr->nodes[i_time].y_logical.id);
         LG__Assert(status == LG_STATUS_OK);
-        ctx->symtab.buffer_offsets[y_idx] = current_offset;
+
         current_offset += symtab_sizes[y_idx];
         if (current_offset > max_offset) {
             max_offset = current_offset;
         }
+
         // it's worth putting an explicit underflow check here
         LG__Assert(current_offset >= total_freed_after_time[i_time]);
         current_offset -= total_freed_after_time[i_time];
@@ -558,7 +547,8 @@ enum lg_status LG_IR__Bufferize(
     LG__Assert(status == LG_STATUS_OK); // We should only ever be passed valid buffer ids.
     ctx->expr->buf_table_bytes_required[buftab_idx] = max_offset;
 
-    ctx->scratch->Free(ctx->scratch->ctx, scratch_bufs[0]);
+    LG__ReleaseScratch(ctx->scratch, &waypoint);
+
     return LG_STATUS_OK;
 }
 
