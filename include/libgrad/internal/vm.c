@@ -14,7 +14,7 @@ enum lg_status LG_IR__CreateSymbol(struct lg_ir_compilation_context *ctx, struct
         .id = id,
     };
     bool was_occupied;
-    enum lg_status status = LG_IR__SymtabUpsert(&ctx->symtab, NULL, &was_occupied, id);
+    enum lg_status status = LG_IR_SymtabUpsert(&ctx->symtab, NULL, &was_occupied, id);
     if (status != LG_STATUS_OK) {
         return status;
     }
@@ -348,7 +348,7 @@ enum lg_status LG_IR__InferDims(struct lg_ir_compilation_context *ctx) {
     for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
         if (ctx->expr->nodes[i].opcode == LG_OPCODE_SOURCE) {
             size_t symtab_idx;
-            status = LG_IR__SymtabUpsert(&ctx->symtab, &symtab_idx, NULL, ctx->expr->nodes[i].x0_logical.id);
+            status = LG_IR_SymtabUpsert(&ctx->symtab, &symtab_idx, NULL, ctx->expr->nodes[i].x0_logical.id);
             LG__Assert(status == LG_STATUS_OK);
             ctx->symtab.descs[symtab_idx] = ctx->expr->nodes[i].x0_physical;
             continue;
@@ -357,11 +357,11 @@ enum lg_status LG_IR__InferDims(struct lg_ir_compilation_context *ctx) {
         bool was_occupied = false;
         size_t x0_symtab_idx = 0;
         size_t x1_symtab_idx = 0;
-        status = LG_IR__SymtabUpsert(&ctx->symtab, &x0_symtab_idx, &was_occupied, ctx->expr->nodes[i].x0_logical.id);
+        status = LG_IR_SymtabUpsert(&ctx->symtab, &x0_symtab_idx, &was_occupied, ctx->expr->nodes[i].x0_logical.id);
         LG__Assert(status == LG_STATUS_OK);
         LG__Assert(was_occupied);
         if (LG__OPCODE_IS_BINARY(ctx->expr->nodes[i].opcode)) {
-            status = LG_IR__SymtabUpsert(&ctx->symtab, &x1_symtab_idx, &was_occupied, ctx->expr->nodes[i].x1_logical.id);
+            status = LG_IR_SymtabUpsert(&ctx->symtab, &x1_symtab_idx, &was_occupied, ctx->expr->nodes[i].x1_logical.id);
             LG__Assert(status == LG_STATUS_OK);
             LG__Assert(was_occupied);
         }
@@ -422,7 +422,7 @@ enum lg_status LG_IR__InferDims(struct lg_ir_compilation_context *ctx) {
         }
 
         size_t y_symtab_idx = 0;
-        status = LG_IR__SymtabUpsert(&ctx->symtab, &y_symtab_idx, NULL, ctx->expr->nodes[i].y_logical.id);
+        status = LG_IR_SymtabUpsert(&ctx->symtab, &y_symtab_idx, NULL, ctx->expr->nodes[i].y_logical.id);
         LG__Assert(status == LG_STATUS_OK);
         ctx->symtab.descs[y_symtab_idx].rank = rank;
         for (size_t j = 0; j < LG_MAX_RANK; j++) {
@@ -457,89 +457,279 @@ skip_layout:;
     }
 }
 
+LG_ALWAYS_INLINE 
+void LG__WideSetBit(size_t len, uint64_t *inout_bitset, bool bit, size_t offset_rtl) {
+    const size_t idx = len - 1 - (offset_rtl / 64);
+    const size_t shift = offset_rtl % 64;
+    LG__Assert(idx < len);
+    if (bit) {
+        inout_bitset[idx] |= UINT64_C(0x1) << shift;
+    } else {
+        inout_bitset[idx] &= ~(UINT64_C(0x1) << shift);
+    }
+}
+
+LG_ALWAYS_INLINE 
+bool LG__WideGetBit(size_t len, const uint64_t *bitset, size_t offset_rtl) {
+    const size_t idx = len - 1 - (offset_rtl / 64);
+    const size_t shift = offset_rtl % 64;
+    LG__Assert(idx < len);
+    return (bitset[idx] & ~(UINT64_C(0x1) << shift)) != 0;
+}
+
+LG_ALWAYS_INLINE 
+void LG__WideOr(size_t len, uint64_t *restrict inout_bitset, uint64_t *b) {
+    for (size_t i = 0; i < len; i++) {
+        inout_bitset[i] |= b[i];
+    }
+}
+
+LG_ALWAYS_INLINE 
+void LG__WideAnd(size_t len, uint64_t *restrict inout_bitset, uint64_t *b) {
+    for (size_t i = 0; i < len; i++) {
+        inout_bitset[i] &= b[i];
+    }
+}
+
 enum lg_status LG_IR__Bufferize(
     struct lg_ir_compilation_context *ctx,
     uint32_t buf_id,
     size_t align
 ) {
+    struct size_table {
+        uint32_t symbol_id;
+        size_t symtab_array_idx;
+        size_t size_bytes;
+        size_t offset;
+    };
+
     enum lg_status status = LG_STATUS_OK;
     struct lg_scratch_node *waypoint = LG__AcquireScratch(ctx->scratch);
 
-    size_t *const restrict symtab_sizes = (size_t*)LG__AllocScratch(ctx->scratch, &waypoint, ctx->expr->nodes_len * sizeof(size_t));
-    size_t *const restrict symtab_dead_after = (size_t*)LG__AllocScratch(ctx->scratch, &waypoint, ctx->expr->nodes_len * sizeof(size_t));
-    size_t *const restrict total_freed_after_time = (size_t*)LG__AllocScratch(ctx->scratch, &waypoint, ctx->expr->nodes_len * sizeof(size_t));
-    if (symtab_sizes == NULL || symtab_dead_after == NULL || total_freed_after_time == NULL) {
-        return LG_STATUS_OUT_OF_MEMORY;
-    }
 
-    for (size_t i_time = 0; i_time < ctx->expr->nodes_len; i_time++) {
-        const uint32_t symbol_ids[3] = {
-            ctx->expr->nodes[i_time].y_logical.id,
-            ctx->expr->nodes[i_time].x0_logical.id,
-            ctx->expr->nodes[i_time].x1_logical.id,
-        };
-        for (size_t i_sym = 0; i_sym < 3; i_sym++) {
-            size_t idx = 0;
-            status = LG_IR__SymtabUpsert(&ctx->symtab, &idx, NULL, symbol_ids[i_sym]);
-            LG__Assert(status == LG_STATUS_OK);
-            // We initialize the time a symbol is dead after to the time it is born at by default
-            // because a symbol cannot die before it is born.
-            symtab_dead_after[idx] = i_time;
+    //////////////////////////////////////
+    // ~~ Calculate physical sizes ~~
+
+    size_t size_table_len = 0;
+    struct size_table* const size_table = (struct size_table*)LG__AllocScratch(
+        ctx->scratch,
+        &waypoint,
+        ctx->symtab.n_symbols * sizeof(struct size_table)
+    );
+    if (size_table == NULL) {
+        status = LG_STATUS_OUT_OF_MEMORY;
+        goto out_release_scratch;
+    }
+    // Construct the size table
+    {
+        struct lg_ir_symtab_iter iter = {0};
+        LG_IR_SymtabIterInit(&iter, &ctx->symtab);
+        while (LG_IR_SymtabIterAdvance(&iter)) {
+            if (ctx->symtab.buffer_ids[iter.array_idx] != buf_id) {
+                continue;
+            }
+
+            const size_t size = LG_DescSizeInBytes(ctx->symtab.descs[iter.array_idx]);
+            const size_t size_aligned = LG__ALIGN_UP(size, align);
+
+            size_table[size_table_len].symbol_id = iter.symbol_id;
+            size_table[size_table_len].symtab_array_idx = iter.array_idx;
+            size_table[size_table_len].size_bytes = size_aligned;
+            size_table_len++;
         }
     }
-
-    // --- Calculate physical sizes & map them to timesteps ---
-    for (size_t i_time = 0; i_time < ctx->expr->nodes_len; i_time++) {
-        const uint32_t symbol_ids[3] = {
-            ctx->expr->nodes[i_time].y_logical.id,
-            ctx->expr->nodes[i_time].x0_logical.id,
-            ctx->expr->nodes[i_time].x1_logical.id,
-        };
-        const struct lg_desc *const descs[3] = {
-            &ctx->expr->nodes[i_time].y_physical,
-            &ctx->expr->nodes[i_time].x0_physical,
-            &ctx->expr->nodes[i_time].x1_physical,
-        };
-        const uint32_t buf_ids[3] = {
-            ctx->expr->nodes[i_time].y_buf_id,
-            ctx->expr->nodes[i_time].x0_buf_id,
-            ctx->expr->nodes[i_time].x1_buf_id,
-        };
-        for (size_t i_sym = 0; i_sym < 3; i_sym++) {
-            size_t idx = 0;
-            status = LG_IR__SymtabUpsert(&ctx->symtab, &idx, NULL, symbol_ids[i_sym]);
-            LG__Assert(status == LG_STATUS_OK);
-            if (buf_ids[i_sym] == buf_id) {
-                const size_t size = LG_DescSizeInBytes(*descs[i_sym]);
-                symtab_sizes[idx] = LG__ALIGN_UP(size, align);
+    // Construct a sorted index map over the size table
+    // TODO: something other than bubble sort
+    size_t *size_table_sorted_map = (size_t*)LG__AllocScratch(ctx->scratch, &waypoint, size_table_len * sizeof(size_t));
+    if (size_table_sorted_map == NULL) {
+        status = LG_STATUS_OUT_OF_MEMORY;
+        goto out_release_scratch;
+    } 
+    for (size_t i = 0; i < size_table_len; i++) {
+        size_table_sorted_map[i] = i;
+    }
+    for (size_t i = 0; i < size_table_len; i++) {
+        bool swapped = false;
+        for (size_t j = 1; j < size_table_len - i; j++) {
+            const size_t idx_a = size_table_sorted_map[j - 1];
+            const size_t idx_b = size_table_sorted_map[j];
+            if (size_table[idx_a].size_bytes < size_table[idx_b].size_bytes) {
+                const size_t temp = size_table_sorted_map[idx_b];
+                size_table_sorted_map[idx_b] = size_table_sorted_map[idx_a];
+                size_table_sorted_map[idx_a] = temp;
+                swapped = true;
             }
         }
-    }
-    for (size_t i = 0; i < ctx->symtab.table_cap; i++) {
-        if (!ctx->symtab.occupied[i]) {
-            continue;
+        if (!swapped) {
+            break;
         }
-        const size_t idx = ctx->symtab.array_idxs[i];
-        total_freed_after_time[symtab_dead_after[idx]] += symtab_sizes[idx];
     }
 
-    // --- Core LSRA ---
-    // TODO: this is obviously terrible and should just be linear strip packing
-    size_t current_offset = 0;
+
+    /////////////////////////////////////////
+    // ~~ Construct the interval graph ~~
+    
+    const size_t row_elements = LG__ALIGN_UP(ctx->symtab.n_symbols, 64) / 64;
+    const size_t mat_size = row_elements * ctx->symtab.n_symbols * sizeof(uint64_t);
+    uint64_t *adj_matrix = (uint64_t*)LG__AllocScratch(ctx->scratch, &waypoint, mat_size);
+    if (adj_matrix == NULL) {
+        status = LG_STATUS_OUT_OF_MEMORY;
+        goto out_release_scratch;
+    } 
+    {
+        uint64_t *live_set = (uint64_t*)LG__AllocScratch(ctx->scratch, &waypoint, row_elements * sizeof(uint64_t));
+        if (live_set == NULL) {
+            status = LG_STATUS_OUT_OF_MEMORY;
+            goto out_release_scratch;
+        }
+        for (size_t i_time = ctx->expr->nodes_len; i_time > 0; i_time--) {
+            // When a symbol is used for the last time, it dies, meaning it will be live from now until it 
+            // is declared (speaking in the reverse-temporal sense)
+            size_t x0_idx = 0;
+            status = LG_IR_SymtabUpsert(&ctx->symtab, &x0_idx, NULL, ctx->expr->nodes[i_time - 1].x0_logical.id);
+            LG__Assert(status == LG_STATUS_OK);
+            LG__WideSetBit(row_elements, live_set, true, x0_idx);
+
+            size_t x1_idx = 0;
+            status = LG_IR_SymtabUpsert(&ctx->symtab, &x1_idx, NULL, ctx->expr->nodes[i_time - 1].x1_logical.id);
+            LG__Assert(status == LG_STATUS_OK);
+            LG__WideSetBit(row_elements, live_set, true, x1_idx);
+
+            // After the live set has been updated, we update the matrix
+            struct lg_ir_symtab_iter iter = {0};
+            LG_IR_SymtabIterInit(&iter, &ctx->symtab);
+            while (LG_IR_SymtabIterAdvance(&iter)) {
+                bool is_live = LG__WideGetBit(row_elements, live_set, iter.array_idx);
+                if (is_live) {
+                    LG__WideOr(row_elements, adj_matrix + (row_elements * iter.array_idx), live_set);
+                }
+            }
+
+            // Just before a symbol is born, it is not alive
+            // We do not kill the value until *after* updating the adjacency matrix b/c
+            // the output needs a valid buffer during the operation.
+            size_t y_idx = 0;
+            status = LG_IR_SymtabUpsert(&ctx->symtab, &y_idx, NULL, ctx->expr->nodes[i_time - 1].y_logical.id);
+            LG__Assert(status == LG_STATUS_OK);
+            LG__WideSetBit(row_elements, live_set, false, y_idx);
+        }
+    }
+
+
+    ////////////////////////////////////////////////////////
+    // ~~ Best-fit greedy allocation ~~
+
+    uint64_t *assigned_set = (uint64_t*)LG__AllocScratch(ctx->scratch, &waypoint, row_elements * sizeof(uint64_t));
+    if (assigned_set == NULL) {
+        status = LG_STATUS_OUT_OF_MEMORY;
+        goto out_release_scratch;
+    }
+    uint64_t *assigned_and_live_set = (uint64_t*)LG__AllocScratch(ctx->scratch, &waypoint, row_elements * sizeof(uint64_t));
+    if (assigned_and_live_set == NULL) {
+        status = LG_STATUS_OUT_OF_MEMORY;
+        goto out_release_scratch;
+    }
+
+    // Taken ranges is kind of a range set over the total memory space required by the block
+    // at a given timestep.
+    //
+    // Each range [array[e], array[e + 1]) where e is on an even-or-zero integer index into the array
+    // represents a range of offsets currently occupied by a value.
+    // This is done so that any ranges [array[o], array[o + 1]), where o is an odd index into the array
+    // represents a range of free offsets.
+    //
+    // Recording ranges in `taken_ranges` implicitly constructs `free_ranges`.
+    const size_t free_ranges_cap = size_table_len * sizeof(size_t) * 2 + 1;
+    size_t taken_ranges_len = 0;
+    size_t *free_ranges = (size_t*)LG__AllocScratch(ctx->scratch, &waypoint, free_ranges_cap);
+    if (free_ranges == NULL) {
+        status = LG_STATUS_OUT_OF_MEMORY;
+        goto out_release_scratch;
+    }
+    size_t *taken_ranges = free_ranges + 1;
+
     size_t max_offset = 0;
-    for (size_t i_time = 0; i_time < ctx->expr->nodes_len; i_time++) {
-        size_t y_idx = 0;
-        status = LG_IR__SymtabUpsert(&ctx->symtab, &y_idx, NULL, ctx->expr->nodes[i_time].y_logical.id);
-        LG__Assert(status == LG_STATUS_OK);
 
-        current_offset += symtab_sizes[y_idx];
-        if (current_offset > max_offset) {
-            max_offset = current_offset;
+    for (size_t i_unsorted = 0; i_unsorted < size_table_len; i_unsorted++) {
+        const size_t i = size_table_sorted_map[i_unsorted];
+        struct size_table *const this_symbol = &size_table[i];
+
+        LG__MEMCPY(assigned_and_live_set, assigned_set, row_elements * sizeof(uint64_t));
+        LG__WideAnd(row_elements, assigned_and_live_set, adj_matrix + (row_elements * i));
+
+        taken_ranges_len = 0;
+        LG__ZERO(free_ranges, free_ranges_cap);
+        for (size_t j = 0; j < size_table_len; j++) {
+            if (!LG__WideGetBit(row_elements, assigned_and_live_set, size_table[j].symtab_array_idx)) {
+                continue;
+            }
+
+            taken_ranges[taken_ranges_len] = size_table[j].offset;
+            taken_ranges_len++;
+            taken_ranges[taken_ranges_len] = size_table[j].offset + size_table[j].size_bytes;
+            taken_ranges_len++;
+            LG__Assert(taken_ranges_len < free_ranges_cap - 1);
+        }
+        LG__Assert(taken_ranges_len % 2 == 0);
+
+        // Sort the ranges by time
+        // TODO: something other than bubble sort
+        for (size_t j = 0; j < taken_ranges_len; j += 2) {
+            for (size_t k = 2; k < taken_ranges_len - j; k += 2) {
+                if (taken_ranges[k - 2] > taken_ranges[k]) {
+                    size_t temp_start = taken_ranges[k - 2];
+                    size_t temp_end = taken_ranges[k - 1];
+                    taken_ranges[k - 2] = taken_ranges[k];
+                    taken_ranges[k - 1] = taken_ranges[k + 1];
+                    taken_ranges[k] = temp_start;
+                    taken_ranges[k + 1] = temp_end;
+                }
+            }
         }
 
-        // it's worth putting an explicit underflow check here
-        LG__Assert(current_offset >= total_freed_after_time[i_time]);
-        current_offset -= total_freed_after_time[i_time];
+        bool found_free_range = false;
+        size_t minimum_free_range_found = SIZE_MAX;
+        size_t offset = 0;
+        for (
+            size_t j = 0;
+            j < taken_ranges_len /* + 1 for the extra element - 1 for pairing */;
+            j += 2
+        ) {
+            const size_t gap = free_ranges[j + 1] - free_ranges[j];
+            if (
+                gap >= this_symbol->size_bytes &&
+                gap < minimum_free_range_found
+            ) {
+                offset = free_ranges[j];
+                found_free_range = true;
+                minimum_free_range_found = gap;
+            }
+            if (free_ranges[j + 1] > max_offset) {
+                max_offset = free_ranges[j + 1];
+            }
+        }
+        if (!found_free_range) {
+            offset = max_offset;
+            max_offset = offset + this_symbol->size_bytes;
+        }
+
+        this_symbol->offset = offset;
+
+        LG__WideSetBit(row_elements, assigned_and_live_set, true, i_unsorted);
+    }
+
+
+    /////////////////////////////////////////////////////////////////////////
+    // ~~ Write the offsets & buffer size back to the compilation state ~~
+
+    for (size_t i = 0; i < size_table_len; i++) {
+        size_t idx;
+        bool occupied;
+        status = LG_IR_SymtabUpsert(&ctx->symtab, &idx, &occupied, size_table[i].symbol_id);
+        LG__Assert(status == LG_STATUS_OK);
+        LG__Assert(occupied);
+
+        ctx->symtab.buffer_offsets[idx] = size_table[i].offset;
     }
 
     size_t buftab_idx;
@@ -547,8 +737,8 @@ enum lg_status LG_IR__Bufferize(
     LG__Assert(status == LG_STATUS_OK); // We should only ever be passed valid buffer ids.
     ctx->expr->buf_table_bytes_required[buftab_idx] = max_offset;
 
+out_release_scratch:
     LG__ReleaseScratch(ctx->scratch, &waypoint);
-
     return LG_STATUS_OK;
 }
 
@@ -580,7 +770,7 @@ void LG_IR__DecorateNodes(struct lg_ir_compilation_context *ctx) {
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t symtab_array_idx;
             bool was_occupied;
-            status = LG_IR__SymtabUpsert(&ctx->symtab, &symtab_array_idx, &was_occupied, symbol_ids[i_sym]);
+            status = LG_IR_SymtabUpsert(&ctx->symtab, &symtab_array_idx, &was_occupied, symbol_ids[i_sym]);
             LG__Assert(status == LG_STATUS_OK);
             LG__Assert(was_occupied);
 

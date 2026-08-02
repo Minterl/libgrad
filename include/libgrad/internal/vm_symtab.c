@@ -1,4 +1,5 @@
 #include <libgrad/internal/vm_symtab.h>
+#include <libgrad/internal/debug.h>
 
 #define LG_IR__MMH_C1 0xcc9e2d51u
 #define LG_IR__MMH_C2 0x1b873593u
@@ -26,7 +27,7 @@ uint32_t LG_IR__MurmurHash(uint32_t kh) {
     return kh;
 }
 
-enum lg_status LG_IR__SymtabInit(struct lg_ir_symtab *table, struct lg_allocator *alloc, size_t cap) {
+enum lg_status LG_IR_SymtabInit(struct lg_ir_symtab *table, struct lg_allocator *alloc, size_t cap) {
     const size_t align = 16;
 
     const size_t sz_occupied = cap * sizeof(bool);
@@ -73,13 +74,13 @@ enum lg_status LG_IR__SymtabInit(struct lg_ir_symtab *table, struct lg_allocator
     return LG_STATUS_OK;
 }
 
-void LG_IR__SymtabDeinit(struct lg_ir_symtab *table, struct lg_allocator *alloc) {
+void LG_IR_SymtabDeinit(struct lg_ir_symtab *table, struct lg_allocator *alloc) {
     alloc->Free(alloc->ctx, table->occupied);
     alloc->Free(alloc->ctx, table->descs);
     LG__ZERO(table, sizeof(struct lg_ir_symtab));
 }
 
-enum lg_status LG_IR__SymtabUpsert(
+enum lg_status LG_IR_SymtabUpsert(
     struct lg_ir_symtab *table,
     size_t *LG_NULLABLE out_idx,
     bool *LG_NULLABLE out_was_occupied,
@@ -98,8 +99,8 @@ enum lg_status LG_IR__SymtabUpsert(
         if (!table->occupied[i]) {
             table->occupied[i] = true;
             table->symbol_ids[i] = symbol_id;
-            table->array_idxs[i] = table->next_array_idx;
-            table->next_array_idx++;
+            table->array_idxs[i] = table->n_symbols;
+            table->n_symbols++;
             if (out_idx != NULL) {
                 *out_idx = table->array_idxs[i];
             }
@@ -120,4 +121,30 @@ enum lg_status LG_IR__SymtabUpsert(
     }
 
     return LG_STATUS_OUT_OF_MEMORY;
+}
+
+void LG_IR_SymtabIterInit(struct lg_ir_symtab_iter *iter, struct lg_ir_symtab *symtab) {
+    LG__Assert(symtab != NULL);
+    LG__ZERO(iter, sizeof(struct lg_ir_symtab_iter));
+    iter->symtab = symtab;
+}
+
+LG_ALWAYS_INLINE
+bool LG_IR_SymtabIterAdvance(struct lg_ir_symtab_iter *iter) {
+    for (size_t i = 0; i < iter->symtab->table_cap; i++) {
+        if (!iter->symtab->occupied[i]) {
+            continue;
+        }
+
+        size_t array_idx = 0;
+        enum lg_status status = LG_IR_SymtabUpsert(iter->symtab, &array_idx, NULL, iter->symtab->symbol_ids[i]);
+        LG__Assert(status == LG_STATUS_OK);
+
+        iter->symbol_id = iter->symtab->symbol_ids[i];
+        iter->array_idx = array_idx;
+
+        return true;
+    }
+
+    return false;
 }

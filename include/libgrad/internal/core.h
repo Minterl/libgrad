@@ -44,6 +44,12 @@
 #       define LG_CHECK_BOUNDS_NULLABLE(x) /* nothing */
 #   endif
 #endif
+
+#if defined(__has_attribute) && __has_attribute(always_inline)
+#   define LG_ALWAYS_INLINE __attribute__((always_inline)) inline
+#else
+#   define LG_ALWAYS_INLINE inline
+#endif // defined(__has_attribute) && __has_attribute(always_inline)
  
 enum lg_status {
     LG_STATUS_OK = 0,

@@ -1,7 +1,6 @@
 #include "libgrad/internal/alloc.h"
 #include "libgrad/internal/core.h"
 #include "libgrad/internal/vm.h"
-#include "libgrad/internal/vm_symtab.h"
 #define LIBGRAD_IMPLEMENTATION
 #include <libgrad/libgrad.h>
 // #ifndef LG_CPU_IMPLEMENTATION
@@ -51,7 +50,7 @@ int main(void) {
         .expr = &expr,
         .scratch = &allocator,
     };
-    status = LG_IR__SymtabInit(&ctx.symtab, &allocator, EXPR_CAP);
+    status = LG_IR_SymtabInit(&ctx.symtab, &allocator, EXPR_CAP);
     if (status != LG_STATUS_OK) {
         FAILF("status: %d", status);
         return status;
