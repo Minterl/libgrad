@@ -131,7 +131,9 @@ void LG_IR_SymtabIterInit(struct lg_ir_symtab_iter *iter, struct lg_ir_symtab *s
 
 LG_ALWAYS_INLINE
 bool LG_IR_SymtabIterAdvance(struct lg_ir_symtab_iter *iter) {
-    for (size_t i = 0; i < iter->symtab->table_cap; i++) {
+    for (; iter->last_idx < iter->symtab->table_cap; iter->last_idx++) {
+        const size_t i = iter->last_idx;
+
         if (!iter->symtab->occupied[i]) {
             continue;
         }
@@ -143,6 +145,7 @@ bool LG_IR_SymtabIterAdvance(struct lg_ir_symtab_iter *iter) {
         iter->symbol_id = iter->symtab->symbol_ids[i];
         iter->array_idx = array_idx;
 
+        iter->last_idx++;
         return true;
     }
 

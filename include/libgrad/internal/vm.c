@@ -474,7 +474,7 @@ bool LG__WideGetBit(size_t len, const uint64_t *bitset, size_t offset_rtl) {
     const size_t idx = len - 1 - (offset_rtl / 64);
     const size_t shift = offset_rtl % 64;
     LG__Assert(idx < len);
-    return (bitset[idx] & ~(UINT64_C(0x1) << shift)) != 0;
+    return (bitset[idx] & (UINT64_C(0x1) << shift)) != 0;
 }
 
 LG_ALWAYS_INLINE 
@@ -539,7 +539,7 @@ enum lg_status LG_IR__Bufferize(
         }
     }
     // Construct a sorted index map over the size table
-    // TODO: something other than bubble sort
+    // TODO: @perf something other than bubble sort
     size_t *size_table_sorted_map = (size_t*)LG__AllocScratch(ctx->scratch, &waypoint, size_table_len * sizeof(size_t));
     if (size_table_sorted_map == NULL) {
         status = LG_STATUS_OUT_OF_MEMORY;
@@ -630,7 +630,7 @@ enum lg_status LG_IR__Bufferize(
         goto out_release_scratch;
     }
 
-    // Taken ranges is kind of a range set over the total memory space required by the block
+    // `taken_ranges` is kind of a range set over the total memory space required by the block
     // at a given timestep.
     //
     // Each range [array[e], array[e + 1]) where e is on an even-or-zero integer index into the array
@@ -646,9 +646,9 @@ enum lg_status LG_IR__Bufferize(
         status = LG_STATUS_OUT_OF_MEMORY;
         goto out_release_scratch;
     }
-    size_t *taken_ranges = free_ranges + 1;
+    size_t *const taken_ranges = free_ranges + 1;
 
-    size_t max_offset = 0;
+    size_t total_size_bytes = 0;
 
     for (size_t i_unsorted = 0; i_unsorted < size_table_len; i_unsorted++) {
         const size_t i = size_table_sorted_map[i_unsorted];
@@ -672,8 +672,7 @@ enum lg_status LG_IR__Bufferize(
         }
         LG__Assert(taken_ranges_len % 2 == 0);
 
-        // Sort the ranges by time
-        // TODO: something other than bubble sort
+        // TODO: @perf something other than bubble sort
         for (size_t j = 0; j < taken_ranges_len; j += 2) {
             for (size_t k = 2; k < taken_ranges_len - j; k += 2) {
                 if (taken_ranges[k - 2] > taken_ranges[k]) {
@@ -687,15 +686,25 @@ enum lg_status LG_IR__Bufferize(
             }
         }
 
+        // Add the infnite space after the end of the array to complete the last
+        // free rangec
+        size_t free_ranges_len = taken_ranges_len + 1;
+        free_ranges[free_ranges_len] = SIZE_MAX;
+        free_ranges_len++;
+
         bool found_free_range = false;
         size_t minimum_free_range_found = SIZE_MAX;
         size_t offset = 0;
         for (
             size_t j = 0;
-            j < taken_ranges_len /* + 1 for the extra element - 1 for pairing */;
+            j < free_ranges_len - 1;
             j += 2
         ) {
-            const size_t gap = free_ranges[j + 1] - free_ranges[j];
+            const size_t lo = free_ranges[j];
+            const size_t hi = free_ranges[j + 1];
+            const size_t gap = hi - lo;
+            LG__Assert(hi > lo);
+
             if (
                 gap >= this_symbol->size_bytes &&
                 gap < minimum_free_range_found
@@ -703,17 +712,16 @@ enum lg_status LG_IR__Bufferize(
                 offset = free_ranges[j];
                 found_free_range = true;
                 minimum_free_range_found = gap;
-            }
-            if (free_ranges[j + 1] > max_offset) {
-                max_offset = free_ranges[j + 1];
+                break;
             }
         }
-        if (!found_free_range) {
-            offset = max_offset;
-            max_offset = offset + this_symbol->size_bytes;
-        }
+        LG__Assert(found_free_range);
 
         this_symbol->offset = offset;
+
+        if (this_symbol->offset + this_symbol->size_bytes > total_size_bytes) {
+            total_size_bytes = this_symbol->offset + this_symbol->size_bytes;
+        }
 
         LG__WideSetBit(row_elements, assigned_and_live_set, true, i_unsorted);
     }
@@ -735,7 +743,7 @@ enum lg_status LG_IR__Bufferize(
     size_t buftab_idx;
     status = LG_IR_BuftabGetIdx(ctx->expr, &buftab_idx, buf_id);
     LG__Assert(status == LG_STATUS_OK); // We should only ever be passed valid buffer ids.
-    ctx->expr->buf_table_bytes_required[buftab_idx] = max_offset;
+    ctx->expr->buf_table_bytes_required[buftab_idx] = total_size_bytes;
 
 out_release_scratch:
     LG__ReleaseScratch(ctx->scratch, &waypoint);

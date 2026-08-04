@@ -26,6 +26,8 @@ struct lg_ir_symtab_iter {
     struct lg_ir_symtab *symtab;
     uint32_t symbol_id;
     size_t array_idx;
+    
+    size_t last_idx;
 };
 
 enum lg_status LG_IR_SymtabInit(struct lg_ir_symtab *table, struct lg_allocator *alloc, size_t cap);
