@@ -1,6 +1,9 @@
 #include <libgrad/internal/vm_symtab.h>
 #include <libgrad/internal/debug.h>
 
+// TODO: deduplicate this code, and migrate the symbol table over to the new
+// map structure
+
 #define LG_IR__MMH_C1 0xcc9e2d51u
 #define LG_IR__MMH_C2 0x1b873593u
 #define LG_IR__MMH_C3 0x85ebca6bu

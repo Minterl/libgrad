@@ -73,7 +73,59 @@ test_status test_map() {
     return TEST_STATUS_OK;
 }
 
+test_status test_iter() {
+    enum lg_status status;
+
+    int32_t keys[32] = {0};
+    for (size_t i = 0; i < 32; i++) {
+        keys[i] = ((1208 % (i + 1) * 13) ^ (i * 7)) * i + 1;
+        test_assert(keys[i] != 0, "they're supposed to be random");
+    }
+
+    struct lg_map map = {0};
+    status = LG_MapInit(&map, &libc_alloc, 32);
+    test_assert(status == LG_STATUS_OK, "failed to init map");
+
+    int32_t values[32] = {0};
+
+    for (size_t i = 0; i < 32; i++) {
+        size_t idx;
+        bool was_occupied;
+        status = LG_MapEnsure(&map, keys[i], &idx, &was_occupied);
+        test_assert(status == LG_STATUS_OK, "failed to insert into map");
+        test_assert(!was_occupied, "incorrectly indicated the slot was occpuied");
+        values[idx] = -keys[i];
+    }
+
+    struct lg_map_iter iter;
+    LG_MapIterInit(&iter, &map);
+    while(LG_MapIterAdvance(&iter)) {
+        bool found = false;
+        for (size_t i = 0; i < 32; i++) {
+            if (keys[i] == (int32_t)iter.key) {
+                found = true;
+                break;
+            }
+        }
+        test_assert(found, "iter key not in keys");
+        
+        int32_t got_value = values[LG_MapGet(&map, iter.key, &found)];
+        test_assert(found, "value not found");
+        test_assert(values[iter.idx] == got_value, "wanted: %d, got %d", values[iter.idx], got_value);
+
+        test_assert(
+            values[iter.idx] == -1 * (int32_t)iter.key,
+            "incorrect value; wanted: %d, got: %d", -1 * (int32_t)iter.idx, values[iter.idx]
+        );
+    }
+
+    LG_MapDeinit(&map, &libc_alloc);
+
+    return TEST_STATUS_OK;
+}
+
 int main() {
     test_run(map);
+    test_run(iter);
     return 0;
 }

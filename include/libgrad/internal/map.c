@@ -1,9 +1,19 @@
+#include "libgrad/internal/alloc.h"
 #include <libgrad/internal/map.h>
 #include <libgrad/internal/debug.h>
 
 #include <stdint.h>
 
-#define LG_U64_HAS_ZERO_BYTE(x) (((x) - UINT64_C(0x0101010101010101)) & ~(x) & UINT64_C(0x8080808080808080)) != 0
+#define LG_MAP_EMPTY_SENTINEL UINT8_C(0x0)
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// General utilities necessary for the table
+///
+////////////////////////////////////////////////////////////////////////////////
+
+#define LG_U64_HAS_ZERO_BYTE(x) ((((x) - UINT64_C(0x0101010101010101)) & ~(x) & UINT64_C(0x8080808080808080)) != 0)
 
 #define LG__MMH_C1 0xcc9e2d51u
 #define LG__MMH_C2 0x1b873593u
@@ -47,6 +57,14 @@ size_t LG__NextPow2(size_t x) {
     return x + 1;
 }
 
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// Map functions/interface definition 
+///
+////////////////////////////////////////////////////////////////////////////////
+
 enum lg_status LG_MapInit(struct lg_map *map, struct lg_allocator *alloc, size_t cap) {
     cap = cap < 8 ? 8 : LG__NextPow2(cap);
     const size_t align = 16;
@@ -84,6 +102,8 @@ void LG__MapMakeHash(uint64_t key, uint64_t *out_hash, uint8_t *out_fingerprint)
     const uint64_t full_hash = LG__MurmurHash(key); // TODO: make hash actually 64 bits
     const size_t hash = full_hash & ~UINT8_C(0xF);
     const uint8_t fingerprint = (full_hash & UINT8_C(0xF)) | UINT8_C(0x1);
+
+    LG__Assert(fingerprint != LG_MAP_EMPTY_SENTINEL);
 
     if (out_fingerprint != NULL) {
         *out_fingerprint = fingerprint;
@@ -130,7 +150,7 @@ enum lg_status LG__MapProbe(
         const bool has_match = LG_U64_HAS_ZERO_BYTE(block ^ fingerprint_broadcasted);
         if (has_match) {
             for (size_t j = 0; j < 8; j++) {
-                if (map->fingerprints_as[i].individual[j] == UINT8_C(0x00)) {
+                if (map->fingerprints_as[i].individual[j] == LG_MAP_EMPTY_SENTINEL) {
                     ret_last_idx = i * 8 + j;
                     goto out_success;
                 }
@@ -151,7 +171,7 @@ enum lg_status LG__MapProbe(
         const bool has_empty_sentinel = LG_U64_HAS_ZERO_BYTE(block);
         if (has_empty_sentinel) {
             for (size_t j = 0; j < 8; j++) {
-                if (map->fingerprints_as[i].individual[j] == UINT8_C(0x00)) {
+                if (map->fingerprints_as[i].individual[j] == LG_MAP_EMPTY_SENTINEL) {
                     ret_last_idx = i * 8 + j;
                     goto out_success;
                 }
@@ -182,7 +202,12 @@ out_success:
     return LG_STATUS_OK;
 }
 
-enum lg_status LG_MapEnsure(struct lg_map *map, uint64_t key, size_t *LG_NULLABLE out_idx, bool *LG_NULLABLE out_was_occupied) {
+enum lg_status LG_MapEnsure(
+    struct lg_map *map,
+    uint64_t key,
+    size_t *LG_NULLABLE out_idx,
+    bool *LG_NULLABLE out_was_occupied
+) {
     LG__Assert(LG__NextPow2(map->cap) == map->cap && map->cap >= 8);
 
     enum lg_status status = LG_STATUS_OK;
@@ -235,4 +260,43 @@ size_t LG_MapGet(struct lg_map *map, uint64_t key, bool *LG_NULLABLE out_found) 
     }
 
     return found ? last_idx : 0;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// Map iterator stuff
+///
+////////////////////////////////////////////////////////////////////////////////
+
+void LG_MapIterInit(struct lg_map_iter *iter, struct lg_map *map) {
+    LG__ZERO(iter, sizeof(struct lg_map_iter));
+    iter->map = map;
+}
+
+LG_ALWAYS_INLINE
+bool LG_MapIterAdvance(struct lg_map_iter *iter) {
+    const size_t fingerprint_blocks_cap = iter->map->cap / 8;
+
+    for (; iter->matrix_coord[0] < fingerprint_blocks_cap; iter->matrix_coord[0]++) {
+        if (iter->map->fingerprints_as[iter->matrix_coord[0]].block == 0) {
+            iter->matrix_coord[0]++;
+            continue;
+        }
+
+        for (; iter->matrix_coord[1] < 8; iter->matrix_coord[1]++) {
+            const uint8_t fingerprint = iter->map->fingerprints_as[iter->matrix_coord[0]].individual[iter->matrix_coord[1]];
+            if (fingerprint != LG_MAP_EMPTY_SENTINEL) {
+                iter->idx = iter->matrix_coord[0] * 8 + iter->matrix_coord[1];
+                iter->key = iter->map->keys[iter->matrix_coord[0] * 8 + iter->matrix_coord[1]];
+                iter->matrix_coord[1]++;
+                return true;
+            }
+        }
+
+        iter->matrix_coord[1] = 0;
+    }
+
+    return false;
 }

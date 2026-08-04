@@ -687,7 +687,7 @@ enum lg_status LG_IR__Bufferize(
         }
 
         // Add the infnite space after the end of the array to complete the last
-        // free rangec
+        // free range
         size_t free_ranges_len = taken_ranges_len + 1;
         free_ranges[free_ranges_len] = SIZE_MAX;
         free_ranges_len++;
