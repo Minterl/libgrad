@@ -28,6 +28,15 @@ test/strings:
 		-fsanitize=bounds \
 		test/strings.c
 
+.PHONY: test/map
+test/map:
+	mkdir -p out && \
+	cc -o out/test-map.out \
+		$(CFLAGS) \
+		-fsanitize=address \
+		-fsanitize=bounds \
+		test/map.c
+
 .PHONY: examples/mnist
 examples/mnist:
 	mkdir -p out/examples && \

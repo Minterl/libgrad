@@ -18,6 +18,7 @@ extern "C" {
 #   include <libgrad/internal/alloc.c>
 #   include <libgrad/internal/debug.c>
 #   include <libgrad/internal/strings.c>
+#   include <libgrad/internal/map.c>
 #endif // LIBGRAD_IMPLEMENTATION
 
 #ifdef __cplusplus
