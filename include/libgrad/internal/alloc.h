@@ -3,7 +3,7 @@
 
 #include <libgrad/internal/core.h>
 
-#define LG__ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
+#define lg_align_up(x, align) (((x) + (align) - 1) & ~((align) - 1))
 
 #if defined(__has_builtin) && __has_builtin(__builtin_memcpy)
 #   define LG__MEMCPY(dest, src, size) __builtin_memcpy(dest, src, size)
@@ -16,16 +16,16 @@
 #endif // defined(__has_builtin) && __has_builtin(__builtin_memcpy)
 
 #if defined(__has_builtin) && __has_builtin(__builtin_memset)
-#   define LG__ZERO(ptr, size) __builtin_memset(ptr, 0, size) 
+#   define lg_memzero(ptr, size) __builtin_memset(ptr, 0, size) 
 #else
-#   define LG__ZERO(ptr, size) do { \
+#   define lg_memzero(ptr, size) do { \
          for(size_t LG__MACRO_ITER__ = 0; LG__MACRO_ITER__ < (size); LG__MACRO_ITER__++) { \
              ((uint8_t*)(ptr))[LG__MACRO_ITER__] = 0; \
          } \
      } while(0) 
 #endif // defined(__has_builtin) && __has_builtin(__builtin_memset)
 
-#define LG_ALLOCATOR_SUPPORTS_SCRATCH(alloc) (((alloc)->AcquireScratch != NULL) && ((alloc)->ReleaseScratch != NULL))
+#define lg_allocator_supports_scratch(alloc) (((alloc)->scratch_acquire != NULL) && ((alloc)->scratch_release != NULL))
 
 /// Helper interface for allocating tensors
 ///
@@ -38,16 +38,17 @@
 ///
 /// Don't try to get clever and swap this out under the library's feet between calls.
 /// That will almost certainly end poorly.
-struct lg_allocator {
+typedef struct
+LG_Allocator {
     /// Context passed to each allocator method.
     void *ctx;
 
     /// Allocate `size_bytes` bytes.
     /// Callers will assume that this pointer is aligned.
-    void* (*Alloc)(void *ctx, size_t size_bytes);
+    void* (*alloc)(void *ctx, size_t size_bytes);
     /// Free the memory at `ptr`.
     /// TODO: find the direct calls to this and replace them with a macro or something.
-    void  (*LG_NULLABLE Free)(void *ctx, void *ptr);
+    void  (*lg_nullable free)(void *ctx, void *ptr);
 
     /// If `AcquireScratch` and `ReleaseScratch` are both non-null, then the allocator will relinquish control
     /// over scratch memory to whatever reclamation mechanism the caller chooses.
@@ -55,21 +56,31 @@ struct lg_allocator {
     ///
     /// If either of these are null, then the allocator will use its own internal reclamation system (which does
     /// not reqiure any special attention from the caller).
-    void* (*LG_NULLABLE AcquireScratch)(void *ctx);
-    void  (*LG_NULLABLE ReleaseScratch)(void *ctx, void *waypoint);
-};
+    void* (*lg_nullable scratch_acquire)(void *ctx);
+    void  (*lg_nullable scratch_release)(void *ctx, void *waypoint);
+} LG_Allocator;
 
-struct lg_scratch_node {
-    struct lg_scratch_node *next;
-};
-_Static_assert(sizeof(void*) == sizeof(struct lg_scratch_node), "");
+typedef struct
+LG_ScratchWaypoint {
+    struct LG_ScratchWaypoint *next;
+} LG_ScratchWaypoint;
 
-uint8_t *LG__AllocZero(struct lg_allocator *alloc, size_t size_bytes);
-void LG__Free(struct lg_allocator *alloc, void *ptr);
+_Static_assert(sizeof(void*) == sizeof(LG_ScratchWaypoint), "");
 
-struct lg_scratch_node *LG__AcquireScratch(struct lg_allocator *alloc);
-uint8_t *LG__AllocScratch(struct lg_allocator *alloc, struct lg_scratch_node **waypoint, size_t size_bytes);
-void LG__ReleaseScratch(struct lg_allocator *alloc, struct lg_scratch_node **waypoint);
+uint8_t*
+lg_alloc_zero(LG_Allocator *alloc, size_t size_bytes);
+
+void 
+lg_free(LG_Allocator *alloc, void *ptr);
+
+LG_ScratchWaypoint*
+lg_scratch_acquire(LG_Allocator *alloc);
+
+uint8_t*
+lg_scratch_alloc(LG_Allocator *alloc, LG_ScratchWaypoint **waypoint, size_t size_bytes);
+
+void 
+lg_scratch_release(LG_Allocator *alloc, LG_ScratchWaypoint **waypoint);
 
 /// Allocates `n` blocks of size `sizes[i]` and puts the resulting pointer
 /// in `out_ptrs[i]`.
@@ -78,10 +89,11 @@ void LG__ReleaseScratch(struct lg_allocator *alloc, struct lg_scratch_node **way
 ///
 /// `out_ptrs[0]` is the pointer the allocated region itself i.e the pointers
 /// are allocated in the order of `out_ptrs`.
-enum lg_status LG__AllocContiguousBlocks(
-    struct lg_allocator *alloc,
+LG_StatusKind 
+lg_alloc_contiguous_blocks(
+    LG_Allocator *alloc,
     uint8_t **out_ptrs,
-    size_t *LG_NULLABLE out_bytes_allocated,
+    size_t *lg_nullable out_bytes_allocated,
     const size_t *sizes,
     size_t n,
     size_t align

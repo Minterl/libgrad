@@ -12,127 +12,134 @@
 ///
 /// The integer representations of opcodes are not designed
 /// to be stable and should not be serialized.
-enum lg_ir_opcode {
+typedef enum
+LG_Opcode {
     /// --- Symbolic Unary Operations ---
 #   define LG__FIRST_UNARY_OP LG_OPCODE_SOURCE
-    LG_OPCODE_SOURCE,
-    LG_OPCODE_SINK,
+    LG_Opcode_Source,
+    LG_Opcode_Sink,
 
     /// --- Non-Symbolic Unary Operations ---
-    LG_OPCODE_NOP,
+    LG_Opcode_NOP,
     /// Element-wise ReLU
-    LG_OPCODE_RELU,
+    LG_Opcode_ReLU,
     /// Element-wise stable softmax
-    LG_OPCODE_STABLE_SOFTMAX,
+    LG_Opcode_StableSoftmax,
     /// Element-wise sigmoid
-    LG_OPCODE_SIGMOID,
+    LG_Opcode_Sigmoid,
     /// Element-wise natural log
-    LG_OPCODE_LN,
-#   define LG__LAST_UNARY_OP LG_OPCODE_LN
+    LG_Opcode_LN,
+#   define LG_LAST_UNARY_OP LG_Opcode_LN
 
     /// --- Binary Operations ---
-#   define LG__FIRST_BINARY_OP LG_OPCODE_ADD
+#   define LG_FIRST_BINARY_OP LG_Opcode_Add
     /// Element-wise tensor addition
-    LG_OPCODE_ADD,
+    LG_Opcode_Add,
     /// Element-wise tensor subtraction
-    LG_OPCODE_SUB,
+    LG_Opcode_Sub,
     /// Generalized tensor contraction i.e
     /// dot-product over strided dimensions.
     /// Is generalizable to N-rank tensors.
-    LG_OPCODE_CONTRACT,
+    LG_Opcode_Contract,
     /// Hadamard product
-    LG_OPCODE_HADAMARD,
+    LG_Opcode_Hadamard,
     /// Mean Squared Error loss
-    LG_OPCODE_LOSS_MSE,
+    LG_Opcode_MSELoss,
     /// Cross-entropy loss
-    LG_OPCODE_LOSS_CROSS_ENTROPY,
-#   define LG__LAST_BINARY_OP LG_OPCODE_LOSS_CROSS_ENTROPY
-};
+    LG_Opcode_CrossEntropyLoss,
+#   define LG_LAST_BINARY_OP LG_Opcode_CrossEntropyLoss
+} LG_Opcode;
 
-_Static_assert(LG__LAST_UNARY_OP + 1 == LG__FIRST_BINARY_OP, "opcodes must be contigugous");
+_Static_assert(LG_LAST_UNARY_OP + 1 == LG_FIRST_BINARY_OP, "opcodes must be contigugous");
 
-#define LG__OPCODE_IS_UNARY(op) ((LG__FIRST_UNARY_OP <= (op)) && ((op) <= LG__LAST_UNARY_OP))
-#define LG__OPCODE_IS_BINARY(op) ((LG__FIRST_BINARY_OP <= (op)) && ((op) <= LG__LAST_BINARY_OP))
+#define lg_opcode_is_unary(op) ((LG_FIRST_UNARY_OP <= (op)) && ((op) <= LG_LAST_UNARY_OP))
+#define lg_opcode_is_binary(op) ((LG_FIRST_BINARY_OP <= (op)) && ((op) <= LG_LAST_BINARY_OP))
 
-struct lg_ir_symbol {
+typedef struct
+LG_Symbol {
     uint32_t  id;
-};
-
-struct lg_ir_expr_node_meta_contract {
-    size_t n_contracted_axes;
-    size_t n_batch_axes;
-};
+} LG_Symbol;
 
 /// An IR node in an expr.
-///
-/// If x1.data == NULL, then the node represents a unary
-/// operation.
-/// Otherwise, it represents a binary operation as expected.
-struct lg_ir_expr_node {
-    enum lg_ir_opcode    opcode;
+typedef struct
+LG_ExprNode {
+    LG_Opcode            opcode;
 
-    struct lg_ir_symbol  y_logical;
-    struct lg_desc       y_physical;
+    LG_Symbol            y_logical;
+    LG_StridedDesc       y_physical;
     uint32_t             y_buf_id;
     size_t               y_offset;
 
-    struct lg_ir_symbol  x0_logical;
-    struct lg_desc       x0_physical;
+    LG_Symbol            x0_logical;
+    LG_StridedDesc       x0_physical;
     uint32_t             x0_buf_id;
     size_t               x0_offset;
 
-    struct lg_ir_symbol  x1_logical;
-    struct lg_desc       x1_physical;
+    LG_Symbol            x1_logical;
+    LG_StridedDesc       x1_physical;
     uint32_t             x1_buf_id;
     size_t               x1_offset;
 
     union {
-        struct lg_ir_expr_node_meta_contract contract;
+        struct {
+            size_t n_contracted_axes;
+            size_t n_batch_axes;
+        } contract;
     } meta_as;
-};
+} LG_ExprNode;
 
 /// The intermediate representation of a program.
 /// 
 /// As of right now, the exprs themselves do not support any control flow.
-struct lg_ir_expr {
-    size_t                   nodes_cap;
-    size_t                   nodes_len;
-    struct lg_ir_expr_node  *nodes LG_CHECK_BOUNDS(nodes_len);
+typedef struct
+LG_Expr {
+    size_t        nodes_cap;
+    size_t        nodes_len;
+    LG_ExprNode  *nodes lg_check_bounds(nodes_len);
 
-    size_t                   buf_table_cap;
-    size_t                   buf_table_len;
-    uint32_t                *buf_table_ids LG_CHECK_BOUNDS(buf_table_len);
-    size_t                  *buf_table_bytes_required LG_CHECK_BOUNDS(buf_table_len);
-};
+    size_t        buf_table_cap;
+    size_t        buf_table_len;
+    uint32_t     *buf_table_ids lg_check_bounds(buf_table_len);
+    size_t       *buf_table_bytes_required lg_check_bounds(buf_table_len);
+} LG_Expr;
 
-struct lg_ir_compilation_context {
-    struct lg_ir_expr    *expr;
-    struct lg_allocator  *scratch;
-    struct lg_ir_symtab   symtab;
+typedef struct
+LG_CompilationContext {
+    LG_Expr              *expr;
+    LG_Allocator  *scratch;
+    LG_SymbolTable   symtab;
 
     size_t                err_msg_len;
     uint8_t               err_msg_backing_buf[LG_IR_MAX_ERR_LEN];
 
     uint32_t              next_symbol_id;
-};
+} LG_CompilationContext;
 
-enum lg_status LG_IR_DeclareSource(
-    struct lg_ir_compilation_context *ctx,
-    struct lg_ir_symbol *out_symbol,
-    struct lg_desc physical_desc,
+LG_StatusKind 
+lg_ir_declare_source(
+    LG_CompilationContext *ctx,
+    LG_Symbol *out_symbol,
+    LG_StridedDesc physical_desc,
     uint32_t buf_id
 );
-enum lg_status LG_IR_DeclareSink(struct lg_ir_compilation_context *ctx, struct lg_ir_symbol sym);
-enum lg_status LG_IR_GetSinkLocation(
-    uint32_t *LG_NULLABLE out_buf_id,
-    size_t *LG_NULLABLE out_offset,
-    struct lg_desc *LG_NULLABLE out_desc,
-    struct lg_ir_symbol sym,
-    struct lg_ir_expr *expr
+
+LG_StatusKind 
+lg_ir_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym);
+
+LG_StatusKind 
+lg_ir_get_sink_location(
+    uint32_t *lg_nullable out_buf_id,
+    size_t *lg_nullable out_offset,
+    LG_StridedDesc *lg_nullable out_desc,
+    LG_Symbol sym,
+    LG_Expr *expr
 );
 
-enum lg_status LG_IR_BuftabInsert(struct lg_ir_expr *expr, uint32_t id);
-enum lg_status LG_IR_BuftabGetIdx(const struct lg_ir_expr *expr, size_t *LG_NULLABLE out_idx, uint32_t id);
+LG_StatusKind 
+lg_ir_buftab_insert(LG_Expr *expr, uint32_t id);
+
+LG_StatusKind 
+lg_ir_buftab_get_idx(const LG_Expr *expr, size_t *lg_nullable out_idx, uint32_t id);
 
 /// Gets the last physical location of the tensor `x` and populates
 /// its `data` pointer if found.
@@ -142,51 +149,65 @@ enum lg_status LG_IR_BuftabGetIdx(const struct lg_ir_expr *expr, size_t *LG_NULL
 /// 
 /// If you want to make sure that is the case, append a NOP using `lgvm_Nop` to 
 /// the end of the expr.
-enum lg_status LG_IR_AppendNop(struct lg_ir_expr *expr, struct lg_ir_symbol x);
+LG_StatusKind 
+lg_ir_append_nop(LG_Expr *expr, LG_Symbol x);
 
-enum lg_status LG_IR_AppendAdd(
-    struct lg_ir_compilation_context *ctx,
-    struct lg_ir_symbol *y,
-    const struct lg_ir_symbol x0,
-    const struct lg_ir_symbol x1
+LG_StatusKind 
+lg_ir_append_add(
+    LG_CompilationContext *ctx,
+    LG_Symbol *y,
+    const LG_Symbol x0,
+    const LG_Symbol x1
 );
-enum lg_status LG_IR_AppendSub(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
-enum lg_status LG_IR_AppendContract(
-    struct lg_ir_compilation_context *ctx,
-    struct lg_ir_symbol *y,
-    struct lg_ir_symbol x0,
-    struct lg_ir_symbol x1,
+LG_StatusKind 
+lg_ir_append_sub(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+LG_StatusKind 
+lg_ir_append_contract(
+    LG_CompilationContext *ctx,
+    LG_Symbol *y,
+    LG_Symbol x0,
+    LG_Symbol x1,
     size_t n_contracted_axes, 
     size_t n_batch_axes
 );
-enum lg_status LG_IR_AppendHadamard(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
+LG_StatusKind 
+lg_ir_append_hadamard(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
 
-enum lg_status LG_IR_AppendMSELoss(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
-enum lg_status LG_IR_AppendCrossEntropyLoss(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol x0, const struct lg_ir_symbol x1);
+LG_StatusKind 
+lg_ir_append_mse_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+LG_StatusKind 
+lg_ir_append_cross_entropy_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
 
-enum lg_status LG_IR_AppendReLU(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol in);
-enum lg_status LG_IR_AppendStableSoftmax(struct lg_ir_expr *expr, const struct lg_ir_symbol y, const struct lg_ir_symbol in);
-enum lg_status LG_IR_AppendSigmoid(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol in);
-enum lg_status LG_IR_AppendLn(struct lg_ir_expr *expr, struct lg_ir_symbol y, const struct lg_ir_symbol in);
+LG_StatusKind 
+lg_ir_append_relu(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
+LG_StatusKind 
+lg_ir_append_stable_softmax(LG_Expr *expr, const LG_Symbol y, const LG_Symbol in);
+LG_StatusKind 
+lg_ir_append_sigmoid(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
+LG_StatusKind 
+lg_ir_append_ln(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
 
 /// "Compiles" an expr.
-enum lg_status LG_IR_CompileExpr(
-    struct lg_ir_compilation_context *ctx,
+LG_StatusKind 
+lg_ir_compile_expr(
+    LG_CompilationContext *ctx,
     size_t mem_align
 );
 
 /// Allocate the memory necessary for an expr with the given capacities,
 /// and assign offsets into the buffer for each field.
-enum lg_status LG_AllocExpr(
-    struct lg_allocator *perm,
-    uint8_t *LG_NULLABLE *out_ptr,
-    size_t *LG_NULLABLE out_bytes_allocated,
-    struct lg_ir_expr *expr,
+LG_StatusKind 
+lg_alloc_expr(
+    LG_Allocator *perm,
+    uint8_t *lg_nullable *out_ptr,
+    size_t *lg_nullable out_bytes_allocated,
+    LG_Expr *expr,
     size_t nodes_cap,
     size_t bufmap_cap
 );
 
 /// Frees the memory required for an expr.
-void LG_FreeExpr(struct lg_allocator *allocator, struct lg_ir_expr *expr);
+void 
+lg_free_expr(LG_Allocator *allocator, LG_Expr *expr);
 
 #endif // LG_VM_H_

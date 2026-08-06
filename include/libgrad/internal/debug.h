@@ -5,20 +5,20 @@
 
 #ifdef LG_DEBUG
 #   if defined(__has_builtin) && __has_builtin(__builtin_unreachable)
-#       define LG__BUILTIN_UNREACHABLE __builtin_unreachable()
+#       define lg_unreachable_ __builtin_unreachable()
 #   else
-#       define LG__BUILTIN_UNREACHABLE
+#       define lg_unreachable_
 #   endif // __has_builtin(__builtin_unreachable)
-#   define LG__Dbgf(fmt, ...) LG___Dbgf(__FILE__, __LINE__, fmt, __VA_ARGS__)
-#   define LG__Assert(cond) LG___Assert(__FILE__, __LINE__, (cond), #cond)
-#   define LG__Unreachable(...) do { LG__Assert(false); LG__BUILTIN_UNREACHABLE; } while (0)
+#   define lg_dbgf(fmt, ...) lg_dbgf_(__FILE__, __LINE__, fmt, __VA_ARGS__)
+#   define lg_assert(cond) lg_assert_(__FILE__, __LINE__, (cond), #cond)
+#   define lg_unreachable(...) do { lg_assert(false); lg_unreachable_; } while (0)
 #else
-#   define LG__Dbgf(fmt, ...)
-#   define LG__Assert(cond) ((void)(cond))
-#   define LG__Unreachable(...)
+#   define lg_dbgf(fmt, ...)
+#   define lg_assert(cond) ((void)(cond))
+#   define lg_unreachable(...)
 #endif // LG_DEBUG
 
-void LG___Dbgf(const char *file, int line, const char* fmt, ...);
-void LG___Assert(const char *file, int line, bool cond, const char *cond_str);
+void lg_dbgf_(const char *file, int line, const char* fmt, ...);
+void lg_assert_(const char *file, int line, bool cond, const char *cond_str);
 
 #endif // LG_DEBUG_H_

@@ -1,10 +1,9 @@
-#include "libgrad/internal/alloc.h"
+#include <libgrad/internal/alloc.h>
 #include <libgrad/internal/map.h>
 #include <libgrad/internal/debug.h>
 
 #include <stdint.h>
 
-#define LG_MAP_EMPTY_SENTINEL UINT8_C(0x0)
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -13,37 +12,42 @@
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-#define LG_U64_HAS_ZERO_BYTE(x) ((((x) - UINT64_C(0x0101010101010101)) & ~(x) & UINT64_C(0x8080808080808080)) != 0)
+typedef enum 
+LG_MapSentinel {
+    LG_MapSentinel_Empty = UINT8_C(0x0),
+} LG_MapSentinel;
 
-#define LG__MMH_C1 0xcc9e2d51u
-#define LG__MMH_C2 0x1b873593u
-#define LG__MMH_C3 0x85ebca6bu
-#define LG__MMH_C4 0xc2b2ae35u
-#define LG__MMH_R1 15u
-#define LG__MMH_R2 13u
-#define LG__MMH_M  5u
-#define LG__MMH_N  0xe6546b64u
-#define LG__MMH_S  0u
 
-#define LG__MMH_ROL(x, width, bits) (((x) << (bits)) | ((x) >> ((width) - (bits))))
+#define LG_MMH_C1 0xcc9e2d51u
+#define LG_MMH_C2 0x1b873593u
+#define LG_MMH_C3 0x85ebca6bu
+#define LG_MMH_C4 0xc2b2ae35u
+#define LG_MMH_R1 15u
+#define LG_MMH_R2 13u
+#define LG_MMH_M  5u
+#define LG_MMH_N  0xe6546b64u
+#define LG_MMH_S  0u
 
-LG_ALWAYS_INLINE
-uint32_t LG__MurmurHash(uint32_t kh) {
-    kh = LG__MMH_ROL(kh * LG__MMH_C1, 32, LG__MMH_R1);
-    kh *= LG__MMH_C2;
-    kh = LG__MMH_S ^ kh;
-    kh = LG__MMH_ROL(kh, 32, LG__MMH_R2) * LG__MMH_M + LG__MMH_N;
+#define lg_mmh_rol(x, width, bits) (((x) << (bits)) | ((x) >> ((width) - (bits))))
+#define lg_u64_has_zero_byte(x) ((((x) - UINT64_C(0x0101010101010101)) & ~(x) & UINT64_C(0x8080808080808080)) != 0)
+
+lg_force_inline uint32_t 
+lg_mmh(uint32_t kh) {
+    kh = lg_mmh_rol(kh * LG_MMH_C1, 32, LG_MMH_R1);
+    kh *= LG_MMH_C2;
+    kh = LG_MMH_S ^ kh;
+    kh = lg_mmh_rol(kh, 32, LG_MMH_R2) * LG_MMH_M + LG_MMH_N;
     kh = kh ^ 4;
     kh = kh ^ (kh >> 16);
-    kh = kh * LG__MMH_C3;
+    kh = kh * LG_MMH_C3;
     kh = kh ^ (kh >> 13);
-    kh = kh * LG__MMH_C4;
+    kh = kh * LG_MMH_C4;
     kh = kh ^ (kh >> 16);
     return kh;
 }
 
-LG_ALWAYS_INLINE
-size_t LG__NextPow2(size_t x) {
+lg_force_inline size_t 
+lg_next_pow2(size_t x) {
     if (x == 0) {
         return 1;
     }
@@ -65,15 +69,16 @@ size_t LG__NextPow2(size_t x) {
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-enum lg_status LG_MapInit(struct lg_map *map, struct lg_allocator *alloc, size_t cap) {
-    cap = cap < 8 ? 8 : LG__NextPow2(cap);
+LG_StatusKind 
+lg_map_init(LG_Map *map, LG_Allocator *alloc, size_t cap) {
+    cap = cap < 8 ? 8 : lg_next_pow2(cap);
     const size_t align = 16;
 
     const size_t sz_keys = cap * sizeof(uint64_t);
     const size_t sz_fingerprints = (cap / 8) * sizeof(uint64_t);
 
     uint8_t *ptrs[2] = {0};
-    enum lg_status status = LG__AllocContiguousBlocks(
+    LG_StatusKind status = lg_alloc_contiguous_blocks(
         alloc, 
         ptrs,
         NULL,
@@ -81,7 +86,7 @@ enum lg_status LG_MapInit(struct lg_map *map, struct lg_allocator *alloc, size_t
         2,
         align
     );
-    if (status != LG_STATUS_OK) {
+    if (status != LG_StatusKind_OK) {
         return status;
     }
 
@@ -89,21 +94,22 @@ enum lg_status LG_MapInit(struct lg_map *map, struct lg_allocator *alloc, size_t
     map->keys = (uint64_t*)ptrs[0];
     map->fingerprints_as = (void*)(ptrs[1]);
 
-    return LG_STATUS_OK;
+    return LG_StatusKind_OK;
 }
 
-void LG_MapDeinit(struct lg_map *map, struct lg_allocator *alloc) {
-    alloc->Free(alloc->ctx, map->keys);
-    LG__ZERO(map, sizeof(struct lg_map));
+void 
+lg_map_deinit(LG_Map *map, LG_Allocator *alloc) {
+    alloc->free(alloc->ctx, map->keys);
+    lg_memzero(map, sizeof(LG_Map));
 }
 
-LG_ALWAYS_INLINE
-void LG__MapMakeHash(uint64_t key, uint64_t *out_hash, uint8_t *out_fingerprint) {
-    const uint64_t full_hash = LG__MurmurHash(key); // TODO: make hash actually 64 bits
+lg_force_inline void 
+lg_map_make_hash(uint64_t key, uint64_t *out_hash, uint8_t *out_fingerprint) {
+    const uint64_t full_hash = lg_mmh(key); // TODO: make hash actually 64 bits
     const size_t hash = full_hash & ~UINT8_C(0xF);
     const uint8_t fingerprint = (full_hash & UINT8_C(0xF)) | UINT8_C(0x1);
 
-    LG__Assert(fingerprint != LG_MAP_EMPTY_SENTINEL);
+    lg_assert(fingerprint != LG_MapSentinel_Empty);
 
     if (out_fingerprint != NULL) {
         *out_fingerprint = fingerprint;
@@ -113,14 +119,14 @@ void LG__MapMakeHash(uint64_t key, uint64_t *out_hash, uint8_t *out_fingerprint)
     }
 }
 
-LG_ALWAYS_INLINE
-enum lg_status LG__MapProbe(
-    struct lg_map *map,
+lg_force_inline LG_StatusKind 
+lg_map_probe(
+    LG_Map *map,
     uint64_t key,
     uint64_t hash,
     uint8_t fingerprint,
-    size_t *LG_NULLABLE out_last_idx, 
-    bool *LG_NULLABLE out_found
+    size_t *lg_nullable out_last_idx, 
+    bool *lg_nullable out_found
 ) {
     // Be warned when working on this function,
     // the behavior of the other map functions are very tightly coupled to this one.
@@ -147,10 +153,10 @@ enum lg_status LG__MapProbe(
     ) {
         const uint64_t block = map->fingerprints_as[i].block;
 
-        const bool has_match = LG_U64_HAS_ZERO_BYTE(block ^ fingerprint_broadcasted);
+        const bool has_match = lg_u64_has_zero_byte(block ^ fingerprint_broadcasted);
         if (has_match) {
             for (size_t j = 0; j < 8; j++) {
-                if (map->fingerprints_as[i].individual[j] == LG_MAP_EMPTY_SENTINEL) {
+                if (map->fingerprints_as[i].individual[j] == LG_MapSentinel_Empty) {
                     ret_last_idx = i * 8 + j;
                     goto out_success;
                 }
@@ -168,15 +174,15 @@ enum lg_status LG__MapProbe(
         // TODO: @perf refactor to allow a get to not search for an
         // empty space after the zero sentintel is found
         // and also to look less stupid
-        const bool has_empty_sentinel = LG_U64_HAS_ZERO_BYTE(block);
+        const bool has_empty_sentinel = lg_u64_has_zero_byte(block);
         if (has_empty_sentinel) {
             for (size_t j = 0; j < 8; j++) {
-                if (map->fingerprints_as[i].individual[j] == LG_MAP_EMPTY_SENTINEL) {
+                if (map->fingerprints_as[i].individual[j] == LG_MapSentinel_Empty) {
                     ret_last_idx = i * 8 + j;
                     goto out_success;
                 }
             }
-            LG__Unreachable();
+            lg_unreachable();
         }
     }
 
@@ -190,7 +196,7 @@ enum lg_status LG__MapProbe(
     if (out_found != NULL) {
         *out_found = false;
     }
-    return LG_STATUS_OUT_OF_MEMORY;
+    return LG_StatusKind_OutOfMemory;
 
 out_success:
     if (out_last_idx != NULL) {
@@ -199,27 +205,28 @@ out_success:
     if (out_found != NULL) {
         *out_found = ret_found;
     }
-    return LG_STATUS_OK;
+    return LG_StatusKind_OK;
 }
 
-enum lg_status LG_MapEnsure(
-    struct lg_map *map,
+LG_StatusKind 
+lg_map_ensure(
+    LG_Map *map,
     uint64_t key,
-    size_t *LG_NULLABLE out_idx,
-    bool *LG_NULLABLE out_was_occupied
+    size_t *lg_nullable out_idx,
+    bool *lg_nullable out_was_occupied
 ) {
-    LG__Assert(LG__NextPow2(map->cap) == map->cap && map->cap >= 8);
+    lg_assert(lg_next_pow2(map->cap) == map->cap && map->cap >= 8);
 
-    enum lg_status status = LG_STATUS_OK;
+    LG_StatusKind status = LG_StatusKind_OK;
 
     uint64_t hash;
     uint8_t fingerprint;
-    LG__MapMakeHash(key, &hash, &fingerprint);
+    lg_map_make_hash(key, &hash, &fingerprint);
 
     bool found;
     size_t last_idx;
-    status = LG__MapProbe(map, key, hash, fingerprint, &last_idx, &found);
-    if (status != LG_STATUS_OK) {
+    status = lg_map_probe(map, key, hash, fingerprint, &last_idx, &found);
+    if (status != LG_StatusKind_OK) {
         found = false;
         last_idx = 0;
         goto out;
@@ -242,18 +249,19 @@ out:
     return status;
 }
 
-size_t LG_MapGet(struct lg_map *map, uint64_t key, bool *LG_NULLABLE out_found) {
-    LG__Assert(LG__NextPow2(map->cap) == map->cap && map->cap >= 8);
+size_t 
+lg_map_get(LG_Map *map, uint64_t key, bool *lg_nullable out_found) {
+    lg_assert(lg_next_pow2(map->cap) == map->cap && map->cap >= 8);
 
     uint64_t hash;
     uint8_t fingerprint;
-    LG__MapMakeHash(key, &hash, &fingerprint);
+    lg_map_make_hash(key, &hash, &fingerprint);
 
     bool found;
     size_t last_idx;
-    enum lg_status status = LG__MapProbe(map, key, hash, fingerprint, &last_idx, &found);
-    LG__Assert(status == LG_STATUS_OK); // we are't allocating a slot, and this only returns
-                                        // not ok when we're out of capacity
+    LG_StatusKind status = lg_map_probe(map, key, hash, fingerprint, &last_idx, &found);
+    lg_assert(status == LG_StatusKind_OK); // we are't allocating a slot, and this only returns
+                                           // not ok when we're out of capacity
 
     if (out_found != NULL) {
         *out_found = found;
@@ -270,13 +278,14 @@ size_t LG_MapGet(struct lg_map *map, uint64_t key, bool *LG_NULLABLE out_found) 
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-void LG_MapIterInit(struct lg_map_iter *iter, struct lg_map *map) {
-    LG__ZERO(iter, sizeof(struct lg_map_iter));
+void 
+lg_map_iter_init(LG_MapIter *iter, LG_Map *map) {
+    lg_memzero(iter, sizeof(LG_MapIter));
     iter->map = map;
 }
 
-LG_ALWAYS_INLINE
-bool LG_MapIterAdvance(struct lg_map_iter *iter) {
+lg_force_inline bool 
+lg_map_iter_advance(LG_MapIter *iter) {
     const size_t fingerprint_blocks_cap = iter->map->cap / 8;
 
     for (; iter->matrix_coord[0] < fingerprint_blocks_cap; iter->matrix_coord[0]++) {
@@ -287,7 +296,7 @@ bool LG_MapIterAdvance(struct lg_map_iter *iter) {
 
         for (; iter->matrix_coord[1] < 8; iter->matrix_coord[1]++) {
             const uint8_t fingerprint = iter->map->fingerprints_as[iter->matrix_coord[0]].individual[iter->matrix_coord[1]];
-            if (fingerprint != LG_MAP_EMPTY_SENTINEL) {
+            if (fingerprint != LG_MapSentinel_Empty) {
                 iter->idx = iter->matrix_coord[0] * 8 + iter->matrix_coord[1];
                 iter->key = iter->map->keys[iter->matrix_coord[0] * 8 + iter->matrix_coord[1]];
                 iter->matrix_coord[1]++;

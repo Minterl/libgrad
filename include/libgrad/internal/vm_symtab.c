@@ -1,3 +1,4 @@
+#include "libgrad/internal/alloc.h"
 #include <libgrad/internal/vm_symtab.h>
 #include <libgrad/internal/debug.h>
 
@@ -16,7 +17,8 @@
 
 #define LG_IR__MMH_ROL(x, width, bits) (((x) << (bits)) | ((x) >> ((width) - (bits))))
 
-uint32_t LG_IR__MurmurHash(uint32_t kh) {
+uint32_t 
+lg_ir_murmur_hash(uint32_t kh) {
     kh = LG_IR__MMH_ROL(kh * LG_IR__MMH_C1, 32, LG_IR__MMH_R1);
     kh *= LG_IR__MMH_C2;
     kh = LG_IR__MMH_S ^ kh;
@@ -30,19 +32,20 @@ uint32_t LG_IR__MurmurHash(uint32_t kh) {
     return kh;
 }
 
-enum lg_status LG_IR_SymtabInit(struct lg_ir_symtab *table, struct lg_allocator *alloc, size_t cap) {
+LG_StatusKind 
+lg_ir_symtab_init(LG_SymbolTable *table, LG_Allocator *alloc, size_t cap) {
     const size_t align = 16;
 
     const size_t sz_occupied = cap * sizeof(bool);
     const size_t sz_symbol_ids = cap * sizeof(uint32_t);
     const size_t sz_array_idxs = cap * sizeof(size_t);
-    const size_t sz_descs = cap * sizeof(struct lg_desc);
+    const size_t sz_descs = cap * sizeof(LG_StridedDesc);
     const size_t sz_buffer_ids = cap * sizeof(uint32_t);
     const size_t sz_buffer_offsets = cap * sizeof(size_t);
 
     uint8_t *ptrs[6] = {0};
     size_t bytes_allocated = 0;
-    enum lg_status status = LG__AllocContiguousBlocks(
+    LG_StatusKind status = lg_alloc_contiguous_blocks(
         alloc, 
         ptrs,
         &bytes_allocated,
@@ -57,7 +60,7 @@ enum lg_status LG_IR_SymtabInit(struct lg_ir_symtab *table, struct lg_allocator 
         6,
         align
     );
-    if (status != LG_STATUS_OK) {
+    if (status != LG_StatusKind_OK) {
         return status;
     }
 
@@ -70,30 +73,32 @@ enum lg_status LG_IR_SymtabInit(struct lg_ir_symtab *table, struct lg_allocator 
     table->occupied = (bool*)ptrs[0];
     table->symbol_ids = (uint32_t*)ptrs[1];
     table->array_idxs = (size_t*)ptrs[2];
-    table->descs = (struct lg_desc*)ptrs[3];
+    table->descs = (LG_StridedDesc*)ptrs[3];
     table->buffer_ids = (uint32_t*)ptrs[4];
     table->buffer_offsets = (size_t*)ptrs[5];
 
-    return LG_STATUS_OK;
+    return LG_StatusKind_OK;
 }
 
-void LG_IR_SymtabDeinit(struct lg_ir_symtab *table, struct lg_allocator *alloc) {
-    alloc->Free(alloc->ctx, table->occupied);
-    alloc->Free(alloc->ctx, table->descs);
-    LG__ZERO(table, sizeof(struct lg_ir_symtab));
+void 
+lg_ir_symtab_deinit(LG_SymbolTable *table, LG_Allocator *alloc) {
+    alloc->free(alloc->ctx, table->occupied);
+    alloc->free(alloc->ctx, table->descs);
+    lg_memzero(table, sizeof(LG_SymbolTable));
 }
 
-enum lg_status LG_IR_SymtabUpsert(
-    struct lg_ir_symtab *table,
-    size_t *LG_NULLABLE out_idx,
-    bool *LG_NULLABLE out_was_occupied,
+LG_StatusKind 
+lg_ir_symtab_upsert(
+    LG_SymbolTable *table,
+    size_t *lg_nullable out_idx,
+    bool *lg_nullable out_was_occupied,
     uint32_t symbol_id
 ) {
     if (table->table_cap == 0) {
-        return LG_STATUS_NOT_FOUND;
+        return LG_StatusKind_Overflow;
     }
 
-    const size_t start_idx = (table->table_cap <= 8) ? (symbol_id % table->table_cap) : (LG_IR__MurmurHash(symbol_id) % table->table_cap);
+    const size_t start_idx = (table->table_cap <= 8) ? (symbol_id % table->table_cap) : (lg_ir_murmur_hash(symbol_id) % table->table_cap);
     for (
         size_t i = start_idx, n_visited = 0;
         n_visited < table->table_cap;
@@ -110,7 +115,7 @@ enum lg_status LG_IR_SymtabUpsert(
             if (out_was_occupied != NULL) {
                 *out_was_occupied = false;
             }
-            return LG_STATUS_OK;
+            return LG_StatusKind_OK;
         }
         if (table->symbol_ids[i] == symbol_id) {
             if (out_idx != NULL) {
@@ -119,21 +124,22 @@ enum lg_status LG_IR_SymtabUpsert(
             if (out_was_occupied != NULL) {
                 *out_was_occupied = true;
             }
-            return LG_STATUS_OK;
+            return LG_StatusKind_OK;
         }
     }
 
-    return LG_STATUS_OUT_OF_MEMORY;
+    return LG_StatusKind_Overflow;
 }
 
-void LG_IR_SymtabIterInit(struct lg_ir_symtab_iter *iter, struct lg_ir_symtab *symtab) {
-    LG__Assert(symtab != NULL);
-    LG__ZERO(iter, sizeof(struct lg_ir_symtab_iter));
+void 
+lg_ir_symtab_iter_init(LG_SymbolTableIter *iter, LG_SymbolTable *symtab) {
+    lg_assert(symtab != NULL);
+    lg_memzero(iter, sizeof(LG_SymbolTable));
     iter->symtab = symtab;
 }
 
-LG_ALWAYS_INLINE
-bool LG_IR_SymtabIterAdvance(struct lg_ir_symtab_iter *iter) {
+lg_force_inline bool 
+lg_ir_symtab_iter_advance(LG_SymbolTableIter *iter) {
     for (; iter->last_idx < iter->symtab->table_cap; iter->last_idx++) {
         const size_t i = iter->last_idx;
 
@@ -142,8 +148,8 @@ bool LG_IR_SymtabIterAdvance(struct lg_ir_symtab_iter *iter) {
         }
 
         size_t array_idx = 0;
-        enum lg_status status = LG_IR_SymtabUpsert(iter->symtab, &array_idx, NULL, iter->symtab->symbol_ids[i]);
-        LG__Assert(status == LG_STATUS_OK);
+        LG_StatusKind status = lg_ir_symtab_upsert(iter->symtab, &array_idx, NULL, iter->symtab->symbol_ids[i]);
+        lg_assert(status == LG_StatusKind_OK);
 
         iter->symbol_id = iter->symtab->symbol_ids[i];
         iter->array_idx = array_idx;

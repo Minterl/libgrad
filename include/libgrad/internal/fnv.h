@@ -1,39 +1,39 @@
 #define LG_FNV_PRIME 16777619U
 #define LG_FNV_OFFSET_BASIS 2166136261U
 
-#define LG_FNV_GETC(str, idx, len) ((idx) < (len) ? (str)[idx] : '\0')
-#define LG_FNV_STEP(hash, c) (((hash) ^ (char)(c)) * LG_FNV_PRIME)
+#define lg_fnv_getc(str, idx, len) ((idx) < (len) ? (str)[idx] : '\0')
+#define lg_fnv_step(hash, c) (((hash) ^ (char)(c)) * LG_FNV_PRIME)
 
-#define LG_HASH_LITERAL_16(str) LG_HASH_16((str), ((size_t)(sizeof(str))))
-#define LG_HASH_16(str, len) \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP( \
-    LG_FNV_STEP(LG_FNV_OFFSET_BASIS, LG_FNV_GETC(str, 0, len)), \
-    LG_FNV_GETC(str, 1, len)), \
-    LG_FNV_GETC(str, 2, len)), \
-    LG_FNV_GETC(str, 3, len)), \
-    LG_FNV_GETC(str, 4, len)), \
-    LG_FNV_GETC(str, 5, len)), \
-    LG_FNV_GETC(str, 6, len)), \
-    LG_FNV_GETC(str, 7, len)), \
-    LG_FNV_GETC(str, 8, len)), \
-    LG_FNV_GETC(str, 9, len)), \
-    LG_FNV_GETC(str, 10, len)), \
-    LG_FNV_GETC(str, 11, len)), \
-    LG_FNV_GETC(str, 12, len)), \
-    LG_FNV_GETC(str, 13, len)), \
-    LG_FNV_GETC(str, 14, len)), \
-    LG_FNV_GETC(str, 15, len))
+#define lg_hash_lit_16(str) lg_hash_16((str), ((size_t)(sizeof(str))))
+#define lg_hash_16(str, len) \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step( \
+    lg_fnv_step(LG_FNV_OFFSET_BASIS, lg_fnv_getc(str, 0, len)), \
+    lg_fnv_getc(str, 1, len)), \
+    lg_fnv_getc(str, 2, len)), \
+    lg_fnv_getc(str, 3, len)), \
+    lg_fnv_getc(str, 4, len)), \
+    lg_fnv_getc(str, 5, len)), \
+    lg_fnv_getc(str, 6, len)), \
+    lg_fnv_getc(str, 7, len)), \
+    lg_fnv_getc(str, 8, len)), \
+    lg_fnv_getc(str, 9, len)), \
+    lg_fnv_getc(str, 10, len)), \
+    lg_fnv_getc(str, 11, len)), \
+    lg_fnv_getc(str, 12, len)), \
+    lg_fnv_getc(str, 13, len)), \
+    lg_fnv_getc(str, 14, len)), \
+    lg_fnv_getc(str, 15, len))

@@ -23,58 +23,59 @@
 #endif // lg_scalar
 
 #if defined(__has_feature) && __has_feature(nullability)
-#   define LG_NULLABLE _Nullable
+#   define lg_nullable _Nullable
 #else
-#   define LG_NULLABLE 
+#   define lg_nullable 
 #endif // defined(__has_attribute) && __has_attribute(nullability)
 
 /// Bounds checking
 #ifdef __cplusplus
-#   define LG_CHECK_BOUNDS(x) /* nothing */
-#   define LG_CHECK_BOUNDS_NULLABLE(x) /* nothing */
+#   define lg_check_bounds(x) /* nothing */
+#   define lg_check_bounds_nullable(x) /* nothing */
 #else
 #   if defined(__clang__) && __has_attribute(counted_by)
-#       define LG_CHECK_BOUNDS(x) __attribute__((counted_by(x)))
-#       define LG_CHECK_BOUNDS_NULLABLE(x) __attribute__((counted_by_or_null(x)))
+#       define lg_check_bounds(x) __attribute__((counted_by(x)))
+#       define lg_check_bounds_nullable(x) __attribute__((counted_by_or_null(x)))
 #   elif defined(__GNUC__) && (__GNUC__ >= 16) // Pointer support introduced in GCC 16
-#       define LG_CHECK_BOUNDS(x) __attribute__((counted_by(x)))
-#       define LG_CHECK_BOUNDS_NULLABLE(x) __attribute__((counted_by_or_null(x)))
+#       define lg_check_bounds(x) __attribute__((counted_by(x)))
+#       define lg_check_bounds_nullable(x) __attribute__((counted_by_or_null(x)))
 #   else
-#       define LG_CHECK_BOUNDS(x) /* nothing */
-#       define LG_CHECK_BOUNDS_NULLABLE(x) /* nothing */
+#       define lg_check_bounds(x) /* nothing */
+#       define lg_check_bounds_nullable(x) /* nothing */
 #   endif
 #endif
 
 #if defined(__has_attribute) && __has_attribute(always_inline)
-#   define LG_ALWAYS_INLINE __attribute__((always_inline)) inline
+#   define lg_force_inline __attribute__((always_inline)) inline
 #else
-#   define LG_ALWAYS_INLINE inline
+#   define lg_force_inline inline
 #endif // defined(__has_attribute) && __has_attribute(always_inline)
  
-enum lg_status {
-    LG_STATUS_OK = 0,
-    LG_STATUS_INVALID_ARGUMENT,
-    LG_STATUS_INVALID_RANK,
-    LG_STATUS_SHAPE_MISMATCH,
-    LG_STATUS_STRIDE_MISMATCH,
-    LG_STATUS_EXPR_OVERFLOW, // TODO: make this just "overflow" and propagate
-    LG_STATUS_NOT_FOUND,
-    LG_STATUS_DUPLICATE,
-    LG_STATUS_NULL_POINTER,
-    LG_STATUS_UNSUPPORTED_OPCODE,
-    LG_STATUS_OUT_OF_MEMORY,
-    LG_STATUS_OUT_OF_BOUNDS,
-    LG_STATUS_HARDWARE_FAULT,
-    LG_STATUS_UNEXPECTED_NAN
-};
+typedef enum
+LG_StatusKind {
+    LG_StatusKind_OK = 0,
+    LG_StatusKind_InvalidArgument,
+    LG_StatusKind_InvalidRank,
+    LG_StatusKind_ShapeMismatch,
+    LG_StatusKind_StrideMismatch,
+    LG_StatusKind_Overflow,
+    LG_StatusKind_NotFound,
+    LG_StatusKind_Duplicate,
+    LG_StatusKind_UnsupportedOpcode,
+    LG_StatusKind_OutOfMemory,
+    LG_StatusKind_OutOfBounds,
+    LG_StatusKind_UnexpectedNAN,
+} LG_StatusKind;
 
-enum lg_layout {
-    LG_LAYOUT_ROW_MAJOR,
-    LG_LAYOUT_COL_MAJOR,
-};
+typedef enum
+LG_LayoutKind {
+    LG_LayoutKind_RowMajor,
+    LG_LayoutKind_ColumnMajor,
+} LG_LayoutKind;
 
 /// Tensor shape descriptor
-struct lg_desc {
+typedef struct
+LG_StridedDesc {
     /// The rank of the tensor.
     /// Must be less than LG_MAX_RANK.
     size_t rank;
@@ -85,50 +86,56 @@ struct lg_desc {
     /// The strides of the tensor.
     /// The order of this array must match that of `dim`.
     size_t strides[LG_MAX_RANK];
-};
+} LG_StridedDesc;
 
 /// Tracks the coordinates of LG_N_TRACKED_TENSORS tensors.
 ///
 /// All tensors in a single iter must be both broadcasted and
 /// have their dims sorted in descending order.
-struct lg_nditer {
-    size_t coords[LG_MAX_RANK];
-    struct lg_desc descs[LG_N_TRACKED_TENSORS];
-    size_t indices[LG_N_TRACKED_TENSORS];
-    size_t n_tracked_dims;
-};
+typedef struct
+LG_NDIter {
+    size_t          coords[LG_MAX_RANK];
+    LG_StridedDesc  descs[LG_N_TRACKED_TENSORS];
+    size_t          indices[LG_N_TRACKED_TENSORS];
+    size_t          n_tracked_dims;
+} LG_NDIter;
 
 /// Increment the coordinate `axis` on `iter` and update offsets.
 /// 
 /// Does not perform any bounds checking.
-bool LG_NDIterIncrement(struct lg_nditer *iter, size_t axis);
+bool 
+lg_nditer_increment(LG_NDIter *iter, size_t axis);
 
 /// Recomputes the indices in `iter` according to its `coords`.
 ///
 /// If you want to "jump" to a specific coordinate in a tensor, this is the
 /// easiest way to do it.
-void LG_NDIterGoto(struct lg_nditer *iter, size_t *coords);
+void 
+lg_nditer_goto(LG_NDIter *iter, size_t *coords);
 
 /// Infers the broadcasted logical dimensions between `descs`.
-enum lg_status LG_InferBroadcastedDims(
-    size_t *LG_NULLABLE out_rank,
-    size_t *LG_NULLABLE out_dim,
-    const struct lg_desc **descs,
+LG_StatusKind 
+lg_infer_broadcasted_dims(
+    size_t *lg_nullable out_rank,
+    size_t *lg_nullable out_dim,
+    const LG_StridedDesc **descs,
     size_t n_descs
 );
 
 /// Create a shared virtual contraction space between `descs` such that element wise accumulators
 /// may function according to broadcast semantics.
-enum lg_status LG_CreateBroadcastSpace(struct lg_desc **descs, size_t n_descs);
+LG_StatusKind 
+lg_create_broadcast_space(LG_StridedDesc **descs, size_t n_descs);
 
 /// Computes the dimensions of a contraction between `x0` and `x1`
 ///
 /// Does not compute strides.
-enum lg_status LG_InferContractedDims(
-    size_t *LG_NULLABLE out_rank,
-    size_t *LG_NULLABLE out_dim,
-    const struct lg_desc *x0,
-    const struct lg_desc *x1,
+LG_StatusKind 
+lg_infer_contracted_dims(
+    size_t *lg_nullable out_rank,
+    size_t *lg_nullable out_dim,
+    const LG_StridedDesc *x0,
+    const LG_StridedDesc *x1,
     size_t n_contracted_axes,
     size_t n_batch_axes
 );
@@ -137,7 +144,8 @@ enum lg_status LG_InferContractedDims(
 ///
 /// The contracted dimensions must be aligned at the beginning of `x0`, and `x1` with batch dimensions
 /// following.
-enum lg_status LG_CreateContractionSpace(struct lg_desc *y, struct lg_desc *x0, struct lg_desc *x1, size_t n_batch_axes);
+LG_StatusKind 
+lg_create_contraction_space(LG_StridedDesc *y, LG_StridedDesc *x0, LG_StridedDesc *x1, size_t n_batch_axes);
 
 /// Sort axes such that the primary is unit stride first.
 ///
@@ -149,19 +157,23 @@ enum lg_status LG_CreateContractionSpace(struct lg_desc *y, struct lg_desc *x0, 
 /// plan for the other tensors. In that, this is the tensor where it is 
 /// guaranteed that the contiguous dimension (the dimension with the unit stride)
 /// will be accessed sequentially in memory.
-enum lg_status LG_SortAxes(struct lg_desc **descs, size_t n_descs);
+LG_StatusKind 
+lg_sort_axes(LG_StridedDesc **descs, size_t n_descs);
 
 /// Coalesce tensor axes to be as flat as possible.
 ///
 /// Inputs to this function MUST be broadcasted AND sorted from least to greatest
 /// using `LG_SortAxes`.
-enum lg_status LG_CoalesceAxes(struct lg_desc **descs, size_t n_descs);
+LG_StatusKind 
+lg_coalesce_axes(LG_StridedDesc **descs, size_t n_descs);
 
 /// Compute the size in bytes of a tensor's data buffer.
-size_t LG_DescSizeInBytes(struct lg_desc desc);
+size_t 
+lg_desc_size_in_bytes(LG_StridedDesc desc);
 
 /// Copy a vector value to the dim `copy_to_dim`.
-void LG_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg_scalar *vector, size_t copy_to_axis);
+void 
+lg_copy_vector_to_axis(LG_StridedDesc desc, lg_scalar *restrict dest, const lg_scalar *vector, size_t copy_to_axis);
 
 /// Lays out a tensor with pre-populated `dim` and `rank` with the strides to be stored in
 /// the order in `layout`. In this layout, the rightmost dimension has the unit stride.
@@ -171,12 +183,14 @@ void LG_CopyVectorToAxis(struct lg_desc desc, lg_scalar *restrict dest, const lg
 /// Does not allocate any memory; that can be done with `lg_alloc_tensor`.
 ///
 /// This is the recommended and standard way to initialize a tensor layout.
-enum lg_status LG_DescComputeStrides(struct lg_desc *desc, enum lg_layout layout, size_t unit_align);
+LG_StatusKind 
+lg_desc_compute_strides(LG_StridedDesc *desc, LG_LayoutKind layout, size_t unit_align);
 
 /// Returns true if a tensor is isotropic.
 /// 
 /// Tensors with a rank of zero, and all scalars are considered isotropic,
 /// while all vectors are considered anisotropic.
-bool LG_DescIsIsotropic(struct lg_desc desc);
+bool 
+lg_desc_is_isotropic(LG_StridedDesc desc);
 
 #endif // LG_CORE_H_

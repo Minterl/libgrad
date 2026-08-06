@@ -7,7 +7,8 @@
 #include <stdint.h>
 
 /// Implements a swiss map-like slot map.
-struct lg_map {
+typedef struct
+LG_Map {
     /// Must be a power of two, and will be implicitly rounded to one 
     /// during initialization.
     size_t cap;
@@ -17,11 +18,12 @@ struct lg_map {
         uint64_t block;
     } *fingerprints_as;
 
-    uint64_t *keys LG_CHECK_BOUNDS(cap);
-};
+    uint64_t *keys lg_check_bounds(cap);
+} LG_Map;
 
-struct lg_map_iter {
-    struct lg_map *map;
+typedef struct
+LG_MapIter {
+    LG_Map *map;
 
     uint32_t key;
     size_t idx;
@@ -30,26 +32,32 @@ struct lg_map_iter {
     /// with dims {8 x `iter.map.cap` / 8} i.e there are 8 fingerprints per
     /// u64 in the map self.
     size_t matrix_coord[2];
-};
+} LG_MapIter;
 
-enum lg_status LG_MapInit(struct lg_map *map, struct lg_allocator *alloc, size_t cap);
-void LG_MapDeinit(struct lg_map *map, struct lg_allocator *alloc);
+LG_StatusKind 
+lg_map_init(LG_Map *map, LG_Allocator *alloc, size_t cap);
+
+void 
+lg_map_deinit(LG_Map *map, LG_Allocator *alloc);
 
 /// Ensures a key is present inside the map
 /// Cannot realloc memory
-enum lg_status LG_MapEnsure(struct lg_map *map, uint64_t key, size_t *LG_NULLABLE out_idx, bool *LG_NULLABLE out_was_occupied);
+LG_StatusKind 
+lg_map_ensure(LG_Map *map, uint64_t key, size_t *lg_nullable out_idx, bool *lg_nullable out_was_occupied);
 
 /// Returns the index corresponding to the key in the map, otherwise
 /// zero.
 ///
 /// Since zero may be a valid index, use `out_found` to determine whether
 /// an entry was found.
-size_t LG_MapGet(struct lg_map *map, uint64_t key, bool *LG_NULLABLE out_found);
+size_t 
+lg_map_get(LG_Map *map, uint64_t key, bool *lg_nullable out_found);
 
-void LG_MapIterInit(struct lg_map_iter *iter, struct lg_map *map);
+void 
+lg_map_iter_init(LG_MapIter *iter, LG_Map *map);
 
 /// Returns false once the iterator is finished.
-LG_ALWAYS_INLINE
-bool LG_MapIterAdvance(struct lg_map_iter *iter);
+lg_force_inline bool 
+lg_map_iter_advance(LG_MapIter *iter);
 
 #endif // LG_MAP_H_

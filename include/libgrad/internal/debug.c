@@ -8,7 +8,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-void LG___Dbgf(const char *file, int line, const char* fmt, ...) {
+void 
+lg_dbgf_(const char *file, int line, const char* fmt, ...) {
     fprintf(stderr, "\033[32m[DEBUG]\033[0m (%s:%d) -- ", file, line);
     va_list args;
     va_start(args, fmt);
@@ -17,7 +18,8 @@ void LG___Dbgf(const char *file, int line, const char* fmt, ...) {
     fprintf(stderr, "\n");
 }
 
-void LG___Assert(const char *file, int line, bool cond, const char *cond_str) {
+void 
+lg_assert_(const char *file, int line, bool cond, const char *cond_str) {
     if (!cond) {
         fprintf(stderr, "\x1b[31m[ASSERTION FAILED]\x1b[0m (%s) at %s:%d\n", cond_str, file, line);
         abort();

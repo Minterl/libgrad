@@ -8,13 +8,14 @@
 
 #include <libgrad/libgrad.h>
 
-struct arena {
+typedef struct
+Arena {
     size_t cap;
     size_t offset;
     uint8_t *buf;
-};
+} Arena;
 
-static inline uint8_t ArenaInit(struct arena *a, size_t cap) {
+static inline uint8_t ArenaInit(Arena *a, size_t cap) {
     a->buf = malloc(cap);
     if (a->buf == NULL) {
         return -1;
@@ -24,11 +25,11 @@ static inline uint8_t ArenaInit(struct arena *a, size_t cap) {
     return 0;
 }
 
-static inline void ArenaDestroy(struct arena *a) {
+static inline void ArenaDestroy(Arena *a) {
     free(a->buf);
 }
 
-static inline uint8_t *ArenaAlloc(struct arena *a, size_t size_bytes) {
+static inline uint8_t *ArenaAlloc(Arena *a, size_t size_bytes) {
     if (a->offset + size_bytes > a->cap) {
         return NULL;
     }
@@ -37,12 +38,12 @@ static inline uint8_t *ArenaAlloc(struct arena *a, size_t size_bytes) {
     return ret;
 }
 
-static inline void ArenaReset(struct arena *a) {
+static inline void ArenaReset(Arena *a) {
     a->offset = 0; 
 }
 
 static inline void *__ArenaAsLgAllocatorAlloc(void *ctx, size_t size_bytes) {
-    struct arena *const a = ctx;
+    Arena *const a = ctx;
     return (void*)ArenaAlloc(a, size_bytes);
 }
 
@@ -51,11 +52,11 @@ static inline void __ArenaAsLgAllocatorFree(void *ctx, void *ptr) {
     (void)ptr;
 }
 
-static inline struct lg_allocator ArenaAsLgAllocator(struct arena *a) {
-    return (struct lg_allocator) {
+static inline LG_Allocator ArenaAsLgAllocator(Arena *a) {
+    return (LG_Allocator) {
         .ctx = a,
-        .Alloc = __ArenaAsLgAllocatorAlloc,
-        .Free = __ArenaAsLgAllocatorFree,
+        .alloc = __ArenaAsLgAllocatorAlloc,
+        .free = __ArenaAsLgAllocatorFree,
     };
 }
 

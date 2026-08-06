@@ -1,4 +1,5 @@
 // TODO: once the rest of the lib builds, just use the main header
+#include "libgrad/internal/core.h"
 #include <libgrad/internal/strings.h>
 
 #ifndef TEST_IMPLEMENTATION
@@ -8,7 +9,7 @@
 
 #include <stdio.h>
 
-size_t WriteToStdout(void *ctx, const struct lg_string str) {
+size_t WriteToStdout(void *ctx, const lg_s8 str) {
     (void)ctx;
     size_t i = 0;
     for (; i < str.len; i++) {
@@ -17,17 +18,17 @@ size_t WriteToStdout(void *ctx, const struct lg_string str) {
     return i;
 }
 
-static struct lg_writer stdout_writer = {
-    .Write = WriteToStdout,
+static lg_writer stdout_writer = {
+    .write = WriteToStdout,
 };
 
 test_status test_printf() {
-    test_assert(LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{i64}\n"), 13) == LG_STATUS_OK, "int failed to print");
-    test_assert(LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{str}\n"), LG_STRING_LITERAL("asdfasdf")) == LG_STATUS_OK, "string failed to print");
-    test_assert(LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{cstr}\n"), "asdfasdf") == LG_STATUS_OK, "cstring failed to print");
-    test_assert(LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{cstr\n"), "asdfasdf") == LG_STATUS_INVALID_ARGUMENT, "unterminated fmtspec didn't fail");
+    test_assert(lg_printf(&stdout_writer, lg_s8_lit("asdf: %{i64}\n"), 13) == LG_StatusKind_OK, "int failed to print");
+    test_assert(lg_printf(&stdout_writer, lg_s8_lit("asdf: %{str}\n"), lg_s8_lit("asdfasdf")) == LG_StatusKind_OK, "string failed to print");
+    test_assert(lg_printf(&stdout_writer, lg_s8_lit("asdf: %{cstr}\n"), "asdfasdf") == LG_StatusKind_OK, "cstring failed to print");
+    test_assert(lg_printf(&stdout_writer, lg_s8_lit("asdf: %{cstr\n"), "asdfasdf") == LG_StatusKind_InvalidArgument, "unterminated fmtspec didn't fail");
     test_assert(
-        LG_Printf(&stdout_writer, LG_STRING_LITERAL("asdf: %{i64} %{cstr}\n"), 14, "asdfasdf") == LG_STATUS_OK,
+        lg_printf(&stdout_writer, lg_s8_lit("asdf: %{i64} %{cstr}\n"), 14, "asdfasdf") == LG_StatusKind_OK,
         "mixed failed to print"
     );
     return TEST_STATUS_OK;

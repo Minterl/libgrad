@@ -4,18 +4,18 @@
 #include <libgrad/internal/vm.h>
 #include <libgrad/internal/core.h>
 
-enum lg_status LG_RT_CPU_ExecExpr(struct lg_ir_expr expr);
+LG_StatusKind lg_rt_cpu_exec_expr(LG_Expr expr);
 
 /// Tensors must be sorted & broadcasted
-void LG_RT_CPU_Add(
-    const struct lg_desc y_desc, lg_scalar *restrict y,
-    const struct lg_desc x0_desc, const lg_scalar *restrict x0,
-    const struct lg_desc x1_desc, const lg_scalar *restrict x1
+void lg_rt_cpu_add(
+    const LG_StridedDesc y_desc, lg_scalar *restrict y,
+    const LG_StridedDesc x0_desc, const lg_scalar *restrict x0,
+    const LG_StridedDesc x1_desc, const lg_scalar *restrict x1
 );
-void LG_RT_CPU_Contract(
-    const struct lg_desc y_desc, lg_scalar *restrict y,
-    const struct lg_desc x0_desc, const lg_scalar *restrict x0,
-    const struct lg_desc x1_desc, const lg_scalar *restrict x1
+void lg_rt_cpu_contract(
+    const LG_StridedDesc y_desc, lg_scalar *restrict y,
+    const LG_StridedDesc x0_desc, const lg_scalar *restrict x0,
+    const LG_StridedDesc x1_desc, const lg_scalar *restrict x1
 );
 
 #endif // LG_CPU_H_
@@ -25,7 +25,7 @@ void LG_RT_CPU_Contract(
 #undef LG_CPU_IMPLEMENTATION
 
 // TODO: attach runtime context
-// enum lg_status LG_RT_CPU_ExecExpr(struct lg_ir_expr expr) {
+// LG_StatusKind LG_RT_CPU_ExecExpr(LG_Expr expr) {
 //     for (size_t i = 0; i < expr.len; i++) {
 //         switch (expr.nodes[i].opcode) {
 //         case LG_OPCODE_NOP:
@@ -57,15 +57,15 @@ void LG_RT_CPU_Contract(
 //         }
 //     }
 
-//     return LG_STATUS_OK;
+//     return LG_StatusKind_OK;
 // }
 
 void LG_RT_CPU_Add(
-    const struct lg_desc y_desc, lg_scalar *restrict y,
-    const struct lg_desc x0_desc, const lg_scalar *restrict x0,
-    const struct lg_desc x1_desc, const lg_scalar *restrict x1
+    const LG_StridedDesc y_desc, lg_scalar *restrict y,
+    const LG_StridedDesc x0_desc, const lg_scalar *restrict x0,
+    const LG_StridedDesc x1_desc, const lg_scalar *restrict x1
 ) {
-    struct lg_nditer iter = {
+    LG_NDIter iter = {
         .descs = {y_desc, x0_desc, x1_desc},
         .n_tracked_dims = y_desc.rank,
     };
@@ -76,15 +76,15 @@ void LG_RT_CPU_Add(
         const size_t x1_idx = iter.indices[2];
 
         y[y_idx] += x0[x0_idx] + x1[x1_idx];
-   } while (LG_NDIterIncrement(&iter, y_desc.rank - 1));
+   } while (lg_nditer_increment(&iter, y_desc.rank - 1));
 }
 
 void LG_RT_CPU_Contract(
-    const struct lg_desc y_desc, lg_scalar *restrict y,
-    const struct lg_desc x0_desc, const lg_scalar *restrict x0,
-    const struct lg_desc x1_desc, const lg_scalar *restrict x1
+    const LG_StridedDesc y_desc, lg_scalar *restrict y,
+    const LG_StridedDesc x0_desc, const lg_scalar *restrict x0,
+    const LG_StridedDesc x1_desc, const lg_scalar *restrict x1
 ) {
-    struct lg_nditer iter = {
+    LG_NDIter iter = {
         .descs = {y_desc, x0_desc, x1_desc},
         .n_tracked_dims = y_desc.rank,
     };
@@ -95,7 +95,7 @@ void LG_RT_CPU_Contract(
         const size_t x1_idx = iter.indices[2];
 
         y[y_idx] += x0[x0_idx] * x1[x1_idx];
-    } while (LG_NDIterIncrement(&iter, y_desc.rank - 1));
+    } while (lg_nditer_increment(&iter, y_desc.rank - 1));
 }
 
 #endif // LG_CPU_IMPLEMENTATION
