@@ -134,7 +134,7 @@ lg_symtab_upsert(
 void 
 lg_symtab_iter_init(LG_SymbolTableIter *iter, LG_SymbolTable *symtab) {
     lg_assert(symtab != NULL);
-    lg_memzero(iter, sizeof(LG_SymbolTable));
+    lg_memzero(iter, sizeof(LG_SymbolTableIter));
     iter->symtab = symtab;
 }
 

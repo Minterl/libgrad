@@ -23,23 +23,23 @@ int main(void) {
     LG_StatusKind status = LG_StatusKind_OK;
 
     LG_Expr expr = {0};
-    status = lg_alloc_expr(&allocator, NULL, NULL, &expr, EXPR_CAP, EXPR_CAP);
+    status = lg_alloc_expr(&allocator, &expr, EXPR_CAP, EXPR_CAP);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;
     }
 
-    status = lg_buftab_insert(&expr, 100);
+    status = lg_buftab_insert(&expr.buftab, 100);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;
     }
-    status = lg_buftab_insert(&expr, 101);
+    status = lg_buftab_insert(&expr.buftab, 101);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;
     }
-    status = lg_buftab_insert(&expr, 102);
+    status = lg_buftab_insert(&expr.buftab, 102);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;

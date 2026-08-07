@@ -63,35 +63,70 @@ lg_report_error(LG_CompilationContext *ctx, lg_str8 fmt, ...) {
     va_end(ap);
 }
 
-LG_StatusKind 
-lg_buftab_insert(LG_Expr *expr, uint32_t id) {
-    if (expr->buf_table_len >= expr->buf_table_cap) {
-        return LG_StatusKind_Overflow;
+LG_StatusKind
+lg_buftab_init(
+    LG_BufferTable *buftab,
+    LG_Allocator *alloc,
+    size_t cap
+) {
+    LG_StatusKind status = lg_map_init(&buftab->map, alloc, cap);
+    if (status != LG_StatusKind_OK) {
+        return status;
     }
-    for (size_t i = 0; i < expr->buf_table_len; i++) {
-        if (expr->buf_table_ids[i] == id) {
-            return LG_StatusKind_Duplicate;
-        }
+
+    LG_BufferTableEntry* entries = (LG_BufferTableEntry*)lg_alloc_zero(alloc, cap * sizeof(LG_BufferTableEntry));
+    if (entries == NULL) {
+        lg_map_deinit(&buftab->map, alloc);
+        return LG_StatusKind_OutOfMemory;
     }
-    size_t next_idx = expr->buf_table_len;
-    expr->buf_table_len += 1;
-    expr->buf_table_ids[next_idx] = id;
-    expr->buf_table_bytes_required[next_idx] = 0;
+    buftab->entries = entries;
+
     return LG_StatusKind_OK;
 }
 
 LG_StatusKind 
-lg_buftab_get_idx(const LG_Expr *expr, size_t *lg_nullable out_idx, uint32_t id) {
-    for (size_t i = 0; i < expr->buf_table_len; i++) 
-    {
-        if (expr->buf_table_ids[i] == id) {
-            if (out_idx != NULL) {
-                *out_idx = i;
-            }
-            return LG_StatusKind_OK;
-        }
+lg_buftab_insert(LG_BufferTable *buftab, uint32_t id) {
+    bool did_exist;
+    size_t should_not_exist = lg_map_get(&buftab->map, id, &did_exist);
+    if (did_exist) {
+        return LG_StatusKind_Duplicate;
     }
-    return LG_StatusKind_NotFound;
+    lg_assert(should_not_exist == 0);
+
+    LG_StatusKind status = lg_map_ensure(&buftab->map, id, NULL, NULL);
+    if (status != LG_StatusKind_OK) {
+        return status;
+    }
+
+    return LG_StatusKind_OK;
+}
+
+LG_StatusKind 
+lg_buftab_get(LG_BufferTable *buftab, LG_BufferTableEntry *lg_nullable out_entry, uint32_t id) {
+    bool found;
+    LG_BufferTableEntry entry = buftab->entries[lg_map_get(&buftab->map, id, &found)];
+    if (!found) {
+        return LG_StatusKind_NotFound;
+    }
+
+    if (out_entry != NULL) {
+        *out_entry = entry;
+    }
+
+    return LG_StatusKind_OK;
+}
+
+LG_StatusKind
+lg_buftab_update(LG_BufferTable *buftab, uint32_t id, LG_BufferTableEntry new_entry) {
+    bool found;
+    LG_BufferTableEntry *const entry = &buftab->entries[lg_map_get(&buftab->map, id, &found)];
+    if (!found) {
+        return LG_StatusKind_NotFound;
+    }
+
+    *entry = new_entry;
+
+    return LG_StatusKind_OK;
 }
 
 LG_StatusKind 
@@ -105,8 +140,7 @@ lg_declare_source(
         return LG_StatusKind_InvalidArgument;
     }
 
-    size_t buf_idx = 0;
-    LG_StatusKind status = lg_buftab_get_idx(ctx->expr, &buf_idx, buf_id);
+    LG_StatusKind status = lg_buftab_get(&ctx->expr->buftab, NULL, buf_id);
     if (status != LG_StatusKind_OK) {
         return status;
     }
@@ -200,7 +234,6 @@ found:;
     if (out_desc != NULL) {
         *out_desc = desc;
     }
-
     return LG_StatusKind_OK;
 }
 
@@ -685,6 +718,7 @@ lg_pass_bufferize(
             taken_ranges_len++;
             taken_ranges[taken_ranges_len] = size_table[j].offset + size_table[j].size_bytes;
             taken_ranges_len++;
+
             lg_assert(taken_ranges_len < free_ranges_cap - 1);
         }
         lg_assert(taken_ranges_len % 2 == 0);
@@ -757,10 +791,11 @@ lg_pass_bufferize(
         ctx->symtab.buffer_offsets[idx] = size_table[i].offset;
     }
 
-    size_t buftab_idx;
-    status = lg_buftab_get_idx(ctx->expr, &buftab_idx, buf_id);
+    LG_BufferTableEntry buftab_entry = {
+        .size_in_bytes = total_size_bytes,
+    };
+    status = lg_buftab_update(&ctx->expr->buftab, buf_id, buftab_entry);
     lg_assert(status == LG_StatusKind_OK); // We should only ever be passed valid buffer ids.
-    ctx->expr->buf_table_bytes_required[buftab_idx] = total_size_bytes;
 
 out_release_scratch:
     lg_scratch_release(ctx->scratch, &waypoint);
@@ -887,73 +922,60 @@ lg_compile_expr(
     size_t mem_align
 ) {
     LG_StatusKind status;
+
     status = lg_pass_validate_expr_structure(ctx);
     if (status != LG_StatusKind_OK) {
         return status;
     }
+
     status = lg_pass_infer_dims(ctx);
     if (status != LG_StatusKind_OK) {
         return status;
     }
+    
     lg_pass_assign_layouts(ctx, LG_LayoutKind_RowMajor /* TODO */, mem_align);
-    for (size_t i = 0; i <ctx->expr->buf_table_len; i++) {
-        const uint32_t buf_id = ctx->expr->buf_table_ids[i];
-        status = lg_pass_bufferize(ctx, buf_id, mem_align);
-        if (status != LG_StatusKind_OK) {
-            return status;
+
+    {
+        LG_MapIter iter;
+        lg_map_iter_init(&iter, &ctx->expr->buftab.map);
+
+        while (lg_map_iter_advance(&iter)) {
+            const uint32_t buf_id = iter.key;
+            status = lg_pass_bufferize(ctx, buf_id, mem_align);
+            if (status != LG_StatusKind_OK) {
+                return status;
+            }
         }
     }
+
     // TODO: these functions really need better names
     lg_pass_decorate_nodes(ctx);
     lg_pass_decorate_with_maps(ctx);
     return LG_StatusKind_OK;
 }
 
+// TODO: should this be `lg_expr_init`?
 LG_StatusKind 
 lg_alloc_expr(
-    LG_Allocator *perm,
-    uint8_t *lg_nullable *out_ptr,
-    size_t *lg_nullable out_bytes_allocated,
+    LG_Allocator *alloc,
     LG_Expr *expr,
     size_t nodes_cap,
-    size_t bufmap_cap
+    size_t buftab_cap
 ) {
-    uint8_t *ptrs[3] = {0};
-    size_t bytes_allocated = 0;
-    LG_StatusKind status = lg_alloc_contiguous_blocks(
-        perm,
-        ptrs, 
-        &bytes_allocated,
-        (size_t[]){
-            nodes_cap * sizeof(LG_ExprNode),
-            bufmap_cap * sizeof(LG_ExprNode),
-            bufmap_cap * sizeof(LG_ExprNode),
-        },
-        3,
-        16
-    );
+    LG_StatusKind status = lg_buftab_init(&expr->buftab, alloc, buftab_cap);
     if (status != LG_StatusKind_OK) {
-        return status; 
+        return status;
     }
 
-    for (size_t i = 0; i < bytes_allocated; i++) {
-        ptrs[0][i] = 0;
+    LG_ExprNode *nodes = (LG_ExprNode*)lg_alloc_zero(alloc, nodes_cap * sizeof(LG_ExprNode));
+    if (nodes == NULL) {
+        lg_map_deinit(&expr->buftab.map, alloc);
+        return LG_StatusKind_OutOfMemory;
     }
 
-    expr->nodes = (LG_ExprNode*)(ptrs[0]);
+    expr->nodes = nodes;
     expr->nodes_cap = nodes_cap;
     expr->nodes_len = 0;
-    expr->buf_table_ids = (uint32_t*)(ptrs[1]);
-    expr->buf_table_bytes_required = (size_t*)(ptrs[2]);
-    expr->buf_table_cap = bufmap_cap;
-    expr->buf_table_len = 0;
-
-    if (out_bytes_allocated != NULL) {
-        *out_bytes_allocated = bytes_allocated;
-    }
-    if (out_ptr != NULL) {
-        *out_ptr = ptrs[0];
-    }
 
     return LG_StatusKind_OK;
 }

@@ -5,6 +5,7 @@
 #include <libgrad/internal/alloc.h>
 #include <libgrad/internal/vm_symtab.h>
 #include <libgrad/internal/strings.h>
+#include <libgrad/internal/map.h>
 
 #define LG_MAX_ERR_LEN 1024
 
@@ -88,19 +89,27 @@ LG_ExprNode {
     } meta_as;
 } LG_ExprNode;
 
+typedef struct
+LG_BufferTableEntry {
+    size_t size_in_bytes;
+} LG_BufferTableEntry;
+
+typedef struct
+LG_BufferTable {
+    LG_Map map;
+    LG_BufferTableEntry *entries;
+} LG_BufferTable;
+
 /// The intermediate representation of a program.
 /// 
 /// As of right now, the exprs themselves do not support any control flow.
 typedef struct
 LG_Expr {
-    size_t        nodes_cap;
-    size_t        nodes_len;
-    LG_ExprNode  *nodes lg_check_bounds(nodes_len);
+    size_t          nodes_cap;
+    size_t          nodes_len;
+    LG_ExprNode    *nodes lg_check_bounds(nodes_len);
 
-    size_t        buf_table_cap;
-    size_t        buf_table_len;
-    uint32_t     *buf_table_ids lg_check_bounds(buf_table_len);
-    size_t       *buf_table_bytes_required lg_check_bounds(buf_table_len);
+    LG_BufferTable  buftab;
 } LG_Expr;
 
 typedef struct
@@ -136,10 +145,13 @@ lg_get_sink_location(
 );
 
 LG_StatusKind 
-lg_buftab_insert(LG_Expr *expr, uint32_t id);
+lg_buftab_insert(LG_BufferTable *buftab, uint32_t id);
 
 LG_StatusKind 
-lg_buftab_get_idx(const LG_Expr *expr, size_t *lg_nullable out_idx, uint32_t id);
+lg_buftab_get(LG_BufferTable *buftab, LG_BufferTableEntry *lg_nullable out_entry, uint32_t id);
+
+LG_StatusKind
+lg_buftab_update(LG_BufferTable *buftab, uint32_t id, LG_BufferTableEntry new_entry);
 
 /// Gets the last physical location of the tensor `x` and populates
 /// its `data` pointer if found.
@@ -198,9 +210,7 @@ lg_compile_expr(
 /// and assign offsets into the buffer for each field.
 LG_StatusKind 
 lg_alloc_expr(
-    LG_Allocator *perm,
-    uint8_t *lg_nullable *out_ptr,
-    size_t *lg_nullable out_bytes_allocated,
+    LG_Allocator *alloc,
     LG_Expr *expr,
     size_t nodes_cap,
     size_t bufmap_cap
