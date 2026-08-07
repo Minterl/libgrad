@@ -15,13 +15,19 @@
 /// to be stable and should not be serialized.
 typedef enum
 LG_Opcode {
-    /// --- Symbolic Unary Operations ---
-#   define LG__FIRST_UNARY_OP LG_OPCODE_SOURCE
-    LG_Opcode_Source,
+
+    //////////////////////////////////
+    // Unary Operations
+    //////////////////////////////////
+
+#   define LG_FIRST_UNARY_OP LG_Opcode_Sink
     LG_Opcode_Sink,
 
-    /// --- Non-Symbolic Unary Operations ---
-    LG_Opcode_NOP,
+    // Constructive operations create new symbols,
+    // while non-constructive ones do not.
+#   define LG_FIRST_CONSTRUCTIVE_OP LG_Opcode_ReLU
+
+    LG_Opcode_Source,
     /// Element-wise ReLU
     LG_Opcode_ReLU,
     /// Element-wise stable softmax
@@ -30,10 +36,16 @@ LG_Opcode {
     LG_Opcode_Sigmoid,
     /// Element-wise natural log
     LG_Opcode_LN,
+
 #   define LG_LAST_UNARY_OP LG_Opcode_LN
 
-    /// --- Binary Operations ---
+
+    //////////////////////////////////
+    // Binary Operations
+    //////////////////////////////////
+
 #   define LG_FIRST_BINARY_OP LG_Opcode_Add
+    
     /// Element-wise tensor addition
     LG_Opcode_Add,
     /// Element-wise tensor subtraction
@@ -48,11 +60,14 @@ LG_Opcode {
     LG_Opcode_MSELoss,
     /// Cross-entropy loss
     LG_Opcode_CrossEntropyLoss,
+
 #   define LG_LAST_BINARY_OP LG_Opcode_CrossEntropyLoss
+#   define LG_LAST_CONSTRUCTIVE_OP LG_LAST_BINARY_OP
 } LG_Opcode;
 
 _Static_assert(LG_LAST_UNARY_OP + 1 == LG_FIRST_BINARY_OP, "opcodes must be contigugous");
 
+#define lg_opcode_creates_symbol(op) ((LG_FIRST_CONSTRUCTIVE_OP <= (op)) && ((op) <= LG_LAST_CONSTRUCTIVE_OP))
 #define lg_opcode_is_unary(op) ((LG_FIRST_UNARY_OP <= (op)) && ((op) <= LG_LAST_UNARY_OP))
 #define lg_opcode_is_binary(op) ((LG_FIRST_BINARY_OP <= (op)) && ((op) <= LG_LAST_BINARY_OP))
 
@@ -60,6 +75,14 @@ typedef struct
 LG_Symbol {
     uint32_t id;
 } LG_Symbol;
+
+typedef union 
+LG_ExprNodeMeta {
+    struct {
+        size_t n_contracted_axes;
+        size_t n_batch_axes;
+    } contract;
+} LG_ExprNodeMeta;
 
 /// An IR node in an expr.
 typedef struct
@@ -81,12 +104,7 @@ LG_ExprNode {
     uint32_t             x1_buf_id;
     size_t               x1_offset;
 
-    union {
-        struct {
-            size_t n_contracted_axes;
-            size_t n_batch_axes;
-        } contract;
-    } meta_as;
+    LG_ExprNodeMeta meta_as;
 } LG_ExprNode;
 
 typedef struct
@@ -118,21 +136,22 @@ LG_CompilationContext {
     LG_Allocator         *scratch;
     LG_SymbolTable        symtab;
 
+    LG_StatusKind         last_status;
     size_t                err_msg_len;
     uint8_t               err_msg_backing_buf[LG_MAX_ERR_LEN];
 
     uint32_t              next_symbol_id;
 } LG_CompilationContext;
 
-LG_StatusKind 
+LG_Symbol
 lg_declare_source(
     LG_CompilationContext *ctx,
-    LG_Symbol *out_symbol,
     LG_StridedDesc physical_desc,
     uint32_t buf_id
 );
 
-LG_StatusKind 
+
+LG_Symbol
 lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym);
 
 LG_StatusKind 
@@ -164,40 +183,34 @@ lg_buftab_update(LG_BufferTable *buftab, uint32_t id, LG_BufferTableEntry new_en
 LG_StatusKind 
 lg_append_nop(LG_Expr *expr, LG_Symbol x);
 
-LG_StatusKind 
-lg_append_add(
-    LG_CompilationContext *ctx,
-    LG_Symbol *y,
-    const LG_Symbol x0,
-    const LG_Symbol x1
-);
-LG_StatusKind 
-lg_append_sub(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
-LG_StatusKind 
+LG_Symbol 
+lg_append_add(LG_CompilationContext *ctx, const LG_Symbol x0, const LG_Symbol x1);
+// LG_StatusKind 
+// lg_append_sub(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+LG_Symbol 
 lg_append_contract(
     LG_CompilationContext *ctx,
-    LG_Symbol *y,
     LG_Symbol x0,
     LG_Symbol x1,
     size_t n_contracted_axes, 
     size_t n_batch_axes
 );
-LG_StatusKind 
-lg_append_hadamard(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+// LG_StatusKind 
+// lg_append_hadamard(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
 
-LG_StatusKind 
-lg_append_mse_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
-LG_StatusKind 
-lg_append_cross_entropy_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+// LG_StatusKind 
+// lg_append_mse_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+// LG_StatusKind 
+// lg_append_cross_entropy_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
 
-LG_StatusKind 
-lg_append_relu(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
-LG_StatusKind 
-lg_append_stable_softmax(LG_Expr *expr, const LG_Symbol y, const LG_Symbol in);
-LG_StatusKind 
-lg_append_sigmoid(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
-LG_StatusKind 
-lg_append_ln(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
+// LG_StatusKind 
+// lg_append_relu(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
+// LG_StatusKind 
+// lg_append_stable_softmax(LG_Expr *expr, const LG_Symbol y, const LG_Symbol in);
+// LG_StatusKind 
+// lg_append_sigmoid(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
+// LG_StatusKind 
+// lg_append_ln(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
 
 /// "Compiles" an expr.
 LG_StatusKind 

@@ -63,19 +63,13 @@ int main(void) {
         return status;
     }
     LG_Symbol W_0 = {0};
-    status = lg_declare_source(&ctx, &W_0, (LG_StridedDesc){
-        .rank = 2,
-        .dim = {128, 28 * 28},
-    }, 101);
+    status = lg_declare_source(&ctx, &W_0, lg_mkshape(128, 28 * 28), 101);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;
     }
     LG_Symbol b_0 = {0};
-    status = lg_declare_source(&ctx, &b_0, (LG_StridedDesc){
-        .rank = 1,
-        .dim = {128},
-    }, 102);
+    status = lg_declare_source(&ctx, &b_0, lg_mkshape(128), 102);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;

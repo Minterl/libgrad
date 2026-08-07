@@ -27,11 +27,6 @@
 
 #define lg_allocator_supports_scratch(alloc) (((alloc)->scratch_acquire != NULL) && ((alloc)->scratch_release != NULL))
 
-/// Helper interface for allocating tensors
-///
-/// Many users will choose to completely omit use of this utility,
-/// but it is very useful for allocating tensors quickly.
-///
 /// The only method that must be defined is `alloc`, the others may
 /// legally be NULL. Such is the case when using an arena-style allocator,
 /// where free is a no-op and the user deallocates memory outside of this interface.

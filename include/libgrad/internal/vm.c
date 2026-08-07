@@ -7,35 +7,15 @@
 
 #include <stdint.h>
 
-LG_StatusKind 
-lg_create_symbol(LG_CompilationContext *ctx, LG_Symbol *out) {
-    const size_t id = ctx->next_symbol_id;
-    ctx->next_symbol_id++;
-    *out = (LG_Symbol){
-        .id = id,
-    };
-    bool was_occupied;
-    LG_StatusKind status = lg_symtab_upsert(&ctx->symtab, NULL, &was_occupied, id);
-    if (status != LG_StatusKind_OK) {
-        return status;
-    }
-    lg_assert(!was_occupied);
-    return LG_StatusKind_OK;
-}
+#define LG_NIL_SYMBOL (LG_Symbol){0}
+#define LG_NIL_EXPR_NODE_META (LG_ExprNodeMeta){0}
 
-LG_StatusKind 
-lg_expr_append_node(
-    LG_Expr *expr,
-    const LG_ExprNode node 
-) {
-    if (expr->nodes_len >= expr->nodes_cap) {
-        return LG_StatusKind_Overflow;
-    }
-    size_t next_idx = expr->nodes_len;
-    expr->nodes_len += 1;
-    expr->nodes[next_idx] = node;
-    return LG_StatusKind_OK;
-}
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// Error reporting shennanigans
+///
+////////////////////////////////////////////////////////////////////////////////
 
 size_t 
 lg_report_error_write(void *ctx_, lg_str8 str) {
@@ -48,20 +28,124 @@ lg_report_error_write(void *ctx_, lg_str8 str) {
     return bytes_written;
 }
 
-// Reports error on a best-effort basis, filling the buffer as much as possible.
+/// Reports error on a best-effort basis, filling the buffer as much as possible.
+/// Does nothing if the error has already been set
 void 
-lg_report_error(LG_CompilationContext *ctx, lg_str8 fmt, ...) {
+lg_report_error(LG_CompilationContext *ctx, LG_StatusKind status, lg_str8 fmt, ...) {
+    if (ctx->last_status != LG_StatusKind_OK) {
+        return;
+    }
+
     ctx->err_msg_len = 0;
+    ctx->last_status = status;
+
     lg_writer w = {
         .ctx = (void*)ctx,
         .write = lg_report_error_write,
     };
+
     va_list ap;
     va_start(ap, fmt);
-    LG_StatusKind _ = lg_vprintf(&w, fmt, ap);
-    (void)_;
+    LG_StatusKind vprintf_status = lg_vprintf(&w, fmt, ap);
+    (void)vprintf_status;
     va_end(ap);
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+/// 
+/// Bottom-level internal expression building API
+///
+////////////////////////////////////////////////////////////////////////////////
+
+typedef struct
+LG_AppendOpOptions {
+    LG_Symbol x0_logical;
+    LG_Symbol x1_logical;
+
+    LG_StridedDesc x0_physical;
+    LG_StridedDesc x1_physical;
+
+    LG_ExprNodeMeta meta;
+} LG_AppendOpOptions;
+
+#define lg_append_op(ctx, opcode, ...) lg_append_op_((ctx), (opcode), (LG_AppendOpOptions){__VA_ARGS__})
+
+LG_Symbol 
+lg_append_op_(
+    LG_CompilationContext *ctx,
+    LG_Opcode opcode,
+    LG_AppendOpOptions opts
+) {
+    LG_ExprNode node = (LG_ExprNode){
+        .opcode = opcode,
+        .x0_logical = opts.x0_logical,
+        .x1_logical = opts.x1_logical,
+
+        .x0_physical = opts.x0_physical,
+        .x1_physical = opts.x1_physical,
+
+        .meta_as = opts.meta,
+    };
+
+    // Allocate a new symbol in the table
+    LG_Symbol y;
+    {
+        if (lg_opcode_creates_symbol(opcode)) {
+            const size_t id = ctx->next_symbol_id;
+            ctx->next_symbol_id++;
+
+            size_t symtab_idx;
+            bool was_occupied;
+            LG_StatusKind status = lg_symtab_upsert(&ctx->symtab, &symtab_idx, &was_occupied, id);
+            if (status != LG_StatusKind_OK) {
+                if (status == LG_StatusKind_Overflow) {
+                    lg_report_error(ctx, status, lg_str8_lit("failed to insert into the symbol table; there probably wasn't enough space allocated for it"));
+                } else {
+                    lg_report_error(ctx, status, lg_str8_lit("failed to allocate a symbol in the symbol table"));
+                }
+                return LG_NIL_SYMBOL;
+            }
+            lg_assert(!was_occupied);
+
+            y = (LG_Symbol){ .id = id };
+
+            // In a source operation, the input == the output
+            // @bugs revisit this invariant if the correctness of source operations is causing trouble
+            if (opcode == LG_Opcode_Source) {
+                ctx->symtab.descs[symtab_idx] = opts.x0_physical;
+                node.x0_logical = y;
+            }
+        } else {
+            y = LG_NIL_SYMBOL;
+        }
+
+        node.y_logical = y;
+    }
+
+    // Append to the expr
+    {
+        if (ctx->expr->nodes_len >= ctx->expr->nodes_cap) {
+            lg_report_error(ctx, LG_StatusKind_Overflow, lg_str8_lit("overflowed the expr at index %{u64}"), ctx->expr->nodes_len);
+            return LG_NIL_SYMBOL;
+        }
+
+        size_t next_idx = ctx->expr->nodes_len;
+        ctx->expr->nodes_len += 1;
+        ctx->expr->nodes[next_idx] = node;
+    }
+
+    return y;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// Buffer table operations
+///
+////////////////////////////////////////////////////////////////////////////////
 
 LG_StatusKind
 lg_buftab_init(
@@ -129,43 +213,36 @@ lg_buftab_update(LG_BufferTable *buftab, uint32_t id, LG_BufferTableEntry new_en
     return LG_StatusKind_OK;
 }
 
-LG_StatusKind 
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// Public expression building API
+///
+////////////////////////////////////////////////////////////////////////////////
+
+LG_Symbol 
 lg_declare_source(
     LG_CompilationContext *ctx,
-    LG_Symbol *out_symbol,
     LG_StridedDesc physical_desc,
     uint32_t buf_id
 ) {
-    if (out_symbol == NULL) {
-        return LG_StatusKind_InvalidArgument;
-    }
-
     LG_StatusKind status = lg_buftab_get(&ctx->expr->buftab, NULL, buf_id);
     if (status != LG_StatusKind_OK) {
-        return status;
+        if (status == LG_StatusKind_NotFound) {
+            lg_report_error(ctx, status, lg_str8_lit("attempt to declare source symbol for an invalid buffer id %{u64}"), buf_id);
+        } else {
+            lg_report_error(ctx, status, lg_str8_lit("failed to get buffer id for source symbol"));
+        }
+        return LG_NIL_SYMBOL;
     }
 
-    LG_Symbol sym;
-    status = lg_create_symbol(ctx, &sym);
-    if (status != LG_StatusKind_OK) {
-        return status;
-    }
+    LG_Symbol y = lg_append_op(ctx, LG_Opcode_Source, .x0_physical = physical_desc);
 
-    status = lg_expr_append_node(ctx->expr, (LG_ExprNode){
-        .opcode = LG_Opcode_Source,
-        .x0_logical = sym,
-        .x0_physical = physical_desc,
-    });
-    if (status != LG_StatusKind_OK) {
-        return status;
-    }
-
-    *out_symbol = sym;
-
-    return LG_StatusKind_OK;
+    return y;
 }
 
-LG_StatusKind 
+LG_Symbol
 lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
     for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
         if (
@@ -174,17 +251,19 @@ lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
             ctx->expr->nodes[i].x1_logical.id == sym.id 
         ) {
             if (ctx->expr->nodes[i].opcode == LG_Opcode_Sink) {
-                return LG_StatusKind_Duplicate;
+                lg_report_error(ctx, LG_StatusKind_Duplicate, lg_str8_lit("attempted to create multiple sink declarations for the same symbol %{u64}"), sym.id);
+                return LG_NIL_SYMBOL;
             }
-            LG_StatusKind status = lg_expr_append_node(ctx->expr, (LG_ExprNode){
-                .opcode = LG_Opcode_Sink,
-                .x0_logical = sym,
-            });
-            return status;
+
+            lg_append_op(ctx, LG_Opcode_Sink, .x0_logical = sym);
+
+            return LG_NIL_SYMBOL;
         }
     }
 
-    return LG_StatusKind_NotFound;
+    lg_report_error(ctx, LG_StatusKind_NotFound, lg_str8_lit("attempted to declare invalid symbol %{u64} as sink"), sym.id);
+
+    return LG_NIL_SYMBOL;
 }
 
 LG_StatusKind 
@@ -237,69 +316,38 @@ found:;
     return LG_StatusKind_OK;
 }
 
-LG_StatusKind 
-lg_append_nop(LG_Expr *expr, LG_Symbol x) {
-    return lg_expr_append_node(expr, (LG_ExprNode){
-        .opcode = LG_Opcode_NOP,
-        .x0_logical = x,
-    });
-}
-
-LG_StatusKind 
+LG_Symbol 
 lg_append_add(
     LG_CompilationContext *ctx,
-    LG_Symbol *y,
     const LG_Symbol x0,
     const LG_Symbol x1
 ) {
-    LG_StatusKind status;
-    LG_Symbol y_;
-    status = lg_create_symbol(ctx, &y_);
-    if (status != LG_StatusKind_OK) {
-        return status;
-    }
-    status = lg_expr_append_node(ctx->expr, (LG_ExprNode){
-        .opcode = LG_Opcode_Add,   
-        .y_logical = y_,
-        .x0_logical = x0,
-        .x1_logical = x1,
-    });
-    if (status != LG_StatusKind_OK) {
-        return status;
-    }
-    *y = y_;
-    return LG_StatusKind_OK;
+    LG_Symbol y = lg_append_op(ctx, LG_Opcode_Add, .x0_logical = x0, .x1_logical = x1);
+    return y;
 }
 
-LG_StatusKind 
+LG_Symbol 
 lg_append_contract(
     LG_CompilationContext *ctx,
-    LG_Symbol *y,
     LG_Symbol x0,
     LG_Symbol x1,
     size_t n_contracted_axes, 
     size_t n_batch_axes
 ) {
-    LG_StatusKind status;
-    LG_Symbol y_;
-    status = lg_create_symbol(ctx, &y_);
-    if (status != LG_StatusKind_OK) {
-        return status;
-    }
-    status = lg_expr_append_node(ctx->expr, (LG_ExprNode){
-        .opcode = LG_Opcode_Contract,   
-        .y_logical = y_,
-        .x0_logical = x0,
-        .x1_logical = x1,
-        .meta_as.contract.n_contracted_axes = n_contracted_axes,
-        .meta_as.contract.n_batch_axes = n_batch_axes,
+    LG_Symbol y = lg_append_op(ctx, LG_Opcode_Contract, .x0_logical = x0, .x1_logical = x1, .meta = (LG_ExprNodeMeta){
+        .contract.n_contracted_axes = n_contracted_axes,
+        .contract.n_batch_axes = n_batch_axes,
     });
-    if (status != LG_StatusKind_OK) {
-        return status;
-    }
-    *y = y_;
-    return LG_StatusKind_OK;
+    return y;
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// Compiler passes
+///
+////////////////////////////////////////////////////////////////////////////////
 
 LG_StatusKind 
 lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
@@ -427,7 +475,6 @@ lg_pass_infer_dims(LG_CompilationContext *ctx) {
             lg_unreachable();
             continue;
 
-        case LG_Opcode_NOP:
         case LG_Opcode_Sink:
             continue;
 
@@ -488,9 +535,6 @@ lg_pass_infer_dims(LG_CompilationContext *ctx) {
 void 
 lg_pass_assign_layouts(LG_CompilationContext *ctx, LG_LayoutKind layout, size_t unit_align) {
     for (size_t i_node = 0; i_node < ctx->expr->nodes_len; i_node++) {
-        if (ctx->expr->nodes[i_node].opcode == LG_Opcode_NOP) {
-            continue;
-        }
         LG_StridedDesc *const descs[3] = {
             &ctx->expr->nodes[i_node].y_physical,
             &ctx->expr->nodes[i_node].x0_physical,
@@ -853,7 +897,6 @@ lg_pass_decorate_with_maps(LG_CompilationContext *ctx) {
         switch (ctx->expr->nodes[i].opcode) {
         case LG_Opcode_Source:
         case LG_Opcode_Sink:
-        case LG_Opcode_NOP:
             continue;
         case LG_Opcode_Add:
         case LG_Opcode_Sub: {
@@ -926,6 +969,10 @@ lg_compile_expr(
     LG_CompilationContext *ctx,
     size_t mem_align
 ) {
+    if (ctx->last_status != LG_StatusKind_OK) {
+        return ctx->last_status;
+    }
+
     LG_StatusKind status;
 
     status = lg_pass_validate_expr_structure(ctx);
