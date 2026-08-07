@@ -100,6 +100,9 @@ LG_NDIter {
     size_t          n_tracked_dims;
 } LG_NDIter;
 
+#define lg_mkshape_count_args(...) (sizeof((uint8_t[]){__VA_ARGS__}))
+#define lg_mkshape(...) (LG_StridedDesc){ .rank = lg_mkshape_count_args(__VA_ARGS__), .dim = {__VA_ARGS__} }
+
 /// Increment the coordinate `axis` on `iter` and update offsets.
 /// 
 /// Does not perform any bounds checking.

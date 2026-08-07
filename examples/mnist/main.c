@@ -57,10 +57,7 @@ int main(void) {
     }
 
     LG_Symbol x = {0};
-    status = lg_declare_source(&ctx, &x, (LG_StridedDesc){
-        .rank = 1,
-        .dim = {28 * 28},
-    }, 100);
+    status = lg_declare_source(&ctx, &x, lg_mkshape(28 * 28), 100);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;
