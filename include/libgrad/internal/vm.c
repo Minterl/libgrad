@@ -326,6 +326,11 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
                 sources_end = true;
             }
 
+            if (ctx->expr->nodes[i].opcode == LG_Opcode_Sink) {
+                lg_assert(sources_end);
+                sinks_begin = true;
+            }
+
             // Sink declarations must also always be followed by a sink
             // declaration or be the end of the ctx->expr
             if (sinks_begin && ctx->expr->nodes[i].opcode != LG_Opcode_Sink) {

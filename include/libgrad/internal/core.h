@@ -64,7 +64,7 @@ LG_StatusKind {
     LG_StatusKind_UnsupportedOpcode,
     LG_StatusKind_OutOfMemory,
     LG_StatusKind_OutOfBounds,
-    LG_StatusKind_UnexpectedNAN,
+    LG_StatusKind_UnexpectedNaN,
 } LG_StatusKind;
 
 typedef enum
