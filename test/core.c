@@ -421,7 +421,7 @@ test_status test_cpu_matmul_batch() {
 //     test_assert(LG_AllocExpr(&allocator, &expr_buf, &expr_fields_bytes_allocated, &expr, 32) == LG_StatusKind_OK, "failed to allocate expr");
 //     test_assert(0 < expr_fields_bytes_allocated, "failed to allocate expr");
 
-//     struct lg_ir_tensor x0 = { .desc.rank = 1, .desc.dim = {4} },
+//     struct lg_tensor x0 = { .desc.rank = 1, .desc.dim = {4} },
 //                         x1 = { .desc.rank = 1, .desc.dim = {4} };
     
 //     test_assert(lg_desc_compute_strides(&x0.desc, LG_LayoutKind_RowMajor, 1) == LG_StatusKind_OK, "failed to lay out tensor");
@@ -434,13 +434,13 @@ test_status test_cpu_matmul_batch() {
 //     x0.data = x0_vals;
 //     x1.data = x1_vals;
     
-//     struct lg_ir_tensor y0;
-//     test_assert(LG_IR_AppendAdd(&expr, &y0, x0, x1) == LG_StatusKind_OK, "failed to append add node");
+//     struct lg_tensor y0;
+//     test_assert(LG_AppendAdd(&expr, &y0, x0, x1) == LG_StatusKind_OK, "failed to append add node");
 
-//     struct lg_ir_tensor y1;
-//     test_assert(LG_IR_AppendAdd(&expr, &y1, y0, x1) == LG_StatusKind_OK, "failed to append add node");
+//     struct lg_tensor y1;
+//     test_assert(LG_AppendAdd(&expr, &y1, y0, x1) == LG_StatusKind_OK, "failed to append add node");
 
-//     test_assert(LG_IR_CompileExpr(&expr) == LG_StatusKind_OK, "failed to compile expr");
+//     test_assert(LG_CompileExpr(&expr) == LG_StatusKind_OK, "failed to compile expr");
 
 //     lg_scalar *data_buf;
 //     size_t expr_data_bytes_allocated = 0;

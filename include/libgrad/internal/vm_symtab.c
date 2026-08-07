@@ -5,35 +5,35 @@
 // TODO: deduplicate this code, and migrate the symbol table over to the new
 // map structure
 
-#define LG_IR__MMH_C1 0xcc9e2d51u
-#define LG_IR__MMH_C2 0x1b873593u
-#define LG_IR__MMH_C3 0x85ebca6bu
-#define LG_IR__MMH_C4 0xc2b2ae35u
-#define LG_IR__MMH_R1 15u
-#define LG_IR__MMH_R2 13u
-#define LG_IR__MMH_M  5u
-#define LG_IR__MMH_N  0xe6546b64u
-#define LG_IR__MMH_S  0u
+#define LG__MMH_C1 0xcc9e2d51u
+#define LG__MMH_C2 0x1b873593u
+#define LG__MMH_C3 0x85ebca6bu
+#define LG__MMH_C4 0xc2b2ae35u
+#define LG__MMH_R1 15u
+#define LG__MMH_R2 13u
+#define LG__MMH_M  5u
+#define LG__MMH_N  0xe6546b64u
+#define LG__MMH_S  0u
 
-#define LG_IR__MMH_ROL(x, width, bits) (((x) << (bits)) | ((x) >> ((width) - (bits))))
+#define LG__MMH_ROL(x, width, bits) (((x) << (bits)) | ((x) >> ((width) - (bits))))
 
 uint32_t 
-lg_ir_murmur_hash(uint32_t kh) {
-    kh = LG_IR__MMH_ROL(kh * LG_IR__MMH_C1, 32, LG_IR__MMH_R1);
-    kh *= LG_IR__MMH_C2;
-    kh = LG_IR__MMH_S ^ kh;
-    kh = LG_IR__MMH_ROL(kh, 32, LG_IR__MMH_R2) * LG_IR__MMH_M + LG_IR__MMH_N;
+lg_murmur_hash(uint32_t kh) {
+    kh = LG__MMH_ROL(kh * LG__MMH_C1, 32, LG__MMH_R1);
+    kh *= LG__MMH_C2;
+    kh = LG__MMH_S ^ kh;
+    kh = LG__MMH_ROL(kh, 32, LG__MMH_R2) * LG__MMH_M + LG__MMH_N;
     kh = kh ^ 4;
     kh = kh ^ (kh >> 16);
-    kh = kh * LG_IR__MMH_C3;
+    kh = kh * LG__MMH_C3;
     kh = kh ^ (kh >> 13);
-    kh = kh * LG_IR__MMH_C4;
+    kh = kh * LG__MMH_C4;
     kh = kh ^ (kh >> 16);
     return kh;
 }
 
 LG_StatusKind 
-lg_ir_symtab_init(LG_SymbolTable *table, LG_Allocator *alloc, size_t cap) {
+lg_symtab_init(LG_SymbolTable *table, LG_Allocator *alloc, size_t cap) {
     const size_t align = 16;
 
     const size_t sz_occupied = cap * sizeof(bool);
@@ -81,14 +81,14 @@ lg_ir_symtab_init(LG_SymbolTable *table, LG_Allocator *alloc, size_t cap) {
 }
 
 void 
-lg_ir_symtab_deinit(LG_SymbolTable *table, LG_Allocator *alloc) {
+lg_symtab_deinit(LG_SymbolTable *table, LG_Allocator *alloc) {
     alloc->free(alloc->ctx, table->occupied);
     alloc->free(alloc->ctx, table->descs);
     lg_memzero(table, sizeof(LG_SymbolTable));
 }
 
 LG_StatusKind 
-lg_ir_symtab_upsert(
+lg_symtab_upsert(
     LG_SymbolTable *table,
     size_t *lg_nullable out_idx,
     bool *lg_nullable out_was_occupied,
@@ -98,7 +98,7 @@ lg_ir_symtab_upsert(
         return LG_StatusKind_Overflow;
     }
 
-    const size_t start_idx = (table->table_cap <= 8) ? (symbol_id % table->table_cap) : (lg_ir_murmur_hash(symbol_id) % table->table_cap);
+    const size_t start_idx = (table->table_cap <= 8) ? (symbol_id % table->table_cap) : (lg_murmur_hash(symbol_id) % table->table_cap);
     for (
         size_t i = start_idx, n_visited = 0;
         n_visited < table->table_cap;
@@ -132,14 +132,14 @@ lg_ir_symtab_upsert(
 }
 
 void 
-lg_ir_symtab_iter_init(LG_SymbolTableIter *iter, LG_SymbolTable *symtab) {
+lg_symtab_iter_init(LG_SymbolTableIter *iter, LG_SymbolTable *symtab) {
     lg_assert(symtab != NULL);
     lg_memzero(iter, sizeof(LG_SymbolTable));
     iter->symtab = symtab;
 }
 
 lg_force_inline bool 
-lg_ir_symtab_iter_advance(LG_SymbolTableIter *iter) {
+lg_symtab_iter_advance(LG_SymbolTableIter *iter) {
     for (; iter->last_idx < iter->symtab->table_cap; iter->last_idx++) {
         const size_t i = iter->last_idx;
 
@@ -148,7 +148,7 @@ lg_ir_symtab_iter_advance(LG_SymbolTableIter *iter) {
         }
 
         size_t array_idx = 0;
-        LG_StatusKind status = lg_ir_symtab_upsert(iter->symtab, &array_idx, NULL, iter->symtab->symbol_ids[i]);
+        LG_StatusKind status = lg_symtab_upsert(iter->symtab, &array_idx, NULL, iter->symtab->symbol_ids[i]);
         lg_assert(status == LG_StatusKind_OK);
 
         iter->symbol_id = iter->symtab->symbol_ids[i];

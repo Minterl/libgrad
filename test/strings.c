@@ -9,7 +9,7 @@
 
 #include <stdio.h>
 
-size_t WriteToStdout(void *ctx, const lg_s8 str) {
+size_t write_to_stdout(void *ctx, const lg_str8 str) {
     (void)ctx;
     size_t i = 0;
     for (; i < str.len; i++) {
@@ -19,16 +19,16 @@ size_t WriteToStdout(void *ctx, const lg_s8 str) {
 }
 
 static lg_writer stdout_writer = {
-    .write = WriteToStdout,
+    .write = write_to_stdout,
 };
 
 test_status test_printf() {
-    test_assert(lg_printf(&stdout_writer, lg_s8_lit("asdf: %{i64}\n"), 13) == LG_StatusKind_OK, "int failed to print");
-    test_assert(lg_printf(&stdout_writer, lg_s8_lit("asdf: %{str}\n"), lg_s8_lit("asdfasdf")) == LG_StatusKind_OK, "string failed to print");
-    test_assert(lg_printf(&stdout_writer, lg_s8_lit("asdf: %{cstr}\n"), "asdfasdf") == LG_StatusKind_OK, "cstring failed to print");
-    test_assert(lg_printf(&stdout_writer, lg_s8_lit("asdf: %{cstr\n"), "asdfasdf") == LG_StatusKind_InvalidArgument, "unterminated fmtspec didn't fail");
+    test_assert(lg_printf(&stdout_writer, lg_str8_lit("asdf: %{i64}\n"), 13) == LG_StatusKind_OK, "int failed to print");
+    test_assert(lg_printf(&stdout_writer, lg_str8_lit("asdf: %{str}\n"), lg_str8_lit("asdfasdf")) == LG_StatusKind_OK, "string failed to print");
+    test_assert(lg_printf(&stdout_writer, lg_str8_lit("asdf: %{cstr}\n"), "asdfasdf") == LG_StatusKind_OK, "cstring failed to print");
+    test_assert(lg_printf(&stdout_writer, lg_str8_lit("asdf: %{cstr\n"), "asdfasdf") == LG_StatusKind_InvalidArgument, "unterminated fmtspec didn't fail");
     test_assert(
-        lg_printf(&stdout_writer, lg_s8_lit("asdf: %{i64} %{cstr}\n"), 14, "asdfasdf") == LG_StatusKind_OK,
+        lg_printf(&stdout_writer, lg_str8_lit("asdf: %{i64} %{cstr}\n"), 14, "asdfasdf") == LG_StatusKind_OK,
         "mixed failed to print"
     );
     return TEST_STATUS_OK;

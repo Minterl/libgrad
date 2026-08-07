@@ -29,17 +29,17 @@ int main(void) {
         return status;
     }
 
-    status = lg_ir_buftab_insert(&expr, 100);
+    status = lg_buftab_insert(&expr, 100);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;
     }
-    status = lg_ir_buftab_insert(&expr, 101);
+    status = lg_buftab_insert(&expr, 101);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;
     }
-    status = lg_ir_buftab_insert(&expr, 102);
+    status = lg_buftab_insert(&expr, 102);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;
@@ -50,14 +50,14 @@ int main(void) {
         .expr = &expr,
         .scratch = &allocator,
     };
-    status = lg_ir_symtab_init(&ctx.symtab, &allocator, EXPR_CAP);
+    status = lg_symtab_init(&ctx.symtab, &allocator, EXPR_CAP);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         return status;
     }
 
     LG_Symbol x = {0};
-    status = lg_ir_declare_source(&ctx, &x, (LG_StridedDesc){
+    status = lg_declare_source(&ctx, &x, (LG_StridedDesc){
         .rank = 1,
         .dim = {28 * 28},
     }, 100);
@@ -66,7 +66,7 @@ int main(void) {
         return status;
     }
     LG_Symbol W_0 = {0};
-    status = lg_ir_declare_source(&ctx, &W_0, (LG_StridedDesc){
+    status = lg_declare_source(&ctx, &W_0, (LG_StridedDesc){
         .rank = 2,
         .dim = {128, 28 * 28},
     }, 101);
@@ -75,7 +75,7 @@ int main(void) {
         return status;
     }
     LG_Symbol b_0 = {0};
-    status = lg_ir_declare_source(&ctx, &b_0, (LG_StridedDesc){
+    status = lg_declare_source(&ctx, &b_0, (LG_StridedDesc){
         .rank = 1,
         .dim = {128},
     }, 102);
@@ -85,19 +85,19 @@ int main(void) {
     }
 
     LG_Symbol y_0 = {0};
-    status = lg_ir_append_contract(&ctx, &y_0, W_0, x, 1, 0);
+    status = lg_append_contract(&ctx, &y_0, W_0, x, 1, 0);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         goto out;
     }
     LG_Symbol y_1 = {0};
-    status = lg_ir_append_add(&ctx, &y_1, y_0, b_0);
+    status = lg_append_add(&ctx, &y_1, y_0, b_0);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         goto out;
     }
 
-    status = lg_ir_declare_sink(&ctx,y_1);
+    status = lg_declare_sink(&ctx,y_1);
     if (status != LG_StatusKind_OK) {
         FAILF("status: %d", status);
         goto out;
@@ -112,7 +112,7 @@ int main(void) {
     uint32_t y1_buf_id = 0;
     size_t y1_offset = 0;
     LG_StridedDesc y1_desc = {0};
-    status = lg_ir_get_sink_location(
+    status = lg_get_sink_location(
         &y1_buf_id,
         &y1_offset,
         &y1_desc,

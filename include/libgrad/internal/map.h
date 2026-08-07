@@ -30,7 +30,7 @@ LG_MapIter {
 
     /// This treats the map fingerprints array as a matrix in R^2
     /// with dims {8 x `iter.map.cap` / 8} i.e there are 8 fingerprints per
-    /// u64 in the map self.
+    /// u64 in the map key list.
     size_t matrix_coord[2];
 } LG_MapIter;
 

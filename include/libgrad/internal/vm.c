@@ -8,14 +8,14 @@
 #include <stdint.h>
 
 LG_StatusKind 
-lg_ir_create_symbol(LG_CompilationContext *ctx, LG_Symbol *out) {
+lg_create_symbol(LG_CompilationContext *ctx, LG_Symbol *out) {
     const size_t id = ctx->next_symbol_id;
     ctx->next_symbol_id++;
     *out = (LG_Symbol){
         .id = id,
     };
     bool was_occupied;
-    LG_StatusKind status = lg_ir_symtab_upsert(&ctx->symtab, NULL, &was_occupied, id);
+    LG_StatusKind status = lg_symtab_upsert(&ctx->symtab, NULL, &was_occupied, id);
     if (status != LG_StatusKind_OK) {
         return status;
     }
@@ -24,7 +24,7 @@ lg_ir_create_symbol(LG_CompilationContext *ctx, LG_Symbol *out) {
 }
 
 LG_StatusKind 
-lg_ir_expr_append_node(
+lg_expr_append_node(
     LG_Expr *expr,
     const LG_ExprNode node 
 ) {
@@ -38,10 +38,10 @@ lg_ir_expr_append_node(
 }
 
 size_t 
-lg_ir_report_error_write(void *ctx_, lg_str8 str) {
+lg_report_error_write(void *ctx_, lg_str8 str) {
     LG_CompilationContext *ctx = ctx_;
     size_t bytes_written = lg_strcpy((lg_str8){
-        .len = LG_IR_MAX_ERR_LEN - ctx->err_msg_len,
+        .len = LG_MAX_ERR_LEN - ctx->err_msg_len,
         .p = ctx->err_msg_backing_buf + ctx->err_msg_len,
     }, str);
     ctx->err_msg_len += bytes_written;
@@ -50,11 +50,11 @@ lg_ir_report_error_write(void *ctx_, lg_str8 str) {
 
 // Reports error on a best-effort basis, filling the buffer as much as possible.
 void 
-lg_ir_report_error(LG_CompilationContext *ctx, lg_str8 fmt, ...) {
+lg_report_error(LG_CompilationContext *ctx, lg_str8 fmt, ...) {
     ctx->err_msg_len = 0;
     lg_writer w = {
         .ctx = (void*)ctx,
-        .write = lg_ir_report_error_write,
+        .write = lg_report_error_write,
     };
     va_list ap;
     va_start(ap, fmt);
@@ -64,7 +64,7 @@ lg_ir_report_error(LG_CompilationContext *ctx, lg_str8 fmt, ...) {
 }
 
 LG_StatusKind 
-lg_ir_buftab_insert(LG_Expr *expr, uint32_t id) {
+lg_buftab_insert(LG_Expr *expr, uint32_t id) {
     if (expr->buf_table_len >= expr->buf_table_cap) {
         return LG_StatusKind_Overflow;
     }
@@ -81,7 +81,7 @@ lg_ir_buftab_insert(LG_Expr *expr, uint32_t id) {
 }
 
 LG_StatusKind 
-lg_ir_buftab_get_idx(const LG_Expr *expr, size_t *lg_nullable out_idx, uint32_t id) {
+lg_buftab_get_idx(const LG_Expr *expr, size_t *lg_nullable out_idx, uint32_t id) {
     for (size_t i = 0; i < expr->buf_table_len; i++) 
     {
         if (expr->buf_table_ids[i] == id) {
@@ -95,7 +95,7 @@ lg_ir_buftab_get_idx(const LG_Expr *expr, size_t *lg_nullable out_idx, uint32_t 
 }
 
 LG_StatusKind 
-lg_ir_declare_source(
+lg_declare_source(
     LG_CompilationContext *ctx,
     LG_Symbol *out_symbol,
     LG_StridedDesc physical_desc,
@@ -106,18 +106,18 @@ lg_ir_declare_source(
     }
 
     size_t buf_idx = 0;
-    LG_StatusKind status = lg_ir_buftab_get_idx(ctx->expr, &buf_idx, buf_id);
+    LG_StatusKind status = lg_buftab_get_idx(ctx->expr, &buf_idx, buf_id);
     if (status != LG_StatusKind_OK) {
         return status;
     }
 
     LG_Symbol sym;
-    status = lg_ir_create_symbol(ctx, &sym);
+    status = lg_create_symbol(ctx, &sym);
     if (status != LG_StatusKind_OK) {
         return status;
     }
 
-    status = lg_ir_expr_append_node(ctx->expr, (LG_ExprNode){
+    status = lg_expr_append_node(ctx->expr, (LG_ExprNode){
         .opcode = LG_Opcode_Source,
         .x0_logical = sym,
         .x0_physical = physical_desc,
@@ -132,7 +132,7 @@ lg_ir_declare_source(
 }
 
 LG_StatusKind 
-lg_ir_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
+lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
     for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
         if (
             ctx->expr->nodes[i].y_logical.id == sym.id ||
@@ -142,7 +142,7 @@ lg_ir_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
             if (ctx->expr->nodes[i].opcode == LG_Opcode_Sink) {
                 return LG_StatusKind_Duplicate;
             }
-            LG_StatusKind status = lg_ir_expr_append_node(ctx->expr, (LG_ExprNode){
+            LG_StatusKind status = lg_expr_append_node(ctx->expr, (LG_ExprNode){
                 .opcode = LG_Opcode_Sink,
                 .x0_logical = sym,
             });
@@ -154,7 +154,7 @@ lg_ir_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
 }
 
 LG_StatusKind 
-lg_ir_get_sink_location(
+lg_get_sink_location(
     uint32_t *lg_nullable out_buf_id,
     size_t *lg_nullable out_offset,
     LG_StridedDesc *lg_nullable out_desc,
@@ -205,15 +205,15 @@ found:;
 }
 
 LG_StatusKind 
-lg_ir_append_nop(LG_Expr *expr, LG_Symbol x) {
-    return lg_ir_expr_append_node(expr, (LG_ExprNode){
+lg_append_nop(LG_Expr *expr, LG_Symbol x) {
+    return lg_expr_append_node(expr, (LG_ExprNode){
         .opcode = LG_Opcode_NOP,
         .x0_logical = x,
     });
 }
 
 LG_StatusKind 
-lg_ir_append_add(
+lg_append_add(
     LG_CompilationContext *ctx,
     LG_Symbol *y,
     const LG_Symbol x0,
@@ -221,11 +221,11 @@ lg_ir_append_add(
 ) {
     LG_StatusKind status;
     LG_Symbol y_;
-    status = lg_ir_create_symbol(ctx, &y_);
+    status = lg_create_symbol(ctx, &y_);
     if (status != LG_StatusKind_OK) {
         return status;
     }
-    status = lg_ir_expr_append_node(ctx->expr, (LG_ExprNode){
+    status = lg_expr_append_node(ctx->expr, (LG_ExprNode){
         .opcode = LG_Opcode_Add,   
         .y_logical = y_,
         .x0_logical = x0,
@@ -239,7 +239,7 @@ lg_ir_append_add(
 }
 
 LG_StatusKind 
-lg_ir_append_contract(
+lg_append_contract(
     LG_CompilationContext *ctx,
     LG_Symbol *y,
     LG_Symbol x0,
@@ -249,11 +249,11 @@ lg_ir_append_contract(
 ) {
     LG_StatusKind status;
     LG_Symbol y_;
-    status = lg_ir_create_symbol(ctx, &y_);
+    status = lg_create_symbol(ctx, &y_);
     if (status != LG_StatusKind_OK) {
         return status;
     }
-    status = lg_ir_expr_append_node(ctx->expr, (LG_ExprNode){
+    status = lg_expr_append_node(ctx->expr, (LG_ExprNode){
         .opcode = LG_Opcode_Contract,   
         .y_logical = y_,
         .x0_logical = x0,
@@ -269,7 +269,7 @@ lg_ir_append_contract(
 }
 
 LG_StatusKind 
-lg_ir_validate_expr_structure(LG_CompilationContext *ctx) {
+lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
     LG_StatusKind status = LG_StatusKind_OK;
     LG_ScratchWaypoint *waypoint = lg_scratch_acquire(ctx->scratch);
 
@@ -356,13 +356,13 @@ out_release_scratch:
 }
 
 LG_StatusKind 
-lg_ir_infer_dims(LG_CompilationContext *ctx) {
+lg_pass_infer_dims(LG_CompilationContext *ctx) {
     LG_StatusKind status = LG_StatusKind_OK;
 
     for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
         if (ctx->expr->nodes[i].opcode == LG_Opcode_Source) {
             size_t symtab_idx;
-            status = lg_ir_symtab_upsert(&ctx->symtab, &symtab_idx, NULL, ctx->expr->nodes[i].x0_logical.id);
+            status = lg_symtab_upsert(&ctx->symtab, &symtab_idx, NULL, ctx->expr->nodes[i].x0_logical.id);
             lg_assert(status == LG_StatusKind_OK);
             ctx->symtab.descs[symtab_idx] = ctx->expr->nodes[i].x0_physical;
             continue;
@@ -371,11 +371,11 @@ lg_ir_infer_dims(LG_CompilationContext *ctx) {
         bool was_occupied = false;
         size_t x0_symtab_idx = 0;
         size_t x1_symtab_idx = 0;
-        status = lg_ir_symtab_upsert(&ctx->symtab, &x0_symtab_idx, &was_occupied, ctx->expr->nodes[i].x0_logical.id);
+        status = lg_symtab_upsert(&ctx->symtab, &x0_symtab_idx, &was_occupied, ctx->expr->nodes[i].x0_logical.id);
         lg_assert(status == LG_StatusKind_OK);
         lg_assert(was_occupied);
         if (lg_opcode_is_binary(ctx->expr->nodes[i].opcode)) {
-            status = lg_ir_symtab_upsert(&ctx->symtab, &x1_symtab_idx, &was_occupied, ctx->expr->nodes[i].x1_logical.id);
+            status = lg_symtab_upsert(&ctx->symtab, &x1_symtab_idx, &was_occupied, ctx->expr->nodes[i].x1_logical.id);
             lg_assert(status == LG_StatusKind_OK);
             lg_assert(was_occupied);
         }
@@ -436,7 +436,7 @@ lg_ir_infer_dims(LG_CompilationContext *ctx) {
         }
 
         size_t y_symtab_idx = 0;
-        status = lg_ir_symtab_upsert(&ctx->symtab, &y_symtab_idx, NULL, ctx->expr->nodes[i].y_logical.id);
+        status = lg_symtab_upsert(&ctx->symtab, &y_symtab_idx, NULL, ctx->expr->nodes[i].y_logical.id);
         lg_assert(status == LG_StatusKind_OK);
         ctx->symtab.descs[y_symtab_idx].rank = rank;
         for (size_t j = 0; j < LG_MAX_RANK; j++) {
@@ -448,7 +448,7 @@ lg_ir_infer_dims(LG_CompilationContext *ctx) {
 }
 
 void 
-lg_ir_assign_layouts(LG_CompilationContext *ctx, LG_LayoutKind layout, size_t unit_align) {
+lg_pass_assign_layouts(LG_CompilationContext *ctx, LG_LayoutKind layout, size_t unit_align) {
     for (size_t i_node = 0; i_node < ctx->expr->nodes_len; i_node++) {
         if (ctx->expr->nodes[i_node].opcode == LG_Opcode_NOP) {
             continue;
@@ -507,7 +507,7 @@ lg_wide_and(size_t len, uint64_t *restrict inout_bitset, uint64_t *b) {
 }
 
 LG_StatusKind 
-lg_ir_bufferize(
+lg_pass_bufferize(
     LG_CompilationContext *ctx,
     uint32_t buf_id,
     size_t align
@@ -540,8 +540,8 @@ lg_ir_bufferize(
     // Construct the size table
     {
         LG_SymbolTableIter iter = {0};
-        lg_ir_symtab_iter_init(&iter, &ctx->symtab);
-        while (lg_ir_symtab_iter_advance(&iter)) {
+        lg_symtab_iter_init(&iter, &ctx->symtab);
+        while (lg_symtab_iter_advance(&iter)) {
             if (ctx->symtab.buffer_ids[iter.array_idx] != buf_id) {
                 continue;
             }
@@ -603,19 +603,19 @@ lg_ir_bufferize(
             // When a symbol is used for the last time, it dies, meaning it will be live from now until it 
             // is declared (speaking in the reverse-temporal sense)
             size_t x0_idx = 0;
-            status = lg_ir_symtab_upsert(&ctx->symtab, &x0_idx, NULL, ctx->expr->nodes[i_time - 1].x0_logical.id);
+            status = lg_symtab_upsert(&ctx->symtab, &x0_idx, NULL, ctx->expr->nodes[i_time - 1].x0_logical.id);
             lg_assert(status == LG_StatusKind_OK);
             lg_wide_set_bit(row_elements, live_set, true, x0_idx);
 
             size_t x1_idx = 0;
-            status = lg_ir_symtab_upsert(&ctx->symtab, &x1_idx, NULL, ctx->expr->nodes[i_time - 1].x1_logical.id);
+            status = lg_symtab_upsert(&ctx->symtab, &x1_idx, NULL, ctx->expr->nodes[i_time - 1].x1_logical.id);
             lg_assert(status == LG_StatusKind_OK);
             lg_wide_set_bit(row_elements, live_set, true, x1_idx);
 
             // After the live set has been updated, we update the matrix
             LG_SymbolTableIter iter = {0};
-            lg_ir_symtab_iter_init(&iter, &ctx->symtab);
-            while (lg_ir_symtab_iter_advance(&iter)) {
+            lg_symtab_iter_init(&iter, &ctx->symtab);
+            while (lg_symtab_iter_advance(&iter)) {
                 bool is_live = lg_wide_get_bit(row_elements, live_set, iter.array_idx);
                 if (is_live) {
                     lg_wide_or(row_elements, adj_matrix + (row_elements * iter.array_idx), live_set);
@@ -626,7 +626,7 @@ lg_ir_bufferize(
             // We do not kill the value until *after* updating the adjacency matrix b/c
             // the output needs a valid buffer during the operation.
             size_t y_idx = 0;
-            status = lg_ir_symtab_upsert(&ctx->symtab, &y_idx, NULL, ctx->expr->nodes[i_time - 1].y_logical.id);
+            status = lg_symtab_upsert(&ctx->symtab, &y_idx, NULL, ctx->expr->nodes[i_time - 1].y_logical.id);
             lg_assert(status == LG_StatusKind_OK);
             lg_wide_set_bit(row_elements, live_set, false, y_idx);
         }
@@ -671,7 +671,7 @@ lg_ir_bufferize(
         const size_t i = size_table_sorted_map[i_unsorted];
         SizeTable *const this_symbol = &size_table[i];
 
-        LG__MEMCPY(assigned_and_live_set, assigned_set, row_elements * sizeof(uint64_t));
+        lg_memcpy(assigned_and_live_set, assigned_set, row_elements * sizeof(uint64_t));
         lg_wide_and(row_elements, assigned_and_live_set, adj_matrix + (row_elements * i));
 
         taken_ranges_len = 0;
@@ -750,7 +750,7 @@ lg_ir_bufferize(
     for (size_t i = 0; i < size_table_len; i++) {
         size_t idx;
         bool occupied;
-        status = lg_ir_symtab_upsert(&ctx->symtab, &idx, &occupied, size_table[i].symbol_id);
+        status = lg_symtab_upsert(&ctx->symtab, &idx, &occupied, size_table[i].symbol_id);
         lg_assert(status == LG_StatusKind_OK);
         lg_assert(occupied);
 
@@ -758,7 +758,7 @@ lg_ir_bufferize(
     }
 
     size_t buftab_idx;
-    status = lg_ir_buftab_get_idx(ctx->expr, &buftab_idx, buf_id);
+    status = lg_buftab_get_idx(ctx->expr, &buftab_idx, buf_id);
     lg_assert(status == LG_StatusKind_OK); // We should only ever be passed valid buffer ids.
     ctx->expr->buf_table_bytes_required[buftab_idx] = total_size_bytes;
 
@@ -768,7 +768,7 @@ out_release_scratch:
 }
 
 void 
-lg_ir_decorate_nodes(LG_CompilationContext *ctx) {
+lg_pass_decorate_nodes(LG_CompilationContext *ctx) {
     LG_StatusKind status;
 
     for (size_t i_node = 0; i_node < ctx->expr->nodes_len; i_node++) {
@@ -796,7 +796,7 @@ lg_ir_decorate_nodes(LG_CompilationContext *ctx) {
         for (size_t i_sym = 0; i_sym < 3; i_sym++) {
             size_t symtab_array_idx;
             bool was_occupied;
-            status = lg_ir_symtab_upsert(&ctx->symtab, &symtab_array_idx, &was_occupied, symbol_ids[i_sym]);
+            status = lg_symtab_upsert(&ctx->symtab, &symtab_array_idx, &was_occupied, symbol_ids[i_sym]);
             lg_assert(status == LG_StatusKind_OK);
             lg_assert(was_occupied);
 
@@ -808,7 +808,7 @@ lg_ir_decorate_nodes(LG_CompilationContext *ctx) {
 }
 
 void 
-lg_ir_decorate_with_maps(LG_CompilationContext *ctx) {
+lg_pass_decorate_with_maps(LG_CompilationContext *ctx) {
     for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
         switch (ctx->expr->nodes[i].opcode) {
         case LG_Opcode_Source:
@@ -850,7 +850,7 @@ lg_ir_decorate_with_maps(LG_CompilationContext *ctx) {
 }
 
 LG_StatusKind 
-lg_ir_sort_axes(LG_Expr *expr) {
+lg_pass_sort_axes(LG_Expr *expr) {
     LG_StatusKind status;
     for (size_t i = 0; i < expr->nodes_len; i++) {
         status = lg_sort_axes((LG_StridedDesc*[]){
@@ -866,7 +866,7 @@ lg_ir_sort_axes(LG_Expr *expr) {
 }
 
 LG_StatusKind 
-lg_ir_pass_coalesce_axes(LG_Expr *expr) {
+lg_pass_coalesce_axes(LG_Expr *expr) {
     LG_StatusKind status;
     for (size_t i = 0; i < expr->nodes_len; i++) {
         status = lg_coalesce_axes((LG_StridedDesc*[]){
@@ -887,33 +887,25 @@ lg_compile_expr(
     size_t mem_align
 ) {
     LG_StatusKind status;
-    status = lg_ir_validate_expr_structure(ctx);
+    status = lg_pass_validate_expr_structure(ctx);
     if (status != LG_StatusKind_OK) {
         return status;
     }
-    status = lg_ir_infer_dims(ctx);
+    status = lg_pass_infer_dims(ctx);
     if (status != LG_StatusKind_OK) {
         return status;
     }
-    lg_ir_assign_layouts(ctx, LG_LayoutKind_RowMajor /* TODO */, mem_align);
+    lg_pass_assign_layouts(ctx, LG_LayoutKind_RowMajor /* TODO */, mem_align);
     for (size_t i = 0; i <ctx->expr->buf_table_len; i++) {
         const uint32_t buf_id = ctx->expr->buf_table_ids[i];
-        status = lg_ir_bufferize(ctx, buf_id, mem_align);
+        status = lg_pass_bufferize(ctx, buf_id, mem_align);
         if (status != LG_StatusKind_OK) {
             return status;
         }
     }
     // TODO: these functions really need better names
-    lg_ir_decorate_nodes(ctx);
-    lg_ir_decorate_with_maps(ctx);
-    // status = LG_IR__SortAxes(expr);
-    // if (status != LG_StatusKind_OK) {
-    //     return status;
-    // }
-    // status = LG_IR__CoalesceAxes(expr);
-    // if (status != LG_StatusKind_OK) {
-    //     return status;
-    // }
+    lg_pass_decorate_nodes(ctx);
+    lg_pass_decorate_with_maps(ctx);
     return LG_StatusKind_OK;
 }
 

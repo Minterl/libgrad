@@ -33,13 +33,13 @@ LG_SymbolTableIter {
 } LG_SymbolTableIter;
 
 LG_StatusKind 
-lg_ir_symtab_init(LG_SymbolTable *table, LG_Allocator *alloc, size_t cap);
+lg_symtab_init(LG_SymbolTable *table, LG_Allocator *alloc, size_t cap);
 
 void 
-lg_ir_symtab_deinit(LG_SymbolTable *table, LG_Allocator *alloc);
+lg_symtab_deinit(LG_SymbolTable *table, LG_Allocator *alloc);
 
 LG_StatusKind 
-lg_ir_symtab_upsert(
+lg_symtab_upsert(
     LG_SymbolTable *table,
     size_t *lg_nullable out_idx,
     bool *lg_nullable out_was_occupied,
@@ -47,10 +47,10 @@ lg_ir_symtab_upsert(
 );
 
 void 
-lg_ir_symtab_iter_init(LG_SymbolTableIter *iter, LG_SymbolTable *symtab);
+lg_symtab_iter_init(LG_SymbolTableIter *iter, LG_SymbolTable *symtab);
 
 /// Returns false once there are no more entries to iterate.
 lg_force_inline bool 
-lg_ir_symtab_iter_advance(LG_SymbolTableIter *iter);
+lg_symtab_iter_advance(LG_SymbolTableIter *iter);
 
 #endif // LG_VM_SYMTAB_H_

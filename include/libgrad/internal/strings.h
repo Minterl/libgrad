@@ -14,7 +14,7 @@ lg_str8 {
 } lg_str8;
 
 // We use sizeof(str) - 1 to trim the null terminator
-#define lg_s8_lit(str) ((lg_s8){ .len = sizeof(str) - 1, .p = (uint8_t*)(str) })
+#define lg_str8_lit(str) ((lg_str8){ .len = sizeof(str) - 1, .p = (uint8_t*)(str) })
 
 typedef struct
 lg_writer {

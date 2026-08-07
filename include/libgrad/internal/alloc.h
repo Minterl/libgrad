@@ -6,9 +6,9 @@
 #define lg_align_up(x, align) (((x) + (align) - 1) & ~((align) - 1))
 
 #if defined(__has_builtin) && __has_builtin(__builtin_memcpy)
-#   define LG__MEMCPY(dest, src, size) __builtin_memcpy(dest, src, size)
+#   define lg_memcpy(dest, src, size) __builtin_memcpy(dest, src, size)
 #else
-#   define LG__MEMCPY(dest, src, size) do { \
+#   define lg_memcpy(dest, src, size) do { \
          for(size_t LG__MACRO_ITER__ = 0; LG__MACRO_ITER__ < (size); LG__MACRO_ITER__++) { \
              ((uint8_t*)(dest))[LG__MACRO_ITER__] = ((uint8_t*)(src))[LG__MACRO_ITER__] ; \
          } \

@@ -6,7 +6,7 @@
 #include <libgrad/internal/vm_symtab.h>
 #include <libgrad/internal/strings.h>
 
-#define LG_IR_MAX_ERR_LEN 1024
+#define LG_MAX_ERR_LEN 1024
 
 /// Discriminator for an operation.
 ///
@@ -57,7 +57,7 @@ _Static_assert(LG_LAST_UNARY_OP + 1 == LG_FIRST_BINARY_OP, "opcodes must be cont
 
 typedef struct
 LG_Symbol {
-    uint32_t  id;
+    uint32_t id;
 } LG_Symbol;
 
 /// An IR node in an expr.
@@ -106,17 +106,17 @@ LG_Expr {
 typedef struct
 LG_CompilationContext {
     LG_Expr              *expr;
-    LG_Allocator  *scratch;
-    LG_SymbolTable   symtab;
+    LG_Allocator         *scratch;
+    LG_SymbolTable        symtab;
 
     size_t                err_msg_len;
-    uint8_t               err_msg_backing_buf[LG_IR_MAX_ERR_LEN];
+    uint8_t               err_msg_backing_buf[LG_MAX_ERR_LEN];
 
     uint32_t              next_symbol_id;
 } LG_CompilationContext;
 
 LG_StatusKind 
-lg_ir_declare_source(
+lg_declare_source(
     LG_CompilationContext *ctx,
     LG_Symbol *out_symbol,
     LG_StridedDesc physical_desc,
@@ -124,10 +124,10 @@ lg_ir_declare_source(
 );
 
 LG_StatusKind 
-lg_ir_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym);
+lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym);
 
 LG_StatusKind 
-lg_ir_get_sink_location(
+lg_get_sink_location(
     uint32_t *lg_nullable out_buf_id,
     size_t *lg_nullable out_offset,
     LG_StridedDesc *lg_nullable out_desc,
@@ -136,10 +136,10 @@ lg_ir_get_sink_location(
 );
 
 LG_StatusKind 
-lg_ir_buftab_insert(LG_Expr *expr, uint32_t id);
+lg_buftab_insert(LG_Expr *expr, uint32_t id);
 
 LG_StatusKind 
-lg_ir_buftab_get_idx(const LG_Expr *expr, size_t *lg_nullable out_idx, uint32_t id);
+lg_buftab_get_idx(const LG_Expr *expr, size_t *lg_nullable out_idx, uint32_t id);
 
 /// Gets the last physical location of the tensor `x` and populates
 /// its `data` pointer if found.
@@ -150,19 +150,19 @@ lg_ir_buftab_get_idx(const LG_Expr *expr, size_t *lg_nullable out_idx, uint32_t 
 /// If you want to make sure that is the case, append a NOP using `lgvm_Nop` to 
 /// the end of the expr.
 LG_StatusKind 
-lg_ir_append_nop(LG_Expr *expr, LG_Symbol x);
+lg_append_nop(LG_Expr *expr, LG_Symbol x);
 
 LG_StatusKind 
-lg_ir_append_add(
+lg_append_add(
     LG_CompilationContext *ctx,
     LG_Symbol *y,
     const LG_Symbol x0,
     const LG_Symbol x1
 );
 LG_StatusKind 
-lg_ir_append_sub(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+lg_append_sub(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
 LG_StatusKind 
-lg_ir_append_contract(
+lg_append_contract(
     LG_CompilationContext *ctx,
     LG_Symbol *y,
     LG_Symbol x0,
@@ -171,25 +171,25 @@ lg_ir_append_contract(
     size_t n_batch_axes
 );
 LG_StatusKind 
-lg_ir_append_hadamard(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+lg_append_hadamard(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
 
 LG_StatusKind 
-lg_ir_append_mse_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+lg_append_mse_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
 LG_StatusKind 
-lg_ir_append_cross_entropy_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
+lg_append_cross_entropy_loss(LG_Expr *expr, LG_Symbol y, const LG_Symbol x0, const LG_Symbol x1);
 
 LG_StatusKind 
-lg_ir_append_relu(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
+lg_append_relu(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
 LG_StatusKind 
-lg_ir_append_stable_softmax(LG_Expr *expr, const LG_Symbol y, const LG_Symbol in);
+lg_append_stable_softmax(LG_Expr *expr, const LG_Symbol y, const LG_Symbol in);
 LG_StatusKind 
-lg_ir_append_sigmoid(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
+lg_append_sigmoid(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
 LG_StatusKind 
-lg_ir_append_ln(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
+lg_append_ln(LG_Expr *expr, LG_Symbol y, const LG_Symbol in);
 
 /// "Compiles" an expr.
 LG_StatusKind 
-lg_ir_compile_expr(
+lg_compile_expr(
     LG_CompilationContext *ctx,
     size_t mem_align
 );
