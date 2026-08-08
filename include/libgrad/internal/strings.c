@@ -29,12 +29,20 @@ lg_vformat_cstring(va_list ap, lg_writer *writer) {
     while (s[len] != '\0') {len++;};
     lg_write(writer, ((lg_str8){ .len = len, .p = s }));
 }
+void lg_vformat_status_kind(va_list ap, lg_writer *writer) {
+    LG_StatusKind status = va_arg(ap, LG_StatusKind);
+    uint8_t *str = (uint8_t*)lg_status_kind_as_cstring(status);
+    size_t len = 0;
+    while (str[len] != '\0') {len++;};
+    lg_write(writer, ((lg_str8){ .len = len, .p = str }));
+}
 
-#define LG_FMT_FN_LUT_LEN 3
+#define LG_FMT_FN_LUT_LEN 4
 static const LG_FmtFnLut LG_FMT_FN_LUT[LG_FMT_FN_LUT_LEN] = {
-    {lg_hash_lit_16("i64"),   lg_vformat_i64},
-    {lg_hash_lit_16("str"),   lg_vformat_string},
-    {lg_hash_lit_16("cstr"),  lg_vformat_cstring},
+    {lg_hash_lit_16("i64"),     lg_vformat_i64},
+    {lg_hash_lit_16("str"),     lg_vformat_string},
+    {lg_hash_lit_16("cstr"),    lg_vformat_cstring},
+    {lg_hash_lit_16("status"),  lg_vformat_status_kind},
 };
 
 int32_t 

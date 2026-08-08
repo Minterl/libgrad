@@ -50,22 +50,52 @@
 #else
 #   define lg_force_inline inline
 #endif // defined(__has_attribute) && __has_attribute(always_inline)
+    
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// Define status codes with a string reflection table
+///
+////////////////////////////////////////////////////////////////////////////////
  
+#define lg_define_status_kinds \
+    LG_X(OK), \
+    LG_X(InvalidArgument), \
+    LG_X(InvalidRank), \
+    LG_X(ShapeMismatch), \
+    LG_X(StrideMismatch), \
+    LG_X(Overflow), \
+    LG_X(NotFound), \
+    LG_X(Duplicate), \
+    LG_X(UnsupportedOpcode), \
+    LG_X(OutOfMemory), \
+    LG_X(OutOfBounds), \
+    LG_X(UnexpectedNaN),
+
+#define LG_X(x) LG_StatusKind_##x
 typedef enum
 LG_StatusKind {
-    LG_StatusKind_OK = 0,
-    LG_StatusKind_InvalidArgument,
-    LG_StatusKind_InvalidRank,
-    LG_StatusKind_ShapeMismatch,
-    LG_StatusKind_StrideMismatch,
-    LG_StatusKind_Overflow,
-    LG_StatusKind_NotFound,
-    LG_StatusKind_Duplicate,
-    LG_StatusKind_UnsupportedOpcode,
-    LG_StatusKind_OutOfMemory,
-    LG_StatusKind_OutOfBounds,
-    LG_StatusKind_UnexpectedNaN,
+    lg_define_status_kinds
 } LG_StatusKind;
+#undef LG_X
+
+// TODO: maybe these should be lg_str8s
+#define LG_X(x) [LG_StatusKind_##x] = (const uint8_t*)#x
+static const uint8_t *LG_STATUS_KIND_CSTRING_TABLE[] = {
+    lg_define_status_kinds
+};
+#undef LG_X
+
+#define lg_status_kind_as_cstring(status) LG_STATUS_KIND_CSTRING_TABLE[(status)]
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// Core program data structures
+///
+////////////////////////////////////////////////////////////////////////////////
 
 typedef enum
 LG_LayoutKind {
