@@ -151,7 +151,7 @@ lg_declare_source(
 );
 
 
-LG_Symbol
+void
 lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym);
 
 LG_StatusKind 

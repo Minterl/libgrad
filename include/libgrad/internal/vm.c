@@ -7,9 +7,6 @@
 
 #include <stdint.h>
 
-#define LG_NIL_SYMBOL (LG_Symbol){0}
-#define LG_NIL_EXPR_NODE_META (LG_ExprNodeMeta){0}
-
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 /// 
@@ -105,7 +102,7 @@ lg_append_op_(
                 } else {
                     lg_report_error(ctx, status, lg_str8_lit("failed to allocate a symbol in the symbol table"));
                 }
-                return LG_NIL_SYMBOL;
+                return lg_nil(LG_Symbol);
             }
             lg_assert(!was_occupied);
 
@@ -118,7 +115,7 @@ lg_append_op_(
                 node.x0_logical = y;
             }
         } else {
-            y = LG_NIL_SYMBOL;
+            y = lg_nil(LG_Symbol);
         }
 
         node.y_logical = y;
@@ -128,7 +125,7 @@ lg_append_op_(
     {
         if (ctx->expr->nodes_len >= ctx->expr->nodes_cap) {
             lg_report_error(ctx, LG_StatusKind_Overflow, lg_str8_lit("overflowed the expr at index %{u64}"), ctx->expr->nodes_len);
-            return LG_NIL_SYMBOL;
+            return lg_nil(LG_Symbol);
         }
 
         size_t next_idx = ctx->expr->nodes_len;
@@ -234,7 +231,7 @@ lg_declare_source(
         } else {
             lg_report_error(ctx, status, lg_str8_lit("failed to get buffer id for source symbol"));
         }
-        return LG_NIL_SYMBOL;
+        return lg_nil(LG_Symbol);
     }
 
     LG_Symbol y = lg_append_op(ctx, LG_Opcode_Source, .x0_physical = physical_desc);
@@ -242,7 +239,7 @@ lg_declare_source(
     return y;
 }
 
-LG_Symbol
+void
 lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
     for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
         if (
@@ -252,18 +249,16 @@ lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
         ) {
             if (ctx->expr->nodes[i].opcode == LG_Opcode_Sink) {
                 lg_report_error(ctx, LG_StatusKind_Duplicate, lg_str8_lit("attempted to create multiple sink declarations for the same symbol %{u64}"), sym.id);
-                return LG_NIL_SYMBOL;
+                return;
             }
-
             lg_append_op(ctx, LG_Opcode_Sink, .x0_logical = sym);
-
-            return LG_NIL_SYMBOL;
+            return;
         }
     }
 
     lg_report_error(ctx, LG_StatusKind_NotFound, lg_str8_lit("attempted to declare invalid symbol %{u64} as sink"), sym.id);
 
-    return LG_NIL_SYMBOL;
+    return;
 }
 
 LG_StatusKind 

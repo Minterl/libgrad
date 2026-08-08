@@ -28,6 +28,8 @@
 #   define lg_nullable 
 #endif // defined(__has_attribute) && __has_attribute(nullability)
 
+#define lg_nil(T) (T){0}
+
 /// Bounds checking
 #ifdef __cplusplus
 #   define lg_check_bounds(x) /* nothing */

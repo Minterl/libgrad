@@ -56,43 +56,14 @@ int main(void) {
         return status;
     }
 
-    LG_Symbol x = {0};
-    status = lg_declare_source(&ctx, &x, lg_mkshape(28 * 28), 100);
-    if (status != LG_StatusKind_OK) {
-        FAILF("status: %d", status);
-        return status;
-    }
-    LG_Symbol W_0 = {0};
-    status = lg_declare_source(&ctx, &W_0, lg_mkshape(128, 28 * 28), 101);
-    if (status != LG_StatusKind_OK) {
-        FAILF("status: %d", status);
-        return status;
-    }
-    LG_Symbol b_0 = {0};
-    status = lg_declare_source(&ctx, &b_0, lg_mkshape(128), 102);
-    if (status != LG_StatusKind_OK) {
-        FAILF("status: %d", status);
-        return status;
-    }
+    LG_Symbol x = lg_declare_source(&ctx, lg_mkshape(28 * 28), 100);
+    LG_Symbol W_0 = lg_declare_source(&ctx, lg_mkshape(128, 28 * 28), 101);
+    LG_Symbol b_0 = lg_declare_source(&ctx, lg_mkshape(128), 102);
 
-    LG_Symbol y_0 = {0};
-    status = lg_append_contract(&ctx, &y_0, W_0, x, 1, 0);
-    if (status != LG_StatusKind_OK) {
-        FAILF("status: %d", status);
-        goto out;
-    }
-    LG_Symbol y_1 = {0};
-    status = lg_append_add(&ctx, &y_1, y_0, b_0);
-    if (status != LG_StatusKind_OK) {
-        FAILF("status: %d", status);
-        goto out;
-    }
+    LG_Symbol y_0 = lg_append_contract(&ctx, W_0, x, 1, 0);
+    LG_Symbol y_1 = lg_append_add(&ctx, y_0, b_0);
 
-    status = lg_declare_sink(&ctx,y_1);
-    if (status != LG_StatusKind_OK) {
-        FAILF("status: %d", status);
-        goto out;
-    }
+    lg_declare_sink(&ctx, y_1);
 
     status = lg_compile_expr(&ctx, 16);
     if (status != LG_StatusKind_OK) {
