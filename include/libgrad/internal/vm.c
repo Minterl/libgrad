@@ -1030,6 +1030,11 @@ lg_compile_expr(
     lg_pass_assign_layouts(ctx, LG_LayoutKind_RowMajor /* TODO */, mem_align);
 
     {
+        status = lg_buftab_insert(&ctx->expr->buftab, 0);
+        if (status != LG_StatusKind_OK) {
+            return status;
+        }
+
         LG_MapIter iter;
         lg_map_iter_init(&iter, &ctx->expr->buftab.map);
 

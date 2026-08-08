@@ -32,18 +32,22 @@ LG_MapSentinel {
 #define lg_u64_has_zero_byte(x) ((((x) - UINT64_C(0x0101010101010101)) & ~(x) & UINT64_C(0x8080808080808080)) != 0)
 
 lg_force_inline uint32_t 
-lg_mmh(uint32_t kh) {
-    kh = lg_mmh_rol(kh * LG_MMH_C1, 32, LG_MMH_R1);
-    kh *= LG_MMH_C2;
-    kh = LG_MMH_S ^ kh;
-    kh = lg_mmh_rol(kh, 32, LG_MMH_R2) * LG_MMH_M + LG_MMH_N;
-    kh = kh ^ 4;
-    kh = kh ^ (kh >> 16);
-    kh = kh * LG_MMH_C3;
-    kh = kh ^ (kh >> 13);
-    kh = kh * LG_MMH_C4;
-    kh = kh ^ (kh >> 16);
-    return kh;
+lg_mmh(uint64_t key) {
+    uint32_t hash = LG_MMH_S;
+    for (uint8_t i = 0; i < 2; i++) {
+        uint32_t chunk = key >> (32 * i);
+        chunk = lg_mmh_rol(chunk * LG_MMH_C1, 32, LG_MMH_R1);
+        chunk *= LG_MMH_C2;
+        hash = LG_MMH_S ^ hash;
+        hash = lg_mmh_rol(hash, 32, LG_MMH_R2) * LG_MMH_M + LG_MMH_N;
+        hash = hash ^ 4;
+        hash = hash ^ (hash >> 16);
+        hash = hash * LG_MMH_C3;
+        hash = hash ^ (hash >> 13);
+        hash = hash * LG_MMH_C4;
+        hash = hash ^ (hash >> 16);
+    }
+    return hash;
 }
 
 lg_force_inline size_t 
@@ -105,7 +109,7 @@ lg_map_deinit(LG_Map *map, LG_Allocator *alloc) {
 
 lg_force_inline void 
 lg_map_make_hash(uint64_t key, uint64_t *out_hash, uint8_t *out_fingerprint) {
-    const uint64_t full_hash = lg_mmh(key); // TODO: make hash actually 64 bits
+    const uint64_t full_hash = lg_mmh(key);
     const size_t hash = full_hash & ~UINT8_C(0xF);
     const uint8_t fingerprint = (full_hash & UINT8_C(0xF)) | UINT8_C(0x1);
 
