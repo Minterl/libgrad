@@ -15,6 +15,19 @@
 #define ARENA_CAP 100 * 1024 * 1024
 #define EXPR_CAP 32
 
+size_t write_to_stdout(void *ctx, const lg_str8 str) {
+    (void)ctx;
+    size_t i = 0;
+    for (; i < str.len; i++) {
+        putchar(str.p[i]);
+    }
+    return i;
+}
+
+static LG_Writer stdout_writer = {
+    .write = write_to_stdout,
+};
+
 int main(void) {
     Arena arena = {0};
     assert(ArenaInit(&arena, ARENA_CAP) == 0);
@@ -67,7 +80,7 @@ int main(void) {
 
     status = lg_compile_expr(&ctx, 16);
     if (status != LG_StatusKind_OK) {
-        FAILF("status: %d", status);
+        lg_print_compilation_error(&ctx, &stdout_writer);
         goto out;
     }
 

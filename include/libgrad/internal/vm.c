@@ -14,6 +14,13 @@
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
+void
+lg_print_compilation_error(LG_CompilationContext *ctx, LG_Writer *writer) {
+    lg_str8 as_string = (lg_str8){.len = ctx->err_msg_len, .p = ctx->err_msg_backing_buf};
+    lg_printf(writer, as_string);
+    lg_printf(writer, lg_str8_lit("\n"));
+}
+
 size_t 
 lg_report_error_write(void *ctx_, lg_str8 str) {
     LG_CompilationContext *ctx = ctx_;
@@ -33,10 +40,12 @@ lg_report_error(LG_CompilationContext *ctx, LG_StatusKind status, lg_str8 fmt, .
         return;
     }
 
+    lg_assert(status != LG_StatusKind_OK);
+
     ctx->err_msg_len = 0;
     ctx->last_status = status;
 
-    lg_writer w = {
+    LG_Writer w = {
         .ctx = (void*)ctx,
         .write = lg_report_error_write,
     };
@@ -98,7 +107,10 @@ lg_append_op_(
             LG_StatusKind status = lg_symtab_upsert(&ctx->symtab, &symtab_idx, &was_occupied, id);
             if (status != LG_StatusKind_OK) {
                 if (status == LG_StatusKind_Overflow) {
-                    lg_report_error(ctx, status, lg_str8_lit("failed to insert into the symbol table; there probably wasn't enough space allocated for it"));
+                    lg_report_error(ctx, status, lg_str8_lit(
+                        "failed to insert into the symbol table\n"
+                        "there wasn't enough space allocated for it"
+                    ));
                 } else {
                     lg_report_error(ctx, status, lg_str8_lit("failed to allocate a symbol in the symbol table"));
                 }
@@ -124,7 +136,7 @@ lg_append_op_(
     // Append to the expr
     {
         if (ctx->expr->nodes_len >= ctx->expr->nodes_cap) {
-            lg_report_error(ctx, LG_StatusKind_Overflow, lg_str8_lit("overflowed the expr at index %{u64}"), ctx->expr->nodes_len);
+            lg_report_error(ctx, LG_StatusKind_Overflow, lg_str8_lit("overflowed the expr at index %{i64}"), ctx->expr->nodes_len);
             return lg_nil(LG_Symbol);
         }
 
@@ -227,7 +239,7 @@ lg_declare_source(
     LG_StatusKind status = lg_buftab_get(&ctx->expr->buftab, NULL, buf_id);
     if (status != LG_StatusKind_OK) {
         if (status == LG_StatusKind_NotFound) {
-            lg_report_error(ctx, status, lg_str8_lit("attempt to declare source symbol for an invalid buffer id %{u64}"), buf_id);
+            lg_report_error(ctx, status, lg_str8_lit("attempt to declare source symbol for an invalid buffer id %{i64}"), buf_id);
         } else {
             lg_report_error(ctx, status, lg_str8_lit("failed to get buffer id for source symbol"));
         }
@@ -248,7 +260,7 @@ lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
             ctx->expr->nodes[i].x1_logical.id == sym.id 
         ) {
             if (ctx->expr->nodes[i].opcode == LG_Opcode_Sink) {
-                lg_report_error(ctx, LG_StatusKind_Duplicate, lg_str8_lit("attempted to create multiple sink declarations for the same symbol %{u64}"), sym.id);
+                lg_report_error(ctx, LG_StatusKind_Duplicate, lg_str8_lit("attempted to create multiple sink declarations for the same symbol %{i64}"), sym.id);
                 return;
             }
             lg_append_op(ctx, LG_Opcode_Sink, .x0_logical = sym);
@@ -256,7 +268,7 @@ lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
         }
     }
 
-    lg_report_error(ctx, LG_StatusKind_NotFound, lg_str8_lit("attempted to declare invalid symbol %{u64} as sink"), sym.id);
+    lg_report_error(ctx, LG_StatusKind_NotFound, lg_str8_lit("attempted to declare invalid symbol %{i64} as sink"), sym.id);
 
     return;
 }
@@ -344,7 +356,7 @@ lg_append_contract(
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-LG_StatusKind 
+LG_StatusKind
 lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
     LG_StatusKind status = LG_StatusKind_OK;
     LG_ScratchWaypoint *waypoint = lg_scratch_acquire(ctx->scratch);
@@ -360,10 +372,18 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
             // while sink declarations must be at the end.
             if (ctx->expr->nodes[i].opcode == LG_Opcode_Source && !sources_begin) {
                 if (i != 0) {
+                    lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
+                        "found the first source declaration at node index %{i64}\n"
+                        "note: source declarations must be the first thing in the expr"
+                    ), i);
                     return LG_StatusKind_InvalidArgument;
                 }
                 sources_begin = true;
             } else if (ctx->expr->nodes[i].opcode == LG_Opcode_Source && sources_end) {
+                lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
+                    "found a source declaration after a non-source operation at node index %{i64}\n"
+                    "note: source declarations must happen one after another"
+                ), i);
                 return LG_StatusKind_InvalidArgument;
             } else if (ctx->expr->nodes[i].opcode != LG_Opcode_Source && sources_begin) {
                 sources_end = true;
@@ -377,21 +397,27 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
             // Sink declarations must also always be followed by a sink
             // declaration or be the end of the ctx->expr
             if (sinks_begin && ctx->expr->nodes[i].opcode != LG_Opcode_Sink) {
+                lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
+                    "found a non-sink operation after a sink operation at node index %{i64}\n"
+                    "note: sink declarations must happen one after another"
+                    "and must be the last operations in the expr"
+                ), i);
                 return LG_StatusKind_InvalidArgument;
             }
         }
 
-        if (sinks_begin && ctx->expr->nodes[ctx->expr->nodes_len - 1].opcode != LG_Opcode_Sink) {
-            return LG_StatusKind_InvalidArgument;
-        }
+        lg_assert(!sinks_begin || (ctx->expr->nodes[ctx->expr->nodes_len - 1].opcode == LG_Opcode_Sink));
     }
 
     // Scope validation
     {
+        // TODO: @perf this should 100% be a hash set instead of an O(N^2) nightmare
         const size_t seen_ids_cap = ctx->expr->nodes_len * 3;
         size_t seen_ids_len = 0;
         uint32_t *seen_ids = (uint32_t*)lg_scratch_alloc(ctx->scratch, &waypoint, seen_ids_cap * sizeof(uint32_t));
         if (seen_ids == NULL) {
+            // TODO: maybe we need another way to report these kinds of errors
+            // these status codes probably shoudn't be mixed with the reporting semantics
             return LG_StatusKind_OutOfMemory;
         }
 
@@ -402,6 +428,12 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
                 new_id = ctx->expr->nodes[i].x0_logical.id;
                 for (size_t j = 0; j < seen_ids_len; j++) {
                     if (seen_ids[j] == new_id) {
+                        lg_report_error(
+                            ctx, 
+                            LG_StatusKind_InvalidArgument, 
+                            lg_str8_lit("found duplicate source declaration for symbol with id %{i64} at node index %{i64}"),
+                            seen_ids[j], i
+                        );
                         status = LG_StatusKind_InvalidArgument;
                         goto out_release_scratch;
                     }
@@ -417,7 +449,22 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
                     }
                 }
 
-                if (!found_x0 || (!found_x1 && lg_opcode_is_binary(ctx->expr->nodes[i].opcode))) {
+                if (!found_x0)  {
+                    lg_report_error(
+                        ctx, 
+                        LG_StatusKind_InvalidArgument, 
+                        lg_str8_lit("use of unknown symbol with id as operand x0 %{i64} at node index %{i64}"),
+                        ctx->expr->nodes[i].x0_logical.id, i
+                    );
+                    status = LG_StatusKind_InvalidArgument;
+                    goto out_release_scratch;
+                } else if (!found_x1 && lg_opcode_is_binary(ctx->expr->nodes[i].opcode)) {
+                    lg_report_error(
+                        ctx, 
+                        LG_StatusKind_InvalidArgument, 
+                        lg_str8_lit("use of unknown symbol with id as operand x1 %{i64} at node index %{i64}"),
+                        ctx->expr->nodes[i].x1_logical.id, i
+                    );
                     status = LG_StatusKind_InvalidArgument;
                     goto out_release_scratch;
                 }

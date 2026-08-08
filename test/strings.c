@@ -18,7 +18,7 @@ size_t write_to_stdout(void *ctx, const lg_str8 str) {
     return i;
 }
 
-static lg_writer stdout_writer = {
+static LG_Writer stdout_writer = {
     .write = write_to_stdout,
 };
 

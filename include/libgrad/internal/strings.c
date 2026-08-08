@@ -9,27 +9,27 @@
 typedef struct
 LG_FmtFnLut {
     uint32_t hash;
-    void (*fn)(va_list ap, lg_writer *writer);
+    void (*fn)(va_list ap, LG_Writer *writer);
 } LG_FmtFnLut;
 
 void 
-lg_vformat_i64(va_list ap, lg_writer *writer) {
+lg_vformat_i64(va_list ap, LG_Writer *writer) {
     int64_t arg = va_arg(ap, int64_t);
     lg_write_itoa(writer, arg); 
 }
 void 
-lg_vformat_string(va_list ap, lg_writer *writer) {
+lg_vformat_string(va_list ap, LG_Writer *writer) {
     lg_str8 s = va_arg(ap, lg_str8);
     lg_write(writer, s);
 }
 void 
-lg_vformat_cstring(va_list ap, lg_writer *writer) {
+lg_vformat_cstring(va_list ap, LG_Writer *writer) {
     uint8_t *s = va_arg(ap, uint8_t*);
     size_t len = 0;
     while (s[len] != '\0') {len++;};
     lg_write(writer, ((lg_str8){ .len = len, .p = s }));
 }
-void lg_vformat_status_kind(va_list ap, lg_writer *writer) {
+void lg_vformat_status_kind(va_list ap, LG_Writer *writer) {
     LG_StatusKind status = va_arg(ap, LG_StatusKind);
     uint8_t *str = (uint8_t*)lg_status_kind_as_cstring(status);
     size_t len = 0;
@@ -90,7 +90,7 @@ lg_copy_to_cstring(uint8_t *dest, const lg_str8 src) {
 }
 
 void 
-lg_write_itoa(lg_writer *writer, int64_t n) {
+lg_write_itoa(LG_Writer *writer, int64_t n) {
     _Static_assert(INT64_MAX == 9223372036854775807, "");
     //          ... which is -- 1234567890123456789 -- 19 digits long
     // +1 for the sign character.
@@ -122,7 +122,7 @@ lg_write_itoa(lg_writer *writer, int64_t n) {
 }
 
 LG_StatusKind 
-lg_printf(lg_writer *writer, const lg_str8 fmt, ...) {
+lg_printf(LG_Writer *writer, const lg_str8 fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     LG_StatusKind status = lg_vprintf(writer, fmt, ap);
@@ -131,7 +131,9 @@ lg_printf(lg_writer *writer, const lg_str8 fmt, ...) {
 }
 
 LG_StatusKind 
-lg_vprintf(lg_writer *writer, const lg_str8 fmt, va_list ap) {
+lg_vprintf(LG_Writer *writer, const lg_str8 fmt, va_list ap) {
+    LG_StatusKind status = LG_StatusKind_OK;
+
     for (size_t i = 0; i < fmt.len; i++) {
         if (
             fmt.p[i] != '%' ||
@@ -142,48 +144,67 @@ lg_vprintf(lg_writer *writer, const lg_str8 fmt, va_list ap) {
             continue;
         }
 
+
+        ////////////////////////////////////////////////// 
+        // ~~ Parse the format specifier ~~
+
         lg_str8 fmtspec;
         {
             lg_assert(fmt.p[i] == '%');
             lg_assert(fmt.p[i + 1] == '{');
+            lg_assert(fmt.len > i + 2);
 
-            const size_t fmtspec_begin = i + 2;
-            size_t scan = fmtspec_begin;
-            while (scan < fmt.len && fmt.p[scan] != '}') {
-                scan++;
-                // unterminated format specifier
-                if (scan == fmt.len - 1) {
-                    return LG_StatusKind_InvalidArgument;
-                }
-            }      
-            const size_t fmtspec_end = scan;
-            i = fmtspec_end;
+            size_t fmtspec_begin = i + 2;
+            size_t fmtspec_end = fmtspec_begin;
+            {
+                while (fmt.p[fmtspec_end] != '}') {
+                    // unterminated format specifier
+                    if (fmtspec_end >= fmt.len - 1) {
+                        status = LG_StatusKind_InvalidArgument;
+                        goto out;
+                    }
+                    fmtspec_end++;
+                }      
+                i = fmtspec_end; // i will be incremeted at the bottom of the loop
+            }
 
             fmtspec = (lg_str8){
                 .len = fmtspec_end - fmtspec_begin,
                 .p = fmt.p + fmtspec_begin,
             };
             if (fmtspec.len == 0) {
-                return LG_StatusKind_InvalidArgument;
+                status = LG_StatusKind_InvalidArgument;
+                goto out;
             }
+
             lg_assert((fmtspec.p + fmtspec.len) < (fmt.p + fmt.len));
         }
 
-        uint32_t hash = lg_hash_16(fmtspec.p, (fmtspec.len < 16 ? fmtspec.len : 16));
-        bool found = false;
-        for (size_t i = 0; i < LG_FMT_FN_LUT_LEN; i++) {
-            if (LG_FMT_FN_LUT[i].hash == hash) {
-                LG_FMT_FN_LUT[i].fn(ap, writer);
-                found = true;
-                break;
+
+        ////////////////////////////////////////////////// 
+        // ~~ Format specifier LUT lookup ~~
+        {
+            uint32_t hash = lg_hash_16(fmtspec.p, (fmtspec.len < 16 ? fmtspec.len : 16));
+            bool found = false;
+            for (size_t i = 0; i < LG_FMT_FN_LUT_LEN; i++) {
+                if (LG_FMT_FN_LUT[i].hash == hash) {
+                    LG_FMT_FN_LUT[i].fn(ap, writer);
+                    found = true;
+                    break;
+                }
             }
-        }
-        if (!found) {
-            return LG_StatusKind_InvalidArgument;
+            if (!found) {
+                status = LG_StatusKind_InvalidArgument;
+                goto out;
+            }
         }
 
         lg_assert(i < fmt.len);
     }
 
+out:
+    if (status != LG_StatusKind_OK) {
+        lg_write(writer, lg_str8_lit("(error)"));
+    }
     return LG_StatusKind_OK;
 }

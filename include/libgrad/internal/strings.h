@@ -24,7 +24,7 @@ lg_writer {
     ///
     /// Must return the number of bytes written.
     size_t (*write)(void *ctx, const lg_str8 str);
-} lg_writer;
+} LG_Writer;
 
 /// Behaves like libc `strcmp`, but returns 1 when `a.len` > `b.len`, and -1 in the opposite case.
 int32_t 
@@ -43,11 +43,11 @@ lg_copy_to_cstring(uint8_t *dst, const lg_str8 src);
 #define lg_write(writer, string) (writer)->write((writer)->ctx, (string))
 
 LG_StatusKind 
-lg_printf(lg_writer *writer, const lg_str8 fmt, ...);
+lg_printf(LG_Writer *writer, const lg_str8 fmt, ...);
 
 LG_StatusKind 
-lg_vprintf(lg_writer *writer, const lg_str8 fmt, va_list ap);
+lg_vprintf(LG_Writer *writer, const lg_str8 fmt, va_list ap);
 
-void lg_write_itoa(lg_writer *writer, int64_t n);
+void lg_write_itoa(LG_Writer *writer, int64_t n);
 
 #endif // LG_FORMAT_H

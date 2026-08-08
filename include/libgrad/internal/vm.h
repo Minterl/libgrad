@@ -25,7 +25,7 @@ LG_Opcode {
 
     // Constructive operations create new symbols,
     // while non-constructive ones do not.
-#   define LG_FIRST_CONSTRUCTIVE_OP LG_Opcode_ReLU
+#   define LG_FIRST_CONSTRUCTIVE_OP LG_Opcode_Source
 
     LG_Opcode_Source,
     /// Element-wise ReLU
@@ -143,13 +143,15 @@ LG_CompilationContext {
     uint32_t              next_symbol_id;
 } LG_CompilationContext;
 
+void
+lg_print_compilation_error(LG_CompilationContext *ctx, LG_Writer *writer);
+
 LG_Symbol
 lg_declare_source(
     LG_CompilationContext *ctx,
     LG_StridedDesc physical_desc,
     uint32_t buf_id
 );
-
 
 void
 lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym);
