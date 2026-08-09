@@ -10,6 +10,8 @@ test:
 	@make test/core
 	@make test/strings
 
+# TODO: make this into a parameterized target
+
 .PHONY: test/core
 test/core:
 	mkdir -p out && \
@@ -36,6 +38,15 @@ test/map:
 		-fsanitize=address \
 		-fsanitize=bounds \
 		test/map.c
+
+.PHONY: test/alloc
+test/alloc:
+	mkdir -p out && \
+	cc -o out/test-alloc.out \
+		$(CFLAGS) \
+		-fsanitize=address \
+		-fsanitize=bounds \
+		test/alloc.c
 
 .PHONY: examples/mnist
 examples/mnist:

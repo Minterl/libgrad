@@ -25,7 +25,12 @@
      } while(0) 
 #endif // defined(__has_builtin) && __has_builtin(__builtin_memset)
 
-#define lg_allocator_supports_scratch(alloc) (((alloc)->scratch_acquire != NULL) && ((alloc)->scratch_release != NULL))
+typedef uint32_t 
+LG_AllocatorFlags;
+enum {
+    LG_AllocatorFlag_NoRecycle = UINT32_C(0x1),
+    LG_AllocatorFlag_AssumeZeroed = UINT32_C(0x1 << 1),
+};
 
 /// The only method that must be defined is `alloc`, the others may
 /// legally be NULL. Such is the case when using an arena-style allocator,
@@ -45,37 +50,40 @@ LG_Allocator {
     /// TODO: find the direct calls to this and replace them with a macro or something.
     void  (*lg_nullable free)(void *ctx, void *ptr);
 
-    /// If `AcquireScratch` and `ReleaseScratch` are both non-null, then the allocator will relinquish control
-    /// over scratch memory to whatever reclamation mechanism the caller chooses.
-    /// Most commonly, this is saving a highwater mark in an arena-style allocator.
-    ///
-    /// If either of these are null, then the allocator will use its own internal reclamation system (which does
-    /// not reqiure any special attention from the caller).
-    void* (*lg_nullable scratch_acquire)(void *ctx);
-    void  (*lg_nullable scratch_release)(void *ctx, void *waypoint);
+    size_t default_slab_size_bytes; 
+
+    LG_AllocatorFlags flags;
 } LG_Allocator;
 
 typedef struct
-LG_ScratchWaypoint {
-    struct LG_ScratchWaypoint *next;
-} LG_ScratchWaypoint;
+LG_Slab {
+    struct LG_Slab       *prev;
+    struct LG_Slab       *next;
+    size_t                cap;
+    uint8_t _Alignas(16)  buf[] lg_check_bounds(cap);
+} LG_Slab;
 
-_Static_assert(sizeof(void*) == sizeof(LG_ScratchWaypoint), "");
+typedef struct 
+LG_Arena {
+    LG_Allocator *host;
+
+    size_t current_offset;
+    struct LG_Slab *current_slab;
+
+    struct LG_Slab *recycled_slabs_head;
+} LG_Arena;
+
+typedef struct
+LG_Scope {
+    LG_Slab *slab;
+    size_t offset;
+} LG_Scope;
 
 uint8_t*
 lg_alloc_zero(LG_Allocator *alloc, size_t size_bytes);
 
 void 
 lg_free(LG_Allocator *alloc, void *ptr);
-
-LG_ScratchWaypoint*
-lg_scratch_acquire(LG_Allocator *alloc);
-
-uint8_t*
-lg_scratch_alloc(LG_Allocator *alloc, LG_ScratchWaypoint **waypoint, size_t size_bytes);
-
-void 
-lg_scratch_release(LG_Allocator *alloc, LG_ScratchWaypoint **waypoint);
 
 /// Allocates `n` blocks of size `sizes[i]` and puts the resulting pointer
 /// in `out_ptrs[i]`.
@@ -93,5 +101,20 @@ lg_alloc_contiguous_blocks(
     size_t n,
     size_t align
 );
+
+void
+lg_arena_init(LG_Arena *arena, LG_Allocator *host);
+uint8_t*
+lg_arena_alloc(LG_Arena *arena, size_t unaligned_size_bytes);
+LG_Scope
+lg_push_scope(LG_Arena *arena);
+void
+lg_pop_scope(LG_Arena *arena, LG_Scope scope);
+void
+lg_arena_free_recycled(LG_Arena *arena);
+void
+lg_arena_recycle_all(LG_Arena *arena);
+void
+lg_arena_free_all(LG_Arena *arena);
 
 #endif // LG_ALLOC_H_

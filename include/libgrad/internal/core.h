@@ -27,6 +27,20 @@
 #else
 #   define lg_nullable 
 #endif // defined(__has_attribute) && __has_attribute(nullability)
+       
+#if defined(__has_attribute) && __has_attribute(unused) 
+#   define lg_maybe_unused __attribute__((unused))
+#else
+#   define lg_maybe_unused
+#endif // defined(__has_attribute) && __has_attribute(unused) 
+
+#if defined(__has_builtin) && __has_builtin(__builtin_expect)
+#   define lg_likely(expr)    __builtin_expect((expr), 1)
+#   define lg_unlikely(expr)  __builtin_expect((expr), 0)
+#else
+#   define lg_likely(expr)    (expr)
+#   define lg_unlikely(expr)  (expr)
+#endif // defined(__has_builtin) && __has_builtin(__builtin_expect)
 
 #define lg_nil(T) (T){0}
 
@@ -76,17 +90,18 @@
     LG_X(UnexpectedNaN),
 
 #define LG_X(x) LG_StatusKind_##x
-typedef enum
-LG_StatusKind {
-    lg_define_status_kinds
-} LG_StatusKind;
+    typedef enum
+    LG_StatusKind {
+        lg_define_status_kinds
+    } LG_StatusKind;
 #undef LG_X
 
 // TODO: maybe these should be lg_str8s
 #define LG_X(x) [LG_StatusKind_##x] = (const uint8_t*)#x
-static const uint8_t *LG_STATUS_KIND_CSTRING_TABLE[] = {
-    lg_define_status_kinds
-};
+    lg_maybe_unused static const uint8_t*
+    LG_STATUS_KIND_CSTRING_TABLE[] = {
+        lg_define_status_kinds
+    };
 #undef LG_X
 
 #define lg_status_kind_as_cstring(status) LG_STATUS_KIND_CSTRING_TABLE[(status)]
