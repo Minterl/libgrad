@@ -29,11 +29,11 @@ test_status test_alloc() {
     lg_arena_init(&arena, &libc_alloc);
 
     LG_Scope scope = lg_push_scope(&arena);
-    lg_arena_alloc(&arena, 32);
-    lg_arena_alloc(&arena, 12);
+    lg_arena_alloc(&arena, 32, 16);
+    lg_arena_alloc(&arena, 12, 16);
     lg_pop_scope(&arena, scope);
-    lg_arena_alloc(&arena, 2);
-    lg_arena_alloc(&arena, 256);
+    lg_arena_alloc(&arena, 2, 16);
+    lg_arena_alloc(&arena, 256, 16);
     lg_arena_free_all(&arena);
     lg_arena_free_recycled(&arena);
 

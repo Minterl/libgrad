@@ -128,8 +128,8 @@ lg_arena_init(LG_Arena *arena, LG_Allocator *host) {
 }
 
 uint8_t*
-lg_arena_alloc(LG_Arena *arena, size_t unaligned_size_bytes) {
-    const size_t size_bytes = lg_align_up(unaligned_size_bytes, 16);
+lg_arena_alloc(LG_Arena *arena, size_t unaligned_size_bytes, size_t align) {
+    const size_t size_bytes = lg_align_up(unaligned_size_bytes, align);
 
 
     ////////////////////////////////////////
@@ -198,13 +198,13 @@ plan_c:;
     next->cap = buf_size;
 
     if (arena->current_slab != NULL) {
+        lg_assert(arena->current_slab->next == NULL);
         arena->current_slab->next = next;
         next->prev = arena->current_slab;
     }
 
     arena->current_slab = next;
     arena->current_offset = size_bytes;
-    arena->current_slab = next;
 
     lg_memzero(next->buf, size_bytes);
 

@@ -105,7 +105,7 @@ lg_alloc_contiguous_blocks(
 void
 lg_arena_init(LG_Arena *arena, LG_Allocator *host);
 uint8_t*
-lg_arena_alloc(LG_Arena *arena, size_t unaligned_size_bytes);
+lg_arena_alloc(LG_Arena *arena, size_t unaligned_size_bytes, size_t align);
 LG_Scope
 lg_push_scope(LG_Arena *arena);
 void

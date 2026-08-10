@@ -359,7 +359,7 @@ lg_append_contract(
 LG_StatusKind
 lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
     LG_StatusKind status = LG_StatusKind_OK;
-    LG_ScratchWaypoint *waypoint = lg_scratch_acquire(ctx->scratch);
+    LG_Scope scope = lg_push_scope(ctx->arena);
 
     // Source/sink rules
     {
@@ -414,7 +414,7 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
         // TODO: @perf this should 100% be a hash set instead of an O(N^2) nightmare
         const size_t seen_ids_cap = ctx->expr->nodes_len * 3;
         size_t seen_ids_len = 0;
-        uint32_t *seen_ids = (uint32_t*)lg_scratch_alloc(ctx->scratch, &waypoint, seen_ids_cap * sizeof(uint32_t));
+        uint32_t *seen_ids = (uint32_t*)lg_arena_alloc(ctx->arena, seen_ids_cap * sizeof(uint32_t), 16);
         if (seen_ids == NULL) {
             // TODO: maybe we need another way to report these kinds of errors
             // these status codes probably shoudn't be mixed with the reporting semantics
@@ -435,7 +435,7 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
                             seen_ids[j], i
                         );
                         status = LG_StatusKind_InvalidArgument;
-                        goto out_release_scratch;
+                        goto out;
                     }
                 }
             } else {
@@ -457,7 +457,7 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
                         ctx->expr->nodes[i].x0_logical.id, i
                     );
                     status = LG_StatusKind_InvalidArgument;
-                    goto out_release_scratch;
+                    goto out;
                 } else if (!found_x1 && lg_opcode_is_binary(ctx->expr->nodes[i].opcode)) {
                     lg_report_error(
                         ctx, 
@@ -466,7 +466,7 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
                         ctx->expr->nodes[i].x1_logical.id, i
                     );
                     status = LG_StatusKind_InvalidArgument;
-                    goto out_release_scratch;
+                    goto out;
                 }
 
                 new_id = ctx->expr->nodes[i].y_logical.id;
@@ -478,8 +478,8 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
         }
     }
 
-out_release_scratch:
-    lg_scratch_release(ctx->scratch, &waypoint);
+out:
+    lg_pop_scope(ctx->arena, scope);
     return status;
 }
 

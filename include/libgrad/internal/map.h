@@ -6,6 +6,13 @@
 
 #include <stdint.h>
 
+typedef union 
+LG_MapFingerprintBlock {
+    uint8_t individual[8];
+    uint64_t block;
+}
+LG_MapFingerprintBlock;
+
 /// Implements a swiss map-like slot map.
 typedef struct
 LG_Map {
@@ -13,10 +20,7 @@ LG_Map {
     /// during initialization.
     size_t cap;
 
-    union {
-        uint8_t individual[8];
-        uint64_t block;
-    } *fingerprints_as;
+    LG_MapFingerprintBlock *fingerprints_as;
 
     uint64_t *keys lg_check_bounds(cap);
 } LG_Map;
@@ -35,10 +39,7 @@ LG_MapIter {
 } LG_MapIter;
 
 LG_StatusKind 
-lg_map_init(LG_Map *map, LG_Allocator *alloc, size_t cap);
-
-void 
-lg_map_deinit(LG_Map *map, LG_Allocator *alloc);
+lg_map_init(LG_Map *map, LG_Arena *arena, size_t cap);
 
 /// Ensures a key is present inside the map
 /// Cannot realloc memory

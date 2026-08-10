@@ -74,37 +74,24 @@ lg_next_pow2(size_t x) {
 ////////////////////////////////////////////////////////////////////////////////
 
 LG_StatusKind 
-lg_map_init(LG_Map *map, LG_Allocator *alloc, size_t cap) {
+lg_map_init(LG_Map *map, LG_Arena *arena, size_t cap) {
     cap = cap < 8 ? 8 : lg_next_pow2(cap);
     const size_t align = 16;
 
     const size_t sz_keys = cap * sizeof(uint64_t);
     const size_t sz_fingerprints = (cap / 8) * sizeof(uint64_t);
 
-    uint8_t *ptrs[2] = {0};
-    LG_StatusKind status = lg_alloc_contiguous_blocks(
-        alloc, 
-        ptrs,
-        NULL,
-        (size_t[]){sz_keys, sz_fingerprints},
-        2,
-        align
-    );
-    if (status != LG_StatusKind_OK) {
-        return status;
+    uint64_t *keys = (uint64_t*)lg_arena_alloc(arena, sz_keys, align);
+    LG_MapFingerprintBlock *fingerprints = (LG_MapFingerprintBlock*)lg_arena_alloc(arena, sz_fingerprints, align);
+    if (keys == NULL || fingerprints == NULL) {
+        return LG_StatusKind_OutOfMemory;
     }
 
     map->cap = cap;
-    map->keys = (uint64_t*)ptrs[0];
-    map->fingerprints_as = (void*)(ptrs[1]);
+    map->keys = keys;
+    map->fingerprints_as = fingerprints;
 
     return LG_StatusKind_OK;
-}
-
-void 
-lg_map_deinit(LG_Map *map, LG_Allocator *alloc) {
-    alloc->free(alloc->ctx, map->keys);
-    lg_memzero(map, sizeof(LG_Map));
 }
 
 lg_force_inline void 

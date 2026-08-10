@@ -17,8 +17,7 @@ typedef enum
 LG_Opcode {
 
     //////////////////////////////////
-    // Unary Operations
-    //////////////////////////////////
+    // ~~ Unary Operations ~~
 
 #   define LG_FIRST_UNARY_OP LG_Opcode_Sink
     LG_Opcode_Sink,
@@ -41,8 +40,7 @@ LG_Opcode {
 
 
     //////////////////////////////////
-    // Binary Operations
-    //////////////////////////////////
+    // ~~ Binary Operations ~~
 
 #   define LG_FIRST_BINARY_OP LG_Opcode_Add
     
@@ -104,7 +102,7 @@ LG_ExprNode {
     uint32_t             x1_buf_id;
     size_t               x1_offset;
 
-    LG_ExprNodeMeta meta_as;
+    LG_ExprNodeMeta      meta_as;
 } LG_ExprNode;
 
 typedef struct
@@ -133,7 +131,7 @@ LG_Expr {
 typedef struct
 LG_CompilationContext {
     LG_Expr              *expr;
-    LG_Allocator         *scratch;
+    LG_Arena             *arena;
     LG_SymbolTable        symtab;
 
     LG_StatusKind         last_status;
