@@ -7,56 +7,6 @@
 
 #include <stdint.h>
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-/// 
-/// Error reporting shennanigans
-///
-////////////////////////////////////////////////////////////////////////////////
-
-void
-lg_print_compilation_error(LG_CompilationContext *ctx, LG_Writer *writer) {
-    lg_str8 as_string = (lg_str8){.len = ctx->err_msg_len, .p = ctx->err_msg_backing_buf};
-    lg_printf(writer, as_string);
-    lg_printf(writer, lg_str8_lit("\n"));
-}
-
-size_t 
-lg_report_error_write(void *ctx_, lg_str8 str) {
-    LG_CompilationContext *ctx = ctx_;
-    size_t bytes_written = lg_strcpy((lg_str8){
-        .len = LG_MAX_ERR_LEN - ctx->err_msg_len,
-        .p = ctx->err_msg_backing_buf + ctx->err_msg_len,
-    }, str);
-    ctx->err_msg_len += bytes_written;
-    return bytes_written;
-}
-
-/// Reports error on a best-effort basis, filling the buffer as much as possible.
-/// Does nothing if the error has already been set
-void 
-lg_report_error(LG_CompilationContext *ctx, LG_StatusKind status, lg_str8 fmt, ...) {
-    if (ctx->last_status != LG_StatusKind_OK) {
-        return;
-    }
-
-    lg_assert(status != LG_StatusKind_OK);
-
-    ctx->err_msg_len = 0;
-    ctx->last_status = status;
-
-    LG_Writer w = {
-        .ctx = (void*)ctx,
-        .write = lg_report_error_write,
-    };
-
-    va_list ap;
-    va_start(ap, fmt);
-    LG_StatusKind vprintf_status = lg_vprintf(&w, fmt, ap);
-    (void)vprintf_status;
-    va_end(ap);
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
