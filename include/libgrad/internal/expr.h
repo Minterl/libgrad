@@ -119,6 +119,11 @@ lg_contract(
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
+typedef uint32_t LG_LogicalExprLoweringFlags;
+enum {
+    LG_LogicalExprLoweringFlag_NoStructuralInvariantValidation = (0x1),
+};
+
 typedef struct
 LG_PhysicalExprNode {
     LG_Opcode            opcode;
@@ -140,7 +145,8 @@ LG_PhysicalExprNode {
 
 typedef struct
 LG_PhysicalExpr {
-    /* TODO */
+    size_t                len;
+    LG_PhysicalExprNode  *nodes lg_check_bounds(len);
 } LG_PhysicalExpr;
 
 #endif // LG_EXPR_H_

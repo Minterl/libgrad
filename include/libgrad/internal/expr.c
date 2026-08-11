@@ -1,4 +1,5 @@
 #include <libgrad/internal/expr.h>
+#include <libgrad/internal/core.h>
 #include <libgrad/internal/debug.h>
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -85,8 +86,8 @@ lg_builder_append_(
         return lg_nil(LG_Symbol);
     }
 
+    builder->next_symbol_id++; // first valid symbol id is 1
     LG_Symbol y = (LG_Symbol){ .id = builder->next_symbol_id };
-    builder->next_symbol_id++;
 
     node->opcode = opcode;
     node->x0 = opts.x0;
@@ -170,6 +171,10 @@ lg_builder_finish(
     LG_Allocator *artifact_allocator,
     LG_LogicalExpr *out_lexpr
 ) {
+    if (builder->next_symbol_id == 0 || builder->ir_tail == NULL) {
+        lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit("attempted to finish empty builder"));
+        return LG_StatusKind_InvalidArgument;
+    }
 
     ////////////////////////////////////////////////////////////////////////////////
     // ~~ find the length of the expr & validate two invariants: ~~
@@ -178,7 +183,7 @@ lg_builder_finish(
     // 2) there are no cycles in the sll
 
     size_t lexpr_len = 0;
-    const size_t max_symbol_id = builder->next_symbol_id - 1;
+    const size_t max_symbol_id = builder->next_symbol_id;
     {
         bool is_first_iteration = true;
         LG_BuilderNode *tortoise = builder->ir_tail;
@@ -224,7 +229,7 @@ lg_builder_finish(
     LG_LogicalExprNode *lexpr_nodes = (LG_LogicalExprNode*)lg_alloc_zero(artifact_allocator, lexpr_len * sizeof(LG_LogicalExprNode));
     if (lexpr_nodes == NULL) {
         lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory allocating logical expr nodes"));
-        return LG_StatusKind_InvalidArgument;
+        return LG_StatusKind_OutOfMemory;
     }
 
     LG_BuilderNode *iter_node = builder->ir_tail;
@@ -234,23 +239,218 @@ lg_builder_finish(
         iter_node = iter_node->prev, i_rev++
     ) { 
         lg_assert(i_rev < lexpr_len);
-        const size_t i = lexpr_len - 1 - i;
+        const size_t i = lexpr_len - 1 - i_rev;
         
-        lexpr_nodes[i].opcode = iter_node->opcode;
-
-        lexpr_nodes[i].y = iter_node->y;
-        lexpr_nodes[i].x0 = iter_node->x0;
-        lexpr_nodes[i].x1 = iter_node->x1;
-
+        lexpr_nodes[i].opcode  = iter_node->opcode;
+        lexpr_nodes[i].y       = iter_node->y;
+        lexpr_nodes[i].x0      = iter_node->x0;
+        lexpr_nodes[i].x1      = iter_node->x1;
         lexpr_nodes[i].y_flags = iter_node->y_flags;
         lexpr_nodes[i].meta_as = iter_node->meta_as;
     }
 
 
-    //////////////
+    ////////////////////////////////////////
     // ~~ fin ~~
 
     out_lexpr->max_symbol_id = max_symbol_id;
     out_lexpr->len = lexpr_len;
     out_lexpr->nodes = lexpr_nodes;
+
+    return LG_StatusKind_OK;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// bit vector utilities (quite useful for the following passes)
+///
+////////////////////////////////////////////////////////////////////////////////
+
+typedef struct
+LG_BitVector {
+    size_t n_blocks;
+    uint64_t *blocks lg_check_bounds(n_blocks);
+} LG_BitVector;
+
+lg_force_inline LG_StatusKind
+lg_bv_init(LG_BitVector *bv, LG_Arena *arena, size_t set_width) {
+    lg_memzero(bv, sizeof(LG_BitVector));
+
+    size_t n_blocks = lg_align_up(set_width, 64) / 64;
+    uint64_t *blocks = (uint64_t*)lg_arena_alloc(arena, n_blocks * sizeof(uint64_t), 4);
+    if (blocks == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+
+    bv->n_blocks = n_blocks;
+    bv->blocks = blocks;
+}
+
+lg_force_inline void 
+lg_bv_set_bit(LG_BitVector *bv, bool bit, size_t offset_rtl) {
+    const size_t idx = bv->n_blocks - 1 - (offset_rtl / 64);
+    const size_t shift = offset_rtl % 64;
+
+    if (bit) {
+        bv->blocks[idx] |= UINT64_C(0x1) << shift;
+    } else {
+        bv->blocks[idx] &= ~(UINT64_C(0x1) << shift);
+    }
+}
+
+lg_force_inline bool 
+lg_bv_get_bit(const LG_BitVector *bv, size_t offset_rtl) {
+    const size_t idx = bv->n_blocks - 1 - (offset_rtl / 64);
+    const size_t shift = offset_rtl % 64;
+
+    return (bv->blocks[idx] & (UINT64_C(0x1) << shift)) != 0;
+}
+
+lg_force_inline void 
+lg_bv_or(LG_BitVector *bv, uint64_t *b) {
+    for (size_t i = 0; i < bv->n_blocks; i++) {
+        bv->blocks[i] |= b[i];
+    }
+}
+
+lg_force_inline void 
+lg_bv_and(LG_BitVector *bv, uint64_t *b) {
+    for (size_t i = 0; i < bv->n_blocks; i++) {
+        bv->blocks[i] &= b[i];
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// passes for lowering a logical expression into a physical one
+///
+////////////////////////////////////////////////////////////////////////////////
+
+/// validate functional structure of the expression
+LG_StatusKind
+lg_validate_lexpr_structure(LG_Context *ctx, LG_LogicalExpr *lexpr) {
+    LG_StatusKind status = LG_StatusKind_OK;
+    LG_Scope scope = lg_push_scope(&ctx->arena);
+
+    //////////////////////////////////////////////////////////////
+    // ~~ param dominance validation ~~
+    // this is very easy b/c there' no control flow to speak of
+    
+    {
+        bool params_begin = false;
+        bool params_end = false;
+            
+        for (size_t i = 0; i < lexpr->len; i++) {
+            // Param declarations must be the first section of the lexpr,
+            // while sink declarations must be at the end.
+            if (lexpr->nodes[i].opcode == LG_Opcode_Param && !params_begin) {
+                if (i != 0) {
+                    lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
+                        "found the first param declaration at node index %{i64}\n"
+                        "note: param declarations must be the first thing in the expr"
+                    ), i);
+                    status = LG_StatusKind_InvalidArgument;
+                    goto out;
+                }
+                params_begin = true;
+            } else if (lexpr->nodes[i].opcode == LG_Opcode_Param && params_end) {
+                lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
+                    "found a param declaration after a non-param operation at node index %{i64}\n"
+                    "note: param declarations must happen one after another"
+                ), i);
+                status = LG_StatusKind_InvalidArgument;
+                goto out;
+            } else if (lexpr->nodes[i].opcode != LG_Opcode_Param && params_begin) {
+                params_end = true;
+            }
+        }
+    }
+
+
+    //////////////////////////////////////////////
+    // ~~ scope validation ~~
+
+    {
+        LG_BitVector seen_set;
+        status = lg_bv_init(&seen_set, &ctx->arena, lexpr->max_symbol_id);
+        if (status == LG_StatusKind_OutOfMemory) {
+            lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory allocating scratch space for validation"));
+            goto out;
+        } else if (status != LG_StatusKind_OK) {
+            lg_report_error(ctx, status, lg_str8_lit("failed to initialize a scratch structure during validation"));
+            goto out;
+        }
+
+        for (size_t i = 0; i < lexpr->len; i++) {
+            const uint32_t new_id = lexpr->nodes[i].y.id;
+            const bool found_x0 = lg_bv_get_bit(&seen_set, lexpr->nodes[i].x0.id);
+            const bool found_x1 = lg_bv_get_bit(&seen_set, lexpr->nodes[i].x1.id);
+            const bool found_y  = lg_bv_get_bit(&seen_set, new_id);
+
+            if (new_id == 0) {
+                lg_report_error(ctx,LG_StatusKind_InvalidArgument, lg_str8_lit(
+                    "found a symbol with id 0 at node index %{i64}\n"
+                    "0 is a reserved symbol id (invalid)"
+                ));
+                status = LG_StatusKind_InvalidArgument;
+                goto out;
+            }
+
+            if (found_y) {
+                lg_report_error(
+                    ctx, 
+                    LG_StatusKind_InvalidArgument, 
+                    lg_str8_lit("symbol %{i64} was born for the second time at node index %{i64}, violating SSA"),
+                    lexpr->nodes[i].y.id, i
+                );
+                status = LG_StatusKind_InvalidArgument;
+                goto out;
+            } else if (!found_x0)  {
+                lg_report_error(
+                    ctx, 
+                    LG_StatusKind_InvalidArgument, 
+                    lg_str8_lit("use of unknown symbol with id as operand x0 %{i64} at node index %{i64}"),
+                    lexpr->nodes[i].x0.id, i
+                );
+                status = LG_StatusKind_InvalidArgument;
+                goto out;
+            } else if (!found_x1 && lg_opcode_is_binary(lexpr->nodes[i].opcode)) {
+                lg_report_error(
+                    ctx, 
+                    LG_StatusKind_InvalidArgument, 
+                    lg_str8_lit("use of unknown symbol with id as operand x1 %{i64} at node index %{i64}"),
+                    lexpr->nodes[i].x1.id, i
+                );
+                status = LG_StatusKind_InvalidArgument;
+                goto out;
+            }
+
+            lg_bv_set_bit(&seen_set, 1, new_id);
+        }
+    }
+
+out:
+    lg_pop_scope(&ctx->arena, scope);
+    return status;
+}
+
+LG_StatusKind
+lg_lower_lexpr(
+    LG_Context *ctx,
+    LG_LogicalExpr *lexpr,
+    LG_LogicalExprLoweringFlags flags,
+    LG_PhysicalExpr *out_pexpr
+) {
+    LG_StatusKind status;
+
+    if (!(flags & LG_LogicalExprLoweringFlag_NoStructuralInvariantValidation)) {
+        status = lg_validate_lexpr_structure(ctx, lexpr);
+        if (status != LG_StatusKind_OK) {
+            return status;
+        }
+    }
 }
