@@ -443,7 +443,7 @@ out:
 /// of the SSA form hold s.t shapes will never attempt to infer themselves
 /// on other nil shapes
 LG_StatusKind
-lg_infer_logical_shapes(LG_Context *ctx, LG_LogicalExpr *lexpr, LG_StridedDesc *out_descs) {
+lg_infer_logical_shapes(LG_Context *ctx, LG_LogicalExpr *lexpr, LG_LogicalShape *out_shapes) {
     LG_StatusKind status = LG_StatusKind_OK;
 
     for (size_t i = 0; i < lexpr->len; i++) {
@@ -451,16 +451,16 @@ lg_infer_logical_shapes(LG_Context *ctx, LG_LogicalExpr *lexpr, LG_StridedDesc *
 
         switch (node->opcode) {
         case LG_Opcode_Param:
-            out_descs[node->y.id].rank = node->meta_as.param.y_shape.rank;
-            lg_memcpy(&out_descs[node->y.id], &node->meta_as.param.y_shape.rank, sizeof(size_t) * LG_MAX_RANK);
+            out_shapes[node->y.id].rank = node->meta_as.param.y_shape.rank;
+            lg_memcpy(&out_shapes[node->y.id], &node->meta_as.param.y_shape.rank, sizeof(size_t) * LG_MAX_RANK);
             break;
 
         case LG_Opcode_Add:
         case LG_Opcode_Sub: {
             LG_LogicalShape y;
             status = lg_infer_broadcasted_dims(&y, (const LG_LogicalShape*[2]){
-                (LG_LogicalShape*)&out_descs[node->x0.id],
-                (LG_LogicalShape*)&out_descs[node->x1.id],
+                &out_shapes[node->x0.id],
+                &out_shapes[node->x1.id],
             }, 2);
             if (status != LG_StatusKind_OK) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
@@ -476,8 +476,8 @@ lg_infer_logical_shapes(LG_Context *ctx, LG_LogicalExpr *lexpr, LG_StridedDesc *
             LG_LogicalShape y;
             status = lg_infer_contracted_dims(
                 &y,
-                (LG_LogicalShape*)&out_descs[node->x0.id],
-                (LG_LogicalShape*)&out_descs[node->x1.id],
+                &out_shapes[node->x0.id],
+                &out_shapes[node->x1.id],
                 node->meta_as.contract.n_contracted_axes,
                 node->meta_as.contract.n_batch_axes
             );
@@ -506,23 +506,6 @@ lg_infer_logical_shapes(LG_Context *ctx, LG_LogicalExpr *lexpr, LG_StridedDesc *
     return LG_StatusKind_OK;
 }
 
-/// assumes that there are `expr.max_symbol_id` elements in `descs`
-void 
-lg_assign_layouts(
-    LG_Context *ctx,
-    LG_LogicalExpr *lexpr,
-    LG_LayoutKind layout,
-    size_t unit_align,
-    LG_StridedDesc *inout_descs
-) {
-    (void)ctx;
-
-    for (size_t i = 0; i < lexpr->max_symbol_id; i++) {
-        LG_StatusKind status = lg_desc_compute_strides(&inout_descs[i], layout, unit_align);
-        lg_assert(status == LG_StatusKind_OK);
-    }
-}
-
 LG_StatusKind
 lg_lower_lexpr(
     LG_Context *ctx,
@@ -533,30 +516,102 @@ lg_lower_lexpr(
     LG_StatusKind status = LG_StatusKind_OK;
     LG_Scope scope = lg_push_scope(&ctx->arena);
 
+
+    ///////////////////////////////////
+    // ~~ validate SSA invariants ~~
+
     if (!(flags & LG_LogicalExprLoweringFlag_NoStructuralInvariantValidation)) {
         status = lg_validate_lexpr_structure(ctx, lexpr);
         if (status != LG_StatusKind_OK) {
             goto out;
         }
     }
+    
 
-    // we use an `LG_StridedDesc` array so b/c they can be casted safely
-    LG_StridedDesc *descs = (LG_StridedDesc*)lg_arena_alloc(
+    ///////////////////////////////////
+    // ~~ shape inference ~~
+
+    LG_LogicalShape *shapes = (LG_LogicalShape*)lg_arena_alloc(
         &ctx->arena,
-        lexpr->max_symbol_id * sizeof(LG_StridedDesc),
-        _Alignof(LG_StridedDesc)
+        lexpr->max_symbol_id * sizeof(LG_LogicalShape),
+        _Alignof(LG_LogicalShape)
     );
-    if (descs == NULL) {
+    if (shapes == NULL) {
         status =  LG_StatusKind_OutOfMemory;
         lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
         goto out;
     }
-    status = lg_infer_logical_shapes(ctx, lexpr, descs);
+    status = lg_infer_logical_shapes(ctx, lexpr, shapes);
     if (status != LG_StatusKind_OK) {
         goto out;
     }
 
-    lg_assign_layouts(ctx, lexpr, LG_LayoutKind_RowMajor /* TODO */, 1 /* TODO */, descs);
+
+    ///////////////////////////////////
+    // ~~ layout assignment ~~
+
+    LG_AffineTransform *transforms = (LG_AffineTransform*)lg_arena_alloc(
+        &ctx->arena,
+        lexpr->max_symbol_id * sizeof(LG_AffineTransform),
+        _Alignof(LG_AffineTransform)
+    );
+    if (transforms == NULL) {
+        status =  LG_StatusKind_OutOfMemory;
+        lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
+        goto out;
+    }
+    for (size_t i = 0; i < lexpr->max_symbol_id; i++) {
+        transforms[i] = lg_atran_strided_from_shape(&shapes[i], LG_LayoutKind_RowMajor /* TODO: layout optimization */, 1 /* TODO: put this in a config somewhere */);        
+    }
+
+
+    //////////////////////////////////////////////////////////////////////
+    // ~~ calculate sizes ~~
+    // at this point, all of the transforms look like this:
+    //
+    //            A                  b
+    //       { m, n, ... }        {  0  } 
+    // y  =  { 0, 0, ... } x  +   {  0  } 
+    //       { 0, 0, ... }        { ... } 
+    //
+    // which is equivalent to y_0 = dot({strides}, x)[0].
+    // if x is the maximum zero-indexed coordinate for each dim
+    // of some hypermatrix M, then the maximum possible offset into
+    // M would be that y_0. add one for the coorindate
+    // {0, 0, ...}, and you get the size in elements of the 
+    // requisite buffer.
+    //
+    // in other words, we are finding the interior of the image of 
+    // the bounding volume of the hypermatrix's coordinate space under A.
+    //
+    // this is valid for any legal A, but its very easy to visualize
+    // here.
+
+    size_t *sizes = (size_t*)lg_arena_alloc(
+        &ctx->arena,
+        lexpr->max_symbol_id * sizeof(size_t),
+        _Alignof(size_t)
+    );
+    if (sizes == NULL) {
+        status = LG_StatusKind_OutOfMemory;
+        lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
+        goto out;
+    }
+    for (size_t i = 0; i < lexpr->max_symbol_id; i++) {
+        int64_t max_coord[LG_MAX_RANK] = {0};
+        for (uint8_t i_dim = 0; i_dim < transforms[i].n_cols; i_dim++) {
+            max_coord[i_dim] = shapes[i].dim[i_dim] - 1;
+        }
+
+        int64_t y[LG_MAX_RANK] = {0};
+        lg_atran_apply(&transforms[i], max_coord, y);
+
+        sizes[i] = (y[0] + 1) * sizeof(lg_scalar);
+    }
+
+
+    /////////////////////////////////////
+    // ~~ fin ~~
 
 out:
     lg_pop_scope(&ctx->arena, scope);

@@ -2,6 +2,7 @@
 #define LG_EXPR_H_
 
 #include <libgrad/internal/core.h>
+#include <libgrad/internal/affine.h>
 #include <libgrad/internal/vm.h> // TODO: maybe this should be the thing that defines logical opcodes and symbols
 
 
@@ -126,21 +127,21 @@ enum {
 
 typedef struct
 LG_PhysicalExprNode {
+    // TODO: instead of an opcode, this should be a stream of scalar arithmetic bytecode
     LG_Opcode            opcode;
 
-    LG_StridedDesc       y_physical;
+    LG_AffineTransform   y_physical;
     uint32_t             y_buf_id;
     size_t               y_offset;
 
-    LG_StridedDesc       x0_physical;
+    LG_AffineTransform   x0_physical;
     uint32_t             x0_buf_id;
     size_t               x0_offset;
 
-    LG_StridedDesc       x1_physical;
+
+    LG_AffineTransform   x1_physical;
     uint32_t             x1_buf_id;
     size_t               x1_offset;
-
-    LG_ExprNodeMeta      meta_as;
 } LG_PhysicalExprNode;
 
 typedef struct
