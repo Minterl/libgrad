@@ -438,6 +438,91 @@ out:
     return status;
 }
 
+/// assumes that there are `expr.max_symbol_id` elements in `descs`,
+/// that the memory thereof is zeroed, and that the structural invariants
+/// of the SSA form hold s.t shapes will never attempt to infer themselves
+/// on other nil shapes
+LG_StatusKind
+lg_infer_logical_shapes(LG_Context *ctx, LG_LogicalExpr *lexpr, LG_StridedDesc *out_descs) {
+    LG_StatusKind status = LG_StatusKind_OK;
+
+    for (size_t i = 0; i < lexpr->len; i++) {
+        const LG_LogicalExprNode *const restrict node = &lexpr->nodes[i];
+
+        switch (node->opcode) {
+        case LG_Opcode_Param:
+            out_descs[node->y.id].rank = node->meta_as.param.y_shape.rank;
+            lg_memcpy(&out_descs[node->y.id], &node->meta_as.param.y_shape.rank, sizeof(size_t) * LG_MAX_RANK);
+            break;
+
+        case LG_Opcode_Add:
+        case LG_Opcode_Sub: {
+            LG_LogicalShape y;
+            status = lg_infer_broadcasted_dims(&y, (const LG_LogicalShape*[2]){
+                (LG_LogicalShape*)&out_descs[node->x0.id],
+                (LG_LogicalShape*)&out_descs[node->x1.id],
+            }, 2);
+            if (status != LG_StatusKind_OK) {
+                lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
+                    lg_str8_lit("symbols %{i64} and %{i64} could not be broadcasted"),
+                    node->x0.id, node->x1.id
+                );
+                return status;
+            }
+            break;
+        }
+
+        case LG_Opcode_Contract: {
+            LG_LogicalShape y;
+            status = lg_infer_contracted_dims(
+                &y,
+                (LG_LogicalShape*)&out_descs[node->x0.id],
+                (LG_LogicalShape*)&out_descs[node->x1.id],
+                node->meta_as.contract.n_contracted_axes,
+                node->meta_as.contract.n_batch_axes
+            );
+            if (status != LG_StatusKind_OK) {
+                lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
+                    lg_str8_lit("symbols %{i64} and %{i64} could not be contracted"),
+                    node->x0.id, node->x1.id
+                );
+                return status;
+            }
+            break;
+        }
+
+        case LG_Opcode_Sink:
+        case LG_Opcode_Hadamard:
+        case LG_Opcode_MSELoss:
+        case LG_Opcode_CrossEntropyLoss:
+        case LG_Opcode_ReLU:
+        case LG_Opcode_StableSoftmax:
+        case LG_Opcode_Sigmoid:
+        case LG_Opcode_LN:
+            lg_unreachable("TODO");
+        }
+    }
+
+    return LG_StatusKind_OK;
+}
+
+/// assumes that there are `expr.max_symbol_id` elements in `descs`
+void 
+lg_assign_layouts(
+    LG_Context *ctx,
+    LG_LogicalExpr *lexpr,
+    LG_LayoutKind layout,
+    size_t unit_align,
+    LG_StridedDesc *inout_descs
+) {
+    (void)ctx;
+
+    for (size_t i = 0; i < lexpr->max_symbol_id; i++) {
+        LG_StatusKind status = lg_desc_compute_strides(&inout_descs[i], layout, unit_align);
+        lg_assert(status == LG_StatusKind_OK);
+    }
+}
+
 LG_StatusKind
 lg_lower_lexpr(
     LG_Context *ctx,
@@ -445,12 +530,35 @@ lg_lower_lexpr(
     LG_LogicalExprLoweringFlags flags,
     LG_PhysicalExpr *out_pexpr
 ) {
-    LG_StatusKind status;
+    LG_StatusKind status = LG_StatusKind_OK;
+    LG_Scope scope = lg_push_scope(&ctx->arena);
 
     if (!(flags & LG_LogicalExprLoweringFlag_NoStructuralInvariantValidation)) {
         status = lg_validate_lexpr_structure(ctx, lexpr);
         if (status != LG_StatusKind_OK) {
-            return status;
+            goto out;
         }
     }
+
+    // we use an `LG_StridedDesc` array so b/c they can be casted safely
+    LG_StridedDesc *descs = (LG_StridedDesc*)lg_arena_alloc(
+        &ctx->arena,
+        lexpr->max_symbol_id * sizeof(LG_StridedDesc),
+        _Alignof(LG_StridedDesc)
+    );
+    if (descs == NULL) {
+        status =  LG_StatusKind_OutOfMemory;
+        lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
+        goto out;
+    }
+    status = lg_infer_logical_shapes(ctx, lexpr, descs);
+    if (status != LG_StatusKind_OK) {
+        goto out;
+    }
+
+    lg_assign_layouts(ctx, lexpr, LG_LayoutKind_RowMajor /* TODO */, 1 /* TODO */, descs);
+
+out:
+    lg_pop_scope(&ctx->arena, scope);
+    return status;
 }
