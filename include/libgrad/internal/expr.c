@@ -167,7 +167,7 @@ void
 lg_builder_finish(
     LG_Context *ctx,
     LG_Builder *builder,
-    LG_Allocator *dest_allocator,
+    LG_Allocator *artifact_allocator,
     LG_LogicalExpr *out_lexpr
 ) {
 
@@ -220,7 +220,7 @@ lg_builder_finish(
     /////////////////////////////////////////////////
     // ~~ copy the data into a contigous array ~~
     
-    LG_LogicalExprNode *lexpr_nodes = (LG_LogicalExprNode*)lg_alloc_zero(dest_allocator, lexpr_len * sizeof(LG_LogicalExprNode));
+    LG_LogicalExprNode *lexpr_nodes = (LG_LogicalExprNode*)lg_alloc_zero(artifact_allocator, lexpr_len * sizeof(LG_LogicalExprNode));
     if (lexpr_nodes == NULL) {
         lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory allocating logical expr nodes"));
         return;
@@ -247,7 +247,4 @@ lg_builder_finish(
 
     out_lexpr->len = lexpr_len;
     out_lexpr->nodes = lexpr_nodes;
-
-
-    /* TODO: perform shape inference */
 }

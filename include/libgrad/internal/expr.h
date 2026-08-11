@@ -30,12 +30,6 @@ enum {
     LG_SymbolFlag_Pin = UINT32_C(0x1),
 };
 
-typedef struct
-LG_LogicalShape {
-    uint8_t rank;
-    size_t dims[LG_MAX_RANK];
-} LG_LogicalShape;
-
 typedef union
 LG_ExprNodeMeta {
     struct {

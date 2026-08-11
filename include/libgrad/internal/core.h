@@ -121,15 +121,19 @@ LG_LayoutKind {
     LG_LayoutKind_ColumnMajor,
 } LG_LayoutKind;
 
+#define LG_LOGICAL_SHAPE_FIELDS \
+    size_t rank; \
+    size_t dim[LG_MAX_RANK];
+
+typedef struct
+LG_LogicalShape {
+    LG_LOGICAL_SHAPE_FIELDS
+} LG_LogicalShape;
+
 /// Tensor shape descriptor
 typedef struct
 LG_StridedDesc {
-    /// The rank of the tensor.
-    /// Must be less than LG_MAX_RANK.
-    size_t rank;
-
-    /// The dimensionality of the tensor.
-    size_t dim[LG_MAX_RANK];
+    LG_LOGICAL_SHAPE_FIELDS
 
     /// The strides of the tensor.
     /// The order of this array must match that of `dim`.
@@ -167,9 +171,8 @@ lg_nditer_goto(LG_NDIter *iter, size_t *coords);
 /// Infers the broadcasted logical dimensions between `descs`.
 LG_StatusKind 
 lg_infer_broadcasted_dims(
-    size_t *lg_nullable out_rank,
-    size_t *lg_nullable out_dim,
-    const LG_StridedDesc **descs,
+    LG_LogicalShape *lg_nullable out,
+    const LG_LogicalShape **descs,
     size_t n_descs
 );
 
@@ -183,10 +186,9 @@ lg_create_broadcast_space(LG_StridedDesc **descs, size_t n_descs);
 /// Does not compute strides.
 LG_StatusKind 
 lg_infer_contracted_dims(
-    size_t *lg_nullable out_rank,
-    size_t *lg_nullable out_dim,
-    const LG_StridedDesc *x0,
-    const LG_StridedDesc *x1,
+    LG_LogicalShape *lg_nullable out_y,
+    const LG_LogicalShape *x0,
+    const LG_LogicalShape *x1,
     size_t n_contracted_axes,
     size_t n_batch_axes
 );

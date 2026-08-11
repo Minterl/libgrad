@@ -102,15 +102,14 @@ lg_desc_left_pad_axes(LG_StridedDesc **descs, size_t n_descs) {
 
 LG_StatusKind 
 lg_infer_broadcasted_dims(
-    size_t *lg_nullable out_rank,
-    size_t *lg_nullable out_dim,
-    const LG_StridedDesc **descs,
+    LG_LogicalShape *lg_nullable out,
+    const LG_LogicalShape **shapes,
     size_t n_descs
 ) {
     size_t max_rank = 0;
     for (size_t i = 0; i < n_descs; i++) {
-        if (descs[i]->rank > max_rank) {
-            max_rank = descs[i]->rank;
+        if (shapes[i]->rank > max_rank) {
+            max_rank = shapes[i]->rank;
         }
     }
 
@@ -131,8 +130,8 @@ lg_infer_broadcasted_dims(
     }
 
     for (size_t i_desc = 0; i_desc < n_descs; i_desc++) {
-        for (size_t i_axis = 0; i_axis < descs[i_desc]->rank; i_axis++) {
-            const size_t dim_desc = descs[i_desc]->dim[descs[i_desc]->rank - i_axis - 1];
+        for (size_t i_axis = 0; i_axis < shapes[i_desc]->rank; i_axis++) {
+            const size_t dim_desc = shapes[i_desc]->dim[shapes[i_desc]->rank - i_axis - 1];
             size_t *const dim_master = &master_dim[max_rank - i_axis - 1];
             if (dim_desc == 1) {
                 continue;
@@ -145,12 +144,10 @@ lg_infer_broadcasted_dims(
         }
     }
 
-    if (out_rank != NULL) {
-        *out_rank = max_rank;
-    }
-    if (out_dim != NULL) {
+    if (out != NULL) {
+        out->rank = max_rank;
         for (size_t i = 0; i < LG_MAX_RANK; i++) {
-            out_dim[i] = master_dim[i];
+            out->dim[i] = master_dim[i];
         }
     }
 
@@ -159,12 +156,14 @@ lg_infer_broadcasted_dims(
 
 LG_StatusKind 
 lg_create_broadcast_space(LG_StridedDesc **descs, size_t n_descs) {
-    size_t max_rank = 0;
-    size_t master_dim[LG_MAX_RANK] = {0};
-    LG_StatusKind status = lg_infer_broadcasted_dims(&max_rank, master_dim, (const LG_StridedDesc**)descs, n_descs);
+    LG_LogicalShape y;
+    LG_StatusKind status = lg_infer_broadcasted_dims(&y, (const LG_LogicalShape**)descs, n_descs);
     if (status != LG_StatusKind_OK) {
         return status;
     }
+
+    const size_t max_rank = y.rank;
+    const size_t *const restrict master_dim = y.dim;
 
     lg_desc_left_pad_axes(descs, n_descs);
     
@@ -196,10 +195,9 @@ lg_create_broadcast_space(LG_StridedDesc **descs, size_t n_descs) {
 
 LG_StatusKind 
 lg_infer_contracted_dims(
-    size_t *lg_nullable out_rank,
-    size_t *lg_nullable out_dim,
-    const LG_StridedDesc *x0,
-    const LG_StridedDesc *x1,
+    LG_LogicalShape *lg_nullable out_y,
+    const LG_LogicalShape *x0,
+    const LG_LogicalShape *x1,
     size_t n_contracted_axes,
     size_t n_batch_axes
 ) {
@@ -221,13 +219,11 @@ lg_infer_contracted_dims(
         dim[rank] = x1->dim[i - 1];
     }
 
-    if (out_dim != NULL) {
+    if (out_y != NULL) {
+        out_y->rank = rank;
         for (size_t i = 0; i < rank; i++) {
-            out_dim[i] = dim[i];
+            out_y->dim[i] = dim[i];
         }
-    }
-    if (out_rank != NULL) {
-        *out_rank = rank;
     }
 
     return LG_StatusKind_OK;
