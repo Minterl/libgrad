@@ -85,8 +85,8 @@ lg_builder_append_(
         return lg_nil(LG_Symbol);
     }
 
-    LG_Symbol y = (LG_Symbol){ .id = ctx->next_symbol_id };
-    ctx->next_symbol_id++;
+    LG_Symbol y = (LG_Symbol){ .id = builder->next_symbol_id };
+    builder->next_symbol_id++;
 
     node->opcode = opcode;
     node->x0 = opts.x0;
@@ -163,7 +163,7 @@ lg_contract(
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-void
+LG_StatusKind
 lg_builder_finish(
     LG_Context *ctx,
     LG_Builder *builder,
@@ -178,6 +178,7 @@ lg_builder_finish(
     // 2) there are no cycles in the sll
 
     size_t lexpr_len = 0;
+    const size_t max_symbol_id = builder->next_symbol_id - 1;
     {
         bool is_first_iteration = true;
         LG_BuilderNode *tortoise = builder->ir_tail;
@@ -192,24 +193,24 @@ lg_builder_finish(
 
             if (lg_unlikely(!is_first_iteration && hare != NULL && tortoise == hare)) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit("detected cycle in expr builder node list"));
-                return;
+                return LG_StatusKind_InvalidArgument;
             }
 
-            if (lg_unlikely(tortoise->y.id  >= ctx->next_symbol_id)) {
+            if (lg_unlikely(tortoise->y.id >= max_symbol_id)) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
                     lg_str8_lit("found invalid, discontiguous symbol id %{i64} at expr node %{i64}"), tortoise->y.id, lexpr_len
                 );
-                return;
-            } else if (lg_unlikely(tortoise->x0.id  >= ctx->next_symbol_id)) {
+                return LG_StatusKind_InvalidArgument;
+            } else if (lg_unlikely(tortoise->x0.id >= max_symbol_id)) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
                     lg_str8_lit("found invalid, discontiguous symbol id %{i64} at expr node %{i64}"), tortoise->x0.id, lexpr_len
                 );
-                return;
-            } else if (lg_unlikely(tortoise->x1.id  >= ctx->next_symbol_id)) {
+                return LG_StatusKind_InvalidArgument;
+            } else if (lg_unlikely(tortoise->x1.id >= max_symbol_id)) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
                     lg_str8_lit("found invalid, discontiguous symbol id %{i64} at expr node %{i64}"), tortoise->x1.id, lexpr_len
                 );
-                return;
+                return LG_StatusKind_InvalidArgument;
             }
 
             is_first_iteration = false;
@@ -223,7 +224,7 @@ lg_builder_finish(
     LG_LogicalExprNode *lexpr_nodes = (LG_LogicalExprNode*)lg_alloc_zero(artifact_allocator, lexpr_len * sizeof(LG_LogicalExprNode));
     if (lexpr_nodes == NULL) {
         lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory allocating logical expr nodes"));
-        return;
+        return LG_StatusKind_InvalidArgument;
     }
 
     LG_BuilderNode *iter_node = builder->ir_tail;
@@ -245,6 +246,11 @@ lg_builder_finish(
         lexpr_nodes[i].meta_as = iter_node->meta_as;
     }
 
+
+    //////////////
+    // ~~ fin ~~
+
+    out_lexpr->max_symbol_id = max_symbol_id;
     out_lexpr->len = lexpr_len;
     out_lexpr->nodes = lexpr_nodes;
 }

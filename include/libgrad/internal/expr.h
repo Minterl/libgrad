@@ -20,8 +20,6 @@ LG_Context {
     LG_StatusKind    last_status;
     size_t           err_msg_len;
     uint8_t          err_msg_backing_buf[LG_MAX_ERR_LEN];
-
-    uint32_t         next_symbol_id;
 } LG_Context;
 
 typedef uint32_t 
@@ -56,6 +54,7 @@ LG_LogicalExprNode {
 
 typedef struct 
 LG_LogicalExpr {
+    size_t max_symbol_id;
     size_t len;
     LG_LogicalExprNode *nodes lg_check_bounds(len);
 } LG_LogicalExpr;
@@ -86,7 +85,8 @@ LG_BuilderNode {
 
 typedef struct
 LG_Builder {
-    LG_BuilderNode        *ir_tail;
+    LG_BuilderNode  *ir_tail;
+    uint32_t         next_symbol_id;
 } LG_Builder;
 
 LG_Symbol
