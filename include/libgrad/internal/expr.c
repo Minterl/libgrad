@@ -1,3 +1,4 @@
+#include "libgrad/internal/affine.h"
 #include <libgrad/internal/expr.h>
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/debug.h>
@@ -62,7 +63,7 @@ lg_report_error(LG_Context *ctx, LG_StatusKind status, lg_str8 fmt, ...) {
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-#define lg_builder_append(ctx, builder, opcode, ...) lg_builder_append_((ctx), (builder), (opcode), (LG_BuilderAppendOptions){__VA_ARGS__})
+#define lg_lbuilder_append(ctx, builder, opcode, ...) lg_lbuilder_append_((ctx), (builder), (opcode), (LG_BuilderAppendOptions){__VA_ARGS__})
 
 typedef struct
 LG_BuilderAppendOptions {
@@ -74,7 +75,7 @@ LG_BuilderAppendOptions {
 } LG_BuilderAppendOptions;
 
 LG_Symbol
-lg_builder_append_(
+lg_lbuilder_append_(
     LG_Context *ctx,
     LG_Builder *builder,
     LG_Opcode opcode,
@@ -88,7 +89,7 @@ lg_builder_append_(
 
     builder->next_symbol_id++; // first valid symbol id is 1
     LG_Symbol y = (LG_Symbol){ .id = builder->next_symbol_id };
-
+    
     node->opcode = opcode;
     node->x0 = opts.x0;
     node->x1 = opts.x1;
@@ -114,7 +115,7 @@ lg_builder_append_(
 
 LG_Symbol
 lg_param(LG_Context *ctx, LG_Builder *builder, LG_LogicalShape shape) {
-    return lg_builder_append(ctx, builder, LG_Opcode_Param, .meta_as.param.y_shape = shape);
+    return lg_lbuilder_append(ctx, builder, LG_Opcode_Param, .meta_as.param.y_shape = shape);
 }
 
 void
@@ -134,7 +135,7 @@ lg_pin(LG_Context *ctx, LG_Builder *builder, LG_Symbol sym) {
 
 LG_Symbol
 lg_add(LG_Context *ctx, LG_Builder *builder, LG_Symbol x0, LG_Symbol x1) {
-    return lg_builder_append(ctx, builder, LG_Opcode_Add, .x0 = x0, .x1 = x1);
+    return lg_lbuilder_append(ctx, builder, LG_Opcode_Add, .x0 = x0, .x1 = x1);
 }
 
 LG_Symbol
@@ -146,7 +147,7 @@ lg_contract(
     size_t n_contracted_axes,
     size_t n_batch_axes
 ) {
-    return lg_builder_append(
+    return lg_lbuilder_append(
         ctx, builder, LG_Opcode_Contract,
         .x0 = x0,
         .x1 = x1,
@@ -320,6 +321,79 @@ lg_bv_and(LG_BitVector *bv, uint64_t *b) {
     for (size_t i = 0; i < bv->n_blocks; i++) {
         bv->blocks[i] &= b[i];
     }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// hedral expression builder
+///
+////////////////////////////////////////////////////////////////////////////////
+
+typedef struct
+LG_HedralBuilderNode {
+    struct LG_HedralBuilderNode  *prev;
+    LG_HedralExprNode             node;
+} LG_HedralBuilderNode;
+
+typedef struct
+LG_HedralBuilder {
+    LG_HedralBuilderNode  *ir_tail;
+    uint32_t               next_symbol_id;
+} LG_HedralBuilder;
+
+LG_HedralSymbol
+lg_hbuilder_append(
+    LG_Context *ctx,
+    LG_HedralBuilder *builder,
+    LG_HedralOpcode opcode,
+    LG_HedralOperands operands
+) {
+    LG_HedralBuilderNode *node = lg_arena_alloc_struct(&ctx->arena, LG_HedralBuilderNode);
+    if (node == NULL) {
+        lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory appending to hedral expr"));
+        return lg_nil(LG_HedralSymbol);
+    }
+
+    builder->next_symbol_id++;
+    LG_HedralSymbol y = (LG_HedralSymbol){ .id = builder->next_symbol_id };
+
+    node->node.opcode = opcode;
+    node->node.y = y;
+    node->node.as = operands;
+
+    // TODO: make lg_sll_prepend
+    if (builder->ir_tail != NULL) {
+        node->prev = builder->ir_tail;
+    }
+    builder->ir_tail = node;
+
+    return y;
+}
+
+LG_HedralSymbol
+lg_hbuilder_begin_iter_domain(
+    LG_Context *ctx,
+    LG_HedralBuilder *builder,
+    int64_t lower[static LG_MAX_RANK], int64_t upper[static LG_MAX_RANK],
+    uint8_t rank
+) {
+    LG_HPolyhedron domain = {0};
+    LG_StatusKind status = lg_hpoly_make_parallelotope(&ctx->arena, &domain, rank, lower, upper);
+    if (status == LG_StatusKind_OutOfMemory) {
+        lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating hedral expr data"));
+        return lg_nil(LG_HedralSymbol);
+    } else if (status != LG_StatusKind_OK) {
+        lg_report_error(ctx, status, lg_str8_lit("failed to declare an iteration domain"));
+        return lg_nil(LG_HedralSymbol);
+    }
+
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, builder, LG_HedralOpcode_BeginIterationDomain, (LG_HedralOperands){
+        .begin_iteration_domain = domain 
+    });
+
+    return y;
 }
 
 

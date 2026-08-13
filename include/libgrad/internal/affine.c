@@ -39,3 +39,27 @@ lg_atran_apply(const LG_AffineTransform *tran, const int64_t x[static LG_MAX_RAN
         y[i_rows] += tran->b[i_rows];
     }
 }
+
+LG_StatusKind
+lg_hpoly_make_parallelotope(LG_Arena *arena, LG_HPolyhedron *out_hpoly, uint8_t rank, int64_t *lower, int64_t *upper) {
+    lg_memzero(out_hpoly, sizeof(LG_HPolyhedron));
+
+    out_hpoly->n_cols = rank;
+    out_hpoly->n_rows = rank * 2;
+
+    int64_t *data = lg_arena_alloc_array(arena, int64_t, out_hpoly->n_rows * out_hpoly->n_cols);
+    if (data == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+    out_hpoly->data = data;
+
+    int64_t *A = lg_hpoly_get_A(out_hpoly);
+    int64_t *b = lg_hpoly_get_b(out_hpoly);
+
+    for (uint8_t i = 0; i < rank; i++) {
+        A[2*i * out_hpoly->n_cols + i] = -1;
+        A[(2*i + 1) * out_hpoly->n_cols + i] = 1;
+        b[2*i] = -lower[i];
+        b[2*i + 1] = upper[i];
+    }
+}

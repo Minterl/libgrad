@@ -68,6 +68,7 @@ LG_LogicalExpr {
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
+// TODO: rename this to LogicalBuilder and deduplicate the fields
 typedef struct
 LG_BuilderNode {
     /// Nodes are stored in reverse-chronological order, so we only have a
@@ -116,38 +117,151 @@ lg_contract(
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ///
-/// physical expr stuff
+/// hedral expr stuff
 ///
 ////////////////////////////////////////////////////////////////////////////////
+///
+/// The hedral language deals with both index arithmetic and scalar arithmetic simulatneously.
+/// The program is composed of blocks (like the one below).
+///
+/// It is strongly (semantically) typed.
+///
+/// Instead of standard structured control flow, hedral defines three core primitives for the
+/// "whoami" part of a kernel:
+/// 1) The iteration domain defines loop boundaries as constants. `induction_vector` 
+///    is the current coodinate in the iteration domain.
+/// 2) Affine transforms map the iteration domain to the index domain.
+/// 3) Address operators map the index domain to the address domain.
+///
+/// The "whatdoido" part of a kernel is defined using SSA scalar arithmetic. Side effects
+/// (such as accumulation semantics) are represented via the Yield instruction,
+/// which has Assign and Accumulate variants.
+///
+/// This makes codegen really easy, because all you have to do is inline the operations
+/// and the constants, and choose which loops you're going to schedule in parallel and 
+/// which loops you're going to serialize (hint: accumulation semantics almost always
+/// mean serialization).
+///
+/// Below is a very simple block describing what may be an einsum/reduction/contraction.
+///
+/// *note*: the BeginIterationDomain and EndIterationDomain ops have been replaced 
+/// with the ForIterationDomain notation for clarity
+///
+/// ForIterationDomain induction_vector: Coordinate = (
+///     0 <= j <= m,
+///     0 <= k <= n,
+///     0 <= l <= o,
+///     ...
+/// ) {
+///     %y_transform:  AffineTransform = ConstructAffineTransform(...);
+///     %y_coord:      Coordinate      = ApplyAffineTransform(induction_vector, y_transform);
+///     %y_addr:       Address         = ApplyAddressOperator(y_coord, y_transform);
+///
+///     %x0_transform: AffineTransform = ConstructAffineTransform(...);
+///     %x0_coord:     Coordinate      = ApplyAffineTransform(induction_vector, x0_transform);
+///     %x0_addr:      Address         = ApplyAddressOperator(x0_coord, x0_transform);
+///
+///     %x1_transform: AffineTransform = ConstructAffineTransform(...);
+///     %x1_coord:     Coordinate      = ApplyAffineTransform(induction_vector, x1_transform);
+///     %x1_addr:      Address         = ApplyAffineAddressOperator(x1_coord, x1_transform);
+///
+///     %x0: Scalar = Access(x0_addr);
+///     %x1: Scalar = Access(x1_addr);
+///     %y:  Scalar = Multiply(%x0, %x1);
+///      
+///     YieldAccumulate(y_addr, y);
+/// }
 
 typedef uint32_t LG_LogicalExprLoweringFlags;
 enum {
     LG_LogicalExprLoweringFlag_NoStructuralInvariantValidation = (0x1),
 };
 
+typedef uint8_t LG_HedralType;
+enum {
+    LG_HedralType_Unit,
+    LG_HedralType_Address,
+    LG_HedralType_Index,
+    LG_HedralType_Scalar,
+    LG_HedralType_Coordinate,
+    LG_HedralType_Domain,
+    LG_HedralType_AffineTransform,
+    LG_HedralType_AffineAddressOperator,
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//       Opcode                             Return Type                           Operands
+#define LG_HEDRAL_OPERATIONS \
+    LG_X(NOP,                               LG_HedralType_Unit,                   LG_HedralType_Unit), \
+    LG_X(Add,                               LG_HedralType_Scalar,                 LG_HedralType_Scalar, LG_HedralType_Scalar), \
+    LG_X(Multiply,                          LG_HedralType_Scalar,                 LG_HedralType_Scalar, LG_HedralType_Scalar), \
+    LG_X(BeginIterationDomain,              LG_HedralType_Domain,                 LG_HedralType_Coordinate), \
+    LG_X(EndIterationDomain,                LG_HedralType_Unit,                   LG_HedralType_Unit), \
+    LG_X(ConstructAffineTransform,          LG_HedralType_AffineTransform,        LG_HedralType_AffineTransform), \
+    LG_X(ConstructAffineAddressOperator,    LG_HedralType_AffineAddressOperator,  LG_HedralType_AffineAddressOperator), \
+    LG_X(ApplyAffineTransform,              LG_HedralType_Coordinate,             LG_HedralType_AffineTransform, LG_HedralType_Coordinate), \
+    LG_X(ApplyAffineAddressOperator,        LG_HedralType_Address,                LG_HedralType_AffineAddressOperator, LG_HedralType_Address), \
+    LG_X(Access,                            LG_HedralType_Scalar,                 LG_HedralType_Address), \
+    LG_X(YieldAssign,                       LG_HedralType_Unit,                   LG_HedralType_Address, LG_HedralType_Scalar), \
+    LG_X(YieldAccumulate,                   LG_HedralType_Unit,                   LG_HedralType_Address, LG_HedralType_Scalar),
+      
+typedef uint8_t
+LG_HedralOpcode;
+enum {
+#   define LG_X(opcode, ...) LG_HedralOpcode_##opcode
+    LG_HEDRAL_OPERATIONS
+#   undef LG_X
+};
+
+struct {
+    LG_HedralType   return_type;
+    LG_HedralType   operand_types[2];
+    const lg_str8   string_name;
+} LG_HEDRAL_OPERATION_TABLE[] = {
+#   define LG_X(opcode, return_type_, ...) [LG_HedralOpcode_##opcode] = {\
+        .return_type   = (return_type_), \
+        .operand_types = {__VA_ARGS__}, \
+        .string_name   = lg_str8_lit(#opcode), \
+    }
+    LG_HEDRAL_OPERATIONS
+#   undef LG_X
+};
+
 typedef struct
-LG_PhysicalExprNode {
-    // TODO: instead of an opcode, this should be a stream of scalar arithmetic bytecode
-    LG_Opcode            opcode;
+LG_HedralSymbol {
+    uint32_t id;
+} LG_HedralSymbol;
 
-    LG_AffineTransform   y_physical;
-    uint32_t             y_buf_id;
-    size_t               y_offset;
+typedef union 
+LG_HedralOperands {
+    LG_HedralSymbol     add[2];
+    LG_HedralSymbol     multiply[2];
 
-    LG_AffineTransform   x0_physical;
-    uint32_t             x0_buf_id;
-    size_t               x0_offset;
+    LG_HPolyhedron      begin_iteration_domain;
+    LG_HedralSymbol     end_iteration_domain;
+    LG_AffineTransform  construct_affine_transform;
+    LG_AffineTransform  construct_affine_address_operator;
 
+    LG_HedralSymbol     apply_affine_transform[2];
+    LG_HedralSymbol     apply_affine_address_operator[2];
 
-    LG_AffineTransform   x1_physical;
-    uint32_t             x1_buf_id;
-    size_t               x1_offset;
-} LG_PhysicalExprNode;
+    LG_HedralSymbol     access[2];
+
+    LG_HedralSymbol     yield_assign[2];
+    LG_HedralSymbol     yield_accumulate[2];
+} LG_HedralOperands;
 
 typedef struct
-LG_PhysicalExpr {
-    size_t                len;
-    LG_PhysicalExprNode  *nodes lg_check_bounds(len);
-} LG_PhysicalExpr;
+LG_HedralExprNode {
+    LG_HedralOpcode   opcode;
+    LG_HedralSymbol   y;
+    LG_HedralOperands as;
+} LG_HedralExprNode;
+
+typedef struct
+LG_HedralExpr {
+    size_t              len;
+    LG_HedralExprNode  *nodes lg_check_bounds(len);
+} LG_HedralExpr;
 
 #endif // LG_EXPR_H_
