@@ -195,7 +195,7 @@ enum {
     LG_X(NOP,                               LG_HedralType_Unit,                   LG_HedralType_Unit), \
     LG_X(Add,                               LG_HedralType_Scalar,                 LG_HedralType_Scalar, LG_HedralType_Scalar), \
     LG_X(Multiply,                          LG_HedralType_Scalar,                 LG_HedralType_Scalar, LG_HedralType_Scalar), \
-    LG_X(BeginIterationDomain,              LG_HedralType_Domain,                 LG_HedralType_Coordinate), \
+    LG_X(BeginIterationDomain,              LG_HedralType_Coordinate,             LG_HedralType_Domain), \
     LG_X(EndIterationDomain,                LG_HedralType_Unit,                   LG_HedralType_Unit), \
     LG_X(ConstructAffineTransform,          LG_HedralType_AffineTransform,        LG_HedralType_AffineTransform), \
     LG_X(ConstructAffineAddressOperator,    LG_HedralType_AffineAddressOperator,  LG_HedralType_AffineAddressOperator), \
@@ -213,7 +213,7 @@ enum {
 #   undef LG_X
 };
 
-struct {
+static const struct {
     LG_HedralType   return_type;
     LG_HedralType   operand_types[2];
     const lg_str8   string_name;
@@ -230,14 +230,16 @@ struct {
 typedef struct
 LG_HedralSymbol {
     uint32_t id;
+    LG_HedralType type;
 } LG_HedralSymbol;
 
+// TODO: use anonymous structs with names instead
 typedef union 
 LG_HedralOperands {
     LG_HedralSymbol     add[2];
     LG_HedralSymbol     multiply[2];
 
-    LG_HPolyhedron      begin_iteration_domain;
+    LG_Polyhedron       begin_iteration_domain;
     LG_HedralSymbol     end_iteration_domain;
     LG_AffineTransform  construct_affine_transform;
     LG_AffineTransform  construct_affine_address_operator;
@@ -245,7 +247,7 @@ LG_HedralOperands {
     LG_HedralSymbol     apply_affine_transform[2];
     LG_HedralSymbol     apply_affine_address_operator[2];
 
-    LG_HedralSymbol     access[2];
+    LG_HedralSymbol     access;
 
     LG_HedralSymbol     yield_assign[2];
     LG_HedralSymbol     yield_accumulate[2];
@@ -263,5 +265,7 @@ LG_HedralExpr {
     size_t              len;
     LG_HedralExprNode  *nodes lg_check_bounds(len);
 } LG_HedralExpr;
+
+#define lg_hedral_op_get_return_type(opcode) (LG_HEDRAL_OPERATION_TABLE[(opcode)].return_type)
 
 #endif // LG_EXPR_H_

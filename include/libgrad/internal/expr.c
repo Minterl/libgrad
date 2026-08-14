@@ -343,6 +343,11 @@ LG_HedralBuilder {
     uint32_t               next_symbol_id;
 } LG_HedralBuilder;
 
+typedef struct
+LG_HedralAddressTriple {
+    LG_HedralSymbol y, x0, x1;
+}LG_HedralAddressTriple;
+
 LG_HedralSymbol
 lg_hbuilder_append(
     LG_Context *ctx,
@@ -357,7 +362,10 @@ lg_hbuilder_append(
     }
 
     builder->next_symbol_id++;
-    LG_HedralSymbol y = (LG_HedralSymbol){ .id = builder->next_symbol_id };
+    LG_HedralSymbol y = (LG_HedralSymbol){
+        .id = builder->next_symbol_id,
+        .type = lg_hedral_op_get_return_type(opcode),
+    };
 
     node->node.opcode = opcode;
     node->node.y = y;
@@ -372,28 +380,165 @@ lg_hbuilder_append(
     return y;
 }
 
-LG_HedralSymbol
+#define lg_hexpr_node_assert_return_type(node) \
+    lg_assert( \
+        node != NULL && \
+        LG_HEDRAL_OPERATION_TABLE[(node)->opcode].return_type == (node)->y.type \
+    )\
+
+lg_force_inline LG_HedralSymbol
+lg_hbuilder_add(LG_Context *ctx, LG_HedralBuilder *builder, LG_HedralSymbol x0, LG_HedralSymbol x1) {
+    lg_assert(x0.type == LG_HedralType_Scalar);
+    lg_assert(x1.type == LG_HedralType_Scalar);
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, builder, LG_HedralOpcode_Add, (LG_HedralOperands){
+        .add = {x0, x1}
+    });
+    lg_hexpr_node_assert_return_type(&builder->ir_tail->node);
+    return y;
+}
+
+lg_force_inline LG_HedralSymbol
+lg_hbuilder_multiply(LG_Context *ctx, LG_HedralBuilder *builder, LG_HedralSymbol x0, LG_HedralSymbol x1) {
+    lg_assert(x0.type == LG_HedralType_Scalar);
+    lg_assert(x1.type == LG_HedralType_Scalar);
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, builder, LG_HedralOpcode_Multiply, (LG_HedralOperands){
+        .add = {x0, x1}
+    });
+    lg_hexpr_node_assert_return_type(&builder->ir_tail->node);
+    return y;
+}
+
+lg_force_inline LG_HedralSymbol
 lg_hbuilder_begin_iter_domain(
     LG_Context *ctx,
     LG_HedralBuilder *builder,
-    int64_t lower[static LG_MAX_RANK], int64_t upper[static LG_MAX_RANK],
-    uint8_t rank
+    LG_Polyhedron domain
 ) {
-    LG_HPolyhedron domain = {0};
-    LG_StatusKind status = lg_hpoly_make_parallelotope(&ctx->arena, &domain, rank, lower, upper);
-    if (status == LG_StatusKind_OutOfMemory) {
-        lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating hedral expr data"));
-        return lg_nil(LG_HedralSymbol);
-    } else if (status != LG_StatusKind_OK) {
-        lg_report_error(ctx, status, lg_str8_lit("failed to declare an iteration domain"));
-        return lg_nil(LG_HedralSymbol);
-    }
-
     LG_HedralSymbol y = lg_hbuilder_append(ctx, builder, LG_HedralOpcode_BeginIterationDomain, (LG_HedralOperands){
         .begin_iteration_domain = domain 
     });
-
+    lg_hexpr_node_assert_return_type(&builder->ir_tail->node);
     return y;
+}
+
+lg_force_inline void
+lg_hbuilder_end_iter_domain(LG_Context *ctx, LG_HedralBuilder *hbuilder) {
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_EndIterationDomain, lg_nil(LG_HedralOperands));
+    lg_hexpr_node_assert_return_type(&hbuilder->ir_tail->node);
+    lg_assert(y.type == LG_HedralType_Unit);
+    return;
+}
+
+lg_force_inline LG_HedralSymbol 
+lg_hbuilder_construct_atran(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_AffineTransform atran) {
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_ConstructAffineTransform, (LG_HedralOperands){
+        .construct_affine_transform = atran,
+    });
+    lg_hexpr_node_assert_return_type(&hbuilder->ir_tail->node);
+    return y;
+}
+
+lg_force_inline LG_HedralSymbol 
+lg_hbuilder_apply_atran(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_HedralSymbol atran, LG_HedralSymbol coord) {
+    lg_assert(atran.type == LG_HedralType_AffineTransform);
+    lg_assert(coord.type == LG_HedralType_Coordinate);
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_ApplyAffineTransform, (LG_HedralOperands){
+        .apply_affine_transform = {atran, coord}
+    });
+    lg_hexpr_node_assert_return_type(&hbuilder->ir_tail->node);
+    return y;
+}
+
+lg_force_inline LG_HedralSymbol 
+lg_hbuilder_construct_affine_addr_op(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_AffineTransform addr_op) {
+    lg_assert(lg_atran_is_valid_address_operator(&addr_op));
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_ConstructAffineAddressOperator, (LG_HedralOperands){
+        .construct_affine_address_operator = addr_op,
+    });
+    lg_hexpr_node_assert_return_type(&hbuilder->ir_tail->node);
+    return y;
+}
+
+lg_force_inline LG_HedralSymbol 
+lg_hbuilder_apply_affine_addr_op(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_HedralSymbol addr_op, LG_HedralSymbol coord) {
+    lg_assert(addr_op.type == LG_HedralType_AffineAddressOperator);
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_ApplyAffineAddressOperator, (LG_HedralOperands){
+        .apply_affine_address_operator = {addr_op, coord},
+    });
+    lg_hexpr_node_assert_return_type(&hbuilder->ir_tail->node);
+    return y;
+}
+
+lg_force_inline LG_HedralSymbol
+lg_hbuilder_access(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_HedralSymbol addr) {
+    lg_assert(addr.type == LG_HedralType_Address);
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_Access, (LG_HedralOperands){
+        .access = addr,
+    });
+    lg_hexpr_node_assert_return_type(&hbuilder->ir_tail->node);
+    return y;
+}
+
+lg_force_inline void
+lg_hbuilder_yield_assign(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_HedralSymbol addr, LG_HedralSymbol scalar) {
+    lg_assert(addr.type == LG_HedralType_Address);
+    lg_assert(scalar.type == LG_HedralType_Scalar);
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_YieldAssign, (LG_HedralOperands){
+        .yield_accumulate = {addr, scalar}
+    });
+    (void)y;
+    lg_hexpr_node_assert_return_type(&hbuilder->ir_tail->node);
+    return;
+}
+
+lg_force_inline void
+lg_hbuilder_yield_accumulate(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_HedralSymbol addr, LG_HedralSymbol scalar) {
+    lg_assert(addr.type == LG_HedralType_Address);
+    lg_assert(scalar.type == LG_HedralType_Scalar);
+    LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_YieldAccumulate, (LG_HedralOperands){
+        .yield_accumulate = {addr, scalar}
+    });
+    (void)y;
+    lg_hexpr_node_assert_return_type(&hbuilder->ir_tail->node);
+    return;
+}
+
+LG_HedralAddressTriple
+lg_hbuilder_template_get_binop_addrs(
+    LG_Context *ctx,
+    LG_HedralBuilder *hbuilder,
+    const LG_Polyhedron *iter_domain,
+
+    const LG_AffineTransform *y_atran,
+    const LG_AffineTransform *x0_atran,
+    const LG_AffineTransform *x1_atran,
+
+    const LG_AffineTransform *y_addr_op,
+    const LG_AffineTransform *x0_addr_op,
+    const LG_AffineTransform *x1_addr_op
+) {
+    LG_HedralSymbol induction_vector = lg_hbuilder_begin_iter_domain(ctx, hbuilder, *iter_domain);
+
+    LG_HedralSymbol y_atran_s = lg_hbuilder_construct_atran(ctx, hbuilder, *y_atran);
+    LG_HedralSymbol y_addr_op_s = lg_hbuilder_construct_affine_addr_op(ctx, hbuilder, *y_addr_op);
+    LG_HedralSymbol y_coord_s = lg_hbuilder_apply_atran(ctx, hbuilder, y_atran_s, induction_vector);
+    LG_HedralSymbol y_addr_s = lg_hbuilder_apply_affine_addr_op(ctx, hbuilder, y_addr_op_s, y_coord_s);
+
+    LG_HedralSymbol x0_atran_s = lg_hbuilder_construct_atran(ctx, hbuilder, *x0_atran);
+    LG_HedralSymbol x0_addr_op_s = lg_hbuilder_construct_affine_addr_op(ctx, hbuilder, *x0_addr_op);
+    LG_HedralSymbol x0_coord_s = lg_hbuilder_apply_atran(ctx, hbuilder, x0_atran_s, induction_vector);
+    LG_HedralSymbol x0_addr_s = lg_hbuilder_apply_affine_addr_op(ctx, hbuilder, x0_addr_op_s, x0_coord_s);
+
+    LG_HedralSymbol x1_atran_s = lg_hbuilder_construct_atran(ctx, hbuilder, *x1_atran);
+    LG_HedralSymbol x1_addr_op_s = lg_hbuilder_construct_affine_addr_op(ctx, hbuilder, *x1_addr_op);
+    LG_HedralSymbol x1_coord_s = lg_hbuilder_apply_atran(ctx, hbuilder, x1_atran_s, induction_vector);
+    LG_HedralSymbol x1_addr_s = lg_hbuilder_apply_affine_addr_op(ctx, hbuilder, x1_addr_op_s, x1_coord_s);
+
+    return (LG_HedralAddressTriple){
+        .y = y_addr_s,
+        .x0 = x0_addr_s,
+        .x1 = x1_addr_s,
+    };
 }
 
 
@@ -516,6 +661,8 @@ out:
 /// that the memory thereof is zeroed, and that the structural invariants
 /// of the SSA form hold s.t shapes will never attempt to infer themselves
 /// on other nil shapes
+///
+/// TODO: move the loop outside of this function
 LG_StatusKind
 lg_infer_logical_shapes(LG_Context *ctx, LG_LogicalExpr *lexpr, LG_LogicalShape *out_shapes) {
     LG_StatusKind status = LG_StatusKind_OK;
@@ -581,11 +728,94 @@ lg_infer_logical_shapes(LG_Context *ctx, LG_LogicalExpr *lexpr, LG_LogicalShape 
 }
 
 LG_StatusKind
+lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_LogicalExprNode *lnode, const LG_LogicalShape *shapes) {
+    // TODO: the layout assignment and alignment needs to be smarter than this
+    static const LG_LayoutKind DEFAULT_LAYOUT = LG_LayoutKind_RowMajor;
+    static const LG_LayoutKind DEFAULT_ALIGN = 16;
+
+    LG_StatusKind status = LG_StatusKind_OK;
+
+    switch (lnode->opcode) {
+    case LG_Opcode_Add:
+    case LG_Opcode_Sub: {
+        lg_unreachable("TODO");
+    }
+
+    case LG_Opcode_Contract: {
+        LG_Polyhedron iter_domain = {0};
+        LG_AffineTransform y_atran = {0}, x0_atran = {0}, x1_atran = {0};
+        LG_StatusKind status = lg_create_contracted_iteration_space(
+            &ctx->arena,
+            &shapes[lnode->y.id], &shapes[lnode->x0.id], &shapes[lnode->x1.id],
+            lnode->meta_as.contract.n_batch_axes,
+            &iter_domain,
+            &y_atran, &x0_atran, &x1_atran
+        );
+        if (status != LG_StatusKind_OK) {
+            goto oom;
+        }
+
+        LG_AffineTransform y_addr_op = {0};
+        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->y.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &y_addr_op);
+        if (status != LG_StatusKind_OK) {
+            goto oom;
+        }
+        LG_AffineTransform x0_addr_op = {0};
+        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->x0.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &x0_addr_op);
+        if (status != LG_StatusKind_OK) {
+            goto oom;
+        }
+        LG_AffineTransform x1_addr_op = {0};
+        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->x1.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &x1_addr_op);
+        if (status != LG_StatusKind_OK) {
+            goto oom;
+        }
+
+        LG_HedralAddressTriple addrs = lg_hbuilder_template_get_binop_addrs(
+            ctx, hbuilder,
+            &iter_domain,
+            &y_atran, &x0_atran, &x1_atran, 
+            &y_addr_op, &x0_addr_op, &x1_addr_op
+        );
+
+        LG_HedralSymbol x0_value = lg_hbuilder_access(ctx, hbuilder, addrs.x0);
+        LG_HedralSymbol x1_value = lg_hbuilder_access(ctx, hbuilder, addrs.x1);
+        LG_HedralSymbol y_value = lg_hbuilder_multiply(ctx, hbuilder, x0_value, x1_value);
+
+        lg_hbuilder_yield_accumulate(ctx, hbuilder, addrs.y, y_value);
+
+        break;
+    }
+        
+    case LG_Opcode_Sink:
+    case LG_Opcode_Param:
+    case LG_Opcode_ReLU:
+    case LG_Opcode_StableSoftmax:
+    case LG_Opcode_Sigmoid:
+    case LG_Opcode_LN:
+    case LG_Opcode_Hadamard:
+    case LG_Opcode_MSELoss:
+    case LG_Opcode_CrossEntropyLoss:
+        lg_unreachable("TODO"); 
+        break;
+    }
+
+    return LG_StatusKind_OK;
+
+oom:
+    // this should not fail for any other reason;
+    // we literally just generated the shapes
+    lg_assert(status == LG_StatusKind_OutOfMemory);
+    lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
+    return status;
+}
+
+LG_StatusKind
 lg_lower_lexpr(
     LG_Context *ctx,
     LG_LogicalExpr *lexpr,
     LG_LogicalExprLoweringFlags flags,
-    LG_PhysicalExpr *out_pexpr
+    LG_HedralExpr *out_hexpr
 ) {
     LG_StatusKind status = LG_StatusKind_OK;
     LG_Scope scope = lg_push_scope(&ctx->arena);
@@ -611,7 +841,7 @@ lg_lower_lexpr(
         _Alignof(LG_LogicalShape)
     );
     if (shapes == NULL) {
-        status =  LG_StatusKind_OutOfMemory;
+        status = LG_StatusKind_OutOfMemory;
         lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
         goto out;
     }
@@ -622,65 +852,14 @@ lg_lower_lexpr(
 
 
     ///////////////////////////////////
-    // ~~ layout assignment ~~
+    // ~~ build the hexpr ~~
 
-    LG_AffineTransform *transforms = (LG_AffineTransform*)lg_arena_alloc(
-        &ctx->arena,
-        lexpr->max_symbol_id * sizeof(LG_AffineTransform),
-        _Alignof(LG_AffineTransform)
-    );
-    if (transforms == NULL) {
-        status =  LG_StatusKind_OutOfMemory;
+    LG_HedralBuilder hbuilder = {0};
+    for (size_t i = 0; i < lexpr->len; i++) {
+        status = lg_lexpr_node_to_hbuilder(ctx, &hbuilder, &lexpr->nodes[i], shapes);
+        lg_assert(status == LG_StatusKind_OutOfMemory);
         lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
         goto out;
-    }
-    for (size_t i = 0; i < lexpr->max_symbol_id; i++) {
-        transforms[i] = lg_atran_strided_from_shape(&shapes[i], LG_LayoutKind_RowMajor /* TODO: layout optimization */, 1 /* TODO: put this in a config somewhere */);        
-    }
-
-
-    //////////////////////////////////////////////////////////////////////
-    // ~~ calculate sizes ~~
-    // at this point, all of the transforms look like this:
-    //
-    //            A                  b
-    //       { m, n, ... }        {  0  } 
-    // y  =  { 0, 0, ... } x  +   {  0  } 
-    //       { 0, 0, ... }        { ... } 
-    //
-    // which is equivalent to y_0 = dot({strides}, x)[0].
-    // if x is the maximum zero-indexed coordinate for each dim
-    // of some hypermatrix M, then the maximum possible offset into
-    // M would be that y_0. add one for the coorindate
-    // {0, 0, ...}, and you get the size in elements of the 
-    // requisite buffer.
-    //
-    // in other words, we are finding the interior of the image of 
-    // the bounding volume of the hypermatrix's coordinate space under A.
-    //
-    // this is valid for any legal A, but its very easy to visualize
-    // here.
-
-    size_t *sizes = (size_t*)lg_arena_alloc(
-        &ctx->arena,
-        lexpr->max_symbol_id * sizeof(size_t),
-        _Alignof(size_t)
-    );
-    if (sizes == NULL) {
-        status = LG_StatusKind_OutOfMemory;
-        lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
-        goto out;
-    }
-    for (size_t i = 0; i < lexpr->max_symbol_id; i++) {
-        int64_t max_coord[LG_MAX_RANK] = {0};
-        for (uint8_t i_dim = 0; i_dim < transforms[i].n_cols; i_dim++) {
-            max_coord[i_dim] = shapes[i].dim[i_dim] - 1;
-        }
-
-        int64_t y[LG_MAX_RANK] = {0};
-        lg_atran_apply(&transforms[i], max_coord, y);
-
-        sizes[i] = (y[0] + 1) * sizeof(lg_scalar);
     }
 
 
