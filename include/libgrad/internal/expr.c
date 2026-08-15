@@ -346,7 +346,7 @@ LG_HedralBuilder {
 typedef struct
 LG_HedralAddressTriple {
     LG_HedralSymbol y, x0, x1;
-}LG_HedralAddressTriple;
+} LG_HedralAddressTriple;
 
 LG_HedralSymbol
 lg_hbuilder_append(
@@ -507,6 +507,7 @@ LG_HedralAddressTriple
 lg_hbuilder_template_get_binop_addrs(
     LG_Context *ctx,
     LG_HedralBuilder *hbuilder,
+
     const LG_Polyhedron *iter_domain,
 
     const LG_AffineTransform *y_atran,
@@ -657,71 +658,65 @@ out:
     return status;
 }
 
-/// assumes that there are `expr.max_symbol_id` elements in `descs`,
+/// assumes that there are `expr.max_symbol_id` elements in `out_shapes`,
 /// that the memory thereof is zeroed, and that the structural invariants
 /// of the SSA form hold s.t shapes will never attempt to infer themselves
 /// on other nil shapes
-///
-/// TODO: move the loop outside of this function
 LG_StatusKind
-lg_infer_logical_shapes(LG_Context *ctx, LG_LogicalExpr *lexpr, LG_LogicalShape *out_shapes) {
+lg_infer_y_shape(LG_Context *ctx, const LG_LogicalExprNode *node, LG_LogicalShape *inout_shapes) {
     LG_StatusKind status = LG_StatusKind_OK;
 
-    for (size_t i = 0; i < lexpr->len; i++) {
-        const LG_LogicalExprNode *const restrict node = &lexpr->nodes[i];
+    switch (node->opcode) {
+    case LG_Opcode_Param:
+        inout_shapes[node->y.id].rank = node->meta_as.param.y_shape.rank;
+        lg_memcpy(&inout_shapes[node->y.id], &node->meta_as.param.y_shape.rank, sizeof(size_t) * LG_MAX_RANK);
+        break;
 
-        switch (node->opcode) {
-        case LG_Opcode_Param:
-            out_shapes[node->y.id].rank = node->meta_as.param.y_shape.rank;
-            lg_memcpy(&out_shapes[node->y.id], &node->meta_as.param.y_shape.rank, sizeof(size_t) * LG_MAX_RANK);
-            break;
-
-        case LG_Opcode_Add:
-        case LG_Opcode_Sub: {
-            LG_LogicalShape y;
-            status = lg_infer_broadcasted_dims(&y, (const LG_LogicalShape*[2]){
-                &out_shapes[node->x0.id],
-                &out_shapes[node->x1.id],
-            }, 2);
-            if (status != LG_StatusKind_OK) {
-                lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
-                    lg_str8_lit("symbols %{i64} and %{i64} could not be broadcasted"),
-                    node->x0.id, node->x1.id
-                );
-                return status;
-            }
-            break;
-        }
-
-        case LG_Opcode_Contract: {
-            LG_LogicalShape y;
-            status = lg_infer_contracted_dims(
-                &y,
-                &out_shapes[node->x0.id],
-                &out_shapes[node->x1.id],
-                node->meta_as.contract.n_contracted_axes,
-                node->meta_as.contract.n_batch_axes
+    case LG_Opcode_Add:
+    case LG_Opcode_Sub: {
+        LG_LogicalShape y;
+        status = lg_infer_broadcasted_dims(&y, (const LG_LogicalShape*[2]){
+            &inout_shapes[node->x0.id],
+            &inout_shapes[node->x1.id],
+        }, 2);
+        if (status != LG_StatusKind_OK) {
+            lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
+                lg_str8_lit("symbols %{i64} and %{i64} could not be broadcasted"),
+                node->x0.id, node->x1.id
             );
-            if (status != LG_StatusKind_OK) {
-                lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
-                    lg_str8_lit("symbols %{i64} and %{i64} could not be contracted"),
-                    node->x0.id, node->x1.id
-                );
-                return status;
-            }
-            break;
+            return status;
         }
+        break;
+    }
 
-        case LG_Opcode_Sink:
-        case LG_Opcode_Hadamard:
-        case LG_Opcode_MSELoss:
-        case LG_Opcode_CrossEntropyLoss:
-        case LG_Opcode_ReLU:
-        case LG_Opcode_StableSoftmax:
-        case LG_Opcode_Sigmoid:
-        case LG_Opcode_LN:
-            lg_unreachable("TODO");
+    case LG_Opcode_Contract: {
+        LG_LogicalShape y;
+        status = lg_infer_contracted_dims(
+            &y,
+            &inout_shapes[node->x0.id],
+            &inout_shapes[node->x1.id],
+            node->meta_as.contract.n_contracted_axes,
+            node->meta_as.contract.n_batch_axes
+        );
+        if (status != LG_StatusKind_OK) {
+            lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
+                lg_str8_lit("symbols %{i64} and %{i64} could not be contracted"),
+                node->x0.id, node->x1.id
+            );
+            return status;
         }
+        break;
+    }
+
+    case LG_Opcode_Sink:
+    case LG_Opcode_Hadamard:
+    case LG_Opcode_MSELoss:
+    case LG_Opcode_CrossEntropyLoss:
+    case LG_Opcode_ReLU:
+    case LG_Opcode_StableSoftmax:
+    case LG_Opcode_Sigmoid:
+    case LG_Opcode_LN:
+        lg_unreachable("TODO");
     }
 
     return LG_StatusKind_OK;
@@ -845,11 +840,12 @@ lg_lower_lexpr(
         lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
         goto out;
     }
-    status = lg_infer_logical_shapes(ctx, lexpr, shapes);
-    if (status != LG_StatusKind_OK) {
-        goto out;
+    for (size_t i = 0; i < lexpr->len; i++) {
+        status = lg_infer_y_shape(ctx, &lexpr->nodes[i], shapes);
+        if (status != LG_StatusKind_OK) {
+            goto out;
+        }
     }
-
 
     ///////////////////////////////////
     // ~~ build the hexpr ~~
