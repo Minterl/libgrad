@@ -134,7 +134,6 @@ LG_LogicalExpr {
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-// TODO: rename this to LogicalBuilder and deduplicate the fields
 typedef struct
 LG_LogicalBuilderNode {
     /// Nodes are stored in reverse-chronological order, so we only have a

@@ -46,16 +46,19 @@ lg_atran_strided_projection_from_shape(
 
 void
 lg_atran_apply(const LG_AffineTransform *tran, const int64_t x[static LG_MAX_RANK], int64_t y[static LG_MAX_RANK]) {
+    const int64_t *const restrict A = lg_atran_get_A(tran);
+    const int64_t *const restrict b = lg_atran_get_b(tran);
+
     lg_memzero(y, LG_MAX_RANK * sizeof(int64_t));
 
     for (uint8_t i_rows = 0; i_rows < tran->n_rows; i_rows++) {
         for (uint8_t i_cols = 0; i_cols < tran->n_cols; i_cols++) {
-            y[i_rows] += tran->A[tran->n_cols*i_rows + i_cols] * x[i_cols];
+            y[i_rows] += A[tran->n_cols*i_rows + i_cols] * x[i_cols];
         }
     }
 
     for (uint8_t i_rows = 0; i_rows < tran->n_rows; i_rows++) {
-        y[i_rows] += tran->b[i_rows];
+        y[i_rows] += b[i_rows];
     }
 }
 
