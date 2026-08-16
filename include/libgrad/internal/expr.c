@@ -63,39 +63,39 @@ lg_report_error(LG_Context *ctx, LG_StatusKind status, lg_str8 fmt, ...) {
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-#define lg_lbuilder_append(ctx, builder, opcode, ...) lg_lbuilder_append_((ctx), (builder), (opcode), (LG_BuilderAppendOptions){__VA_ARGS__})
+#define lg_lbuilder_append(ctx, builder, opcode, ...) lg_lbuilder_append_((ctx), (builder), (opcode), (LG_LogicalBuilderAppendOptions){__VA_ARGS__})
 
 typedef struct
-LG_BuilderAppendOptions {
-    LG_Symbol x0;
-    LG_Symbol x1;
+LG_LogicalBuilderAppendOptions {
+    LG_LogicalSymbol x0;
+    LG_LogicalSymbol x1;
 
-    LG_SymbolFlags y_flags;
+    LG_LogicalSymbolFlags y_flags;
     LG_ExprNodeMeta meta_as;
-} LG_BuilderAppendOptions;
+} LG_LogicalBuilderAppendOptions;
 
-LG_Symbol
+LG_LogicalSymbol
 lg_lbuilder_append_(
     LG_Context *ctx,
-    LG_Builder *builder,
-    LG_Opcode opcode,
-    LG_BuilderAppendOptions opts
+    LG_LogicalBuilder *builder,
+    LG_LogicalOpcode opcode,
+    LG_LogicalBuilderAppendOptions opts
 ) {
-    LG_BuilderNode *node = lg_arena_alloc_struct(&ctx->arena, LG_BuilderNode);
+    LG_LogicalBuilderNode *node = lg_arena_alloc_struct(&ctx->arena, LG_LogicalBuilderNode);
     if (node == NULL) {
         lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory appending to logical expr"));
-        return lg_nil(LG_Symbol);
+        return lg_nil(LG_LogicalSymbol);
     }
 
     builder->next_symbol_id++; // first valid symbol id is 1
-    LG_Symbol y = (LG_Symbol){ .id = builder->next_symbol_id };
+    LG_LogicalSymbol y = (LG_LogicalSymbol){ .id = builder->next_symbol_id };
     
-    node->opcode = opcode;
-    node->x0 = opts.x0;
-    node->x1 = opts.x1;
-    node->y = y;
-    node->y_flags = opts.y_flags;
-    node->meta_as = opts.meta_as;
+    node->node.opcode = opcode;
+    node->node.x0 = opts.x0;
+    node->node.x1 = opts.x1;
+    node->node.y = y;
+    node->node.y_flags = opts.y_flags;
+    node->node.meta_as = opts.meta_as;
 
     if (builder->ir_tail != NULL) {
         node->prev = builder->ir_tail;
@@ -113,19 +113,19 @@ lg_lbuilder_append_(
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-LG_Symbol
-lg_param(LG_Context *ctx, LG_Builder *builder, LG_LogicalShape shape) {
-    return lg_lbuilder_append(ctx, builder, LG_Opcode_Param, .meta_as.param.y_shape = shape);
+LG_LogicalSymbol
+lg_param(LG_Context *ctx, LG_LogicalBuilder *builder, LG_LogicalShape shape) {
+    return lg_lbuilder_append(ctx, builder, LG_LogicalOpcode_Param, .meta_as.param.y_shape = shape);
 }
 
 void
-lg_pin(LG_Context *ctx, LG_Builder *builder, LG_Symbol sym) {
-    LG_BuilderNode *iter_node = builder->ir_tail;
+lg_pin(LG_Context *ctx, LG_LogicalBuilder *builder, LG_LogicalSymbol sym) {
+    LG_LogicalBuilderNode *iter_node = builder->ir_tail;
     while (iter_node != NULL) {
-        if (iter_node->y.id != sym.id) {
+        if (iter_node->node.y.id != sym.id) {
             continue;
         }
-        iter_node->y_flags |= LG_SymbolFlag_Pin;
+        iter_node->node.y_flags |= LG_LogicalSymbolFlag_Pin;
     }
 
     lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
@@ -133,22 +133,22 @@ lg_pin(LG_Context *ctx, LG_Builder *builder, LG_Symbol sym) {
     );
 }
 
-LG_Symbol
-lg_add(LG_Context *ctx, LG_Builder *builder, LG_Symbol x0, LG_Symbol x1) {
-    return lg_lbuilder_append(ctx, builder, LG_Opcode_Add, .x0 = x0, .x1 = x1);
+LG_LogicalSymbol
+lg_add(LG_Context *ctx, LG_LogicalBuilder *builder, LG_LogicalSymbol x0, LG_LogicalSymbol x1) {
+    return lg_lbuilder_append(ctx, builder, LG_LogicalOpcode_Add, .x0 = x0, .x1 = x1);
 }
 
-LG_Symbol
+LG_LogicalSymbol
 lg_contract(
     LG_Context *ctx,
-    LG_Builder *builder,
-    LG_Symbol x0,
-    LG_Symbol x1,
+    LG_LogicalBuilder *builder,
+    LG_LogicalSymbol x0,
+    LG_LogicalSymbol x1,
     size_t n_contracted_axes,
     size_t n_batch_axes
 ) {
     return lg_lbuilder_append(
-        ctx, builder, LG_Opcode_Contract,
+        ctx, builder, LG_LogicalOpcode_Contract,
         .x0 = x0,
         .x1 = x1,
         .meta_as.contract.n_contracted_axes = n_contracted_axes,
@@ -168,7 +168,7 @@ lg_contract(
 LG_StatusKind
 lg_builder_finish(
     LG_Context *ctx,
-    LG_Builder *builder,
+    LG_LogicalBuilder *builder,
     LG_Allocator *artifact_allocator,
     LG_LogicalExpr *out_lexpr
 ) {
@@ -187,8 +187,8 @@ lg_builder_finish(
     const size_t max_symbol_id = builder->next_symbol_id;
     {
         bool is_first_iteration = true;
-        LG_BuilderNode *tortoise = builder->ir_tail;
-        LG_BuilderNode *hare = builder->ir_tail;
+        LG_LogicalBuilderNode *tortoise = builder->ir_tail;
+        LG_LogicalBuilderNode *hare = builder->ir_tail;
         for (; tortoise != NULL; tortoise = tortoise->prev, lexpr_len++) {
             if (hare != NULL) {
                 hare = hare->prev;
@@ -202,19 +202,19 @@ lg_builder_finish(
                 return LG_StatusKind_InvalidArgument;
             }
 
-            if (lg_unlikely(tortoise->y.id >= max_symbol_id)) {
+            if (lg_unlikely(tortoise->node.y.id >= max_symbol_id)) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
-                    lg_str8_lit("found invalid, discontiguous symbol id %{i64} at expr node %{i64}"), tortoise->y.id, lexpr_len
+                    lg_str8_lit("found invalid, discontiguous symbol id %{i64} at expr node %{i64}"), tortoise->node.y.id, lexpr_len
                 );
                 return LG_StatusKind_InvalidArgument;
-            } else if (lg_unlikely(tortoise->x0.id >= max_symbol_id)) {
+            } else if (lg_unlikely(tortoise->node.x0.id >= max_symbol_id)) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
-                    lg_str8_lit("found invalid, discontiguous symbol id %{i64} at expr node %{i64}"), tortoise->x0.id, lexpr_len
+                    lg_str8_lit("found invalid, discontiguous symbol id %{i64} at expr node %{i64}"), tortoise->node.x0.id, lexpr_len
                 );
                 return LG_StatusKind_InvalidArgument;
-            } else if (lg_unlikely(tortoise->x1.id >= max_symbol_id)) {
+            } else if (lg_unlikely(tortoise->node.x1.id >= max_symbol_id)) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, 
-                    lg_str8_lit("found invalid, discontiguous symbol id %{i64} at expr node %{i64}"), tortoise->x1.id, lexpr_len
+                    lg_str8_lit("found invalid, discontiguous symbol id %{i64} at expr node %{i64}"), tortoise->node.x1.id, lexpr_len
                 );
                 return LG_StatusKind_InvalidArgument;
             }
@@ -233,7 +233,7 @@ lg_builder_finish(
         return LG_StatusKind_OutOfMemory;
     }
 
-    LG_BuilderNode *iter_node = builder->ir_tail;
+    LG_LogicalBuilderNode *iter_node = builder->ir_tail;
     for (
         size_t i_rev = 0;
         iter_node != NULL;
@@ -242,12 +242,12 @@ lg_builder_finish(
         lg_assert(i_rev < lexpr_len);
         const size_t i = lexpr_len - 1 - i_rev;
         
-        lexpr_nodes[i].opcode  = iter_node->opcode;
-        lexpr_nodes[i].y       = iter_node->y;
-        lexpr_nodes[i].x0      = iter_node->x0;
-        lexpr_nodes[i].x1      = iter_node->x1;
-        lexpr_nodes[i].y_flags = iter_node->y_flags;
-        lexpr_nodes[i].meta_as = iter_node->meta_as;
+        lexpr_nodes[i].opcode  = iter_node->node.opcode;
+        lexpr_nodes[i].y       = iter_node->node.y;
+        lexpr_nodes[i].x0      = iter_node->node.x0;
+        lexpr_nodes[i].x1      = iter_node->node.x1;
+        lexpr_nodes[i].y_flags = iter_node->node.y_flags;
+        lexpr_nodes[i].meta_as = iter_node->node.meta_as;
     }
 
 
@@ -567,7 +567,7 @@ lg_validate_lexpr_structure(LG_Context *ctx, LG_LogicalExpr *lexpr) {
         for (size_t i = 0; i < lexpr->len; i++) {
             // Param declarations must be the first section of the lexpr,
             // while sink declarations must be at the end.
-            if (lexpr->nodes[i].opcode == LG_Opcode_Param && !params_begin) {
+            if (lexpr->nodes[i].opcode == LG_LogicalOpcode_Param && !params_begin) {
                 if (i != 0) {
                     lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
                         "found the first param declaration at node index %{i64}\n"
@@ -577,14 +577,14 @@ lg_validate_lexpr_structure(LG_Context *ctx, LG_LogicalExpr *lexpr) {
                     goto out;
                 }
                 params_begin = true;
-            } else if (lexpr->nodes[i].opcode == LG_Opcode_Param && params_end) {
+            } else if (lexpr->nodes[i].opcode == LG_LogicalOpcode_Param && params_end) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
                     "found a param declaration after a non-param operation at node index %{i64}\n"
                     "note: param declarations must happen one after another"
                 ), i);
                 status = LG_StatusKind_InvalidArgument;
                 goto out;
-            } else if (lexpr->nodes[i].opcode != LG_Opcode_Param && params_begin) {
+            } else if (lexpr->nodes[i].opcode != LG_LogicalOpcode_Param && params_begin) {
                 params_end = true;
             }
         }
@@ -667,13 +667,13 @@ lg_infer_y_shape(LG_Context *ctx, const LG_LogicalExprNode *node, LG_LogicalShap
     LG_StatusKind status = LG_StatusKind_OK;
 
     switch (node->opcode) {
-    case LG_Opcode_Param:
+    case LG_LogicalOpcode_Param:
         inout_shapes[node->y.id].rank = node->meta_as.param.y_shape.rank;
         lg_memcpy(&inout_shapes[node->y.id], &node->meta_as.param.y_shape.rank, sizeof(size_t) * LG_MAX_RANK);
         break;
 
-    case LG_Opcode_Add:
-    case LG_Opcode_Sub: {
+    case LG_LogicalOpcode_Add:
+    case LG_LogicalOpcode_Sub: {
         LG_LogicalShape y;
         status = lg_infer_broadcasted_dims(&y, (const LG_LogicalShape*[2]){
             &inout_shapes[node->x0.id],
@@ -689,7 +689,7 @@ lg_infer_y_shape(LG_Context *ctx, const LG_LogicalExprNode *node, LG_LogicalShap
         break;
     }
 
-    case LG_Opcode_Contract: {
+    case LG_LogicalOpcode_Contract: {
         LG_LogicalShape y;
         status = lg_infer_contracted_dims(
             &y,
@@ -708,14 +708,14 @@ lg_infer_y_shape(LG_Context *ctx, const LG_LogicalExprNode *node, LG_LogicalShap
         break;
     }
 
-    case LG_Opcode_Sink:
-    case LG_Opcode_Hadamard:
-    case LG_Opcode_MSELoss:
-    case LG_Opcode_CrossEntropyLoss:
-    case LG_Opcode_ReLU:
-    case LG_Opcode_StableSoftmax:
-    case LG_Opcode_Sigmoid:
-    case LG_Opcode_LN:
+    case LG_LogicalOpcode_Sink:
+    case LG_LogicalOpcode_Hadamard:
+    case LG_LogicalOpcode_MSELoss:
+    case LG_LogicalOpcode_CrossEntropyLoss:
+    case LG_LogicalOpcode_ReLU:
+    case LG_LogicalOpcode_StableSoftmax:
+    case LG_LogicalOpcode_Sigmoid:
+    case LG_LogicalOpcode_LN:
         lg_unreachable("TODO");
     }
 
@@ -731,12 +731,12 @@ lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_Logica
     LG_StatusKind status = LG_StatusKind_OK;
 
     switch (lnode->opcode) {
-    case LG_Opcode_Add:
-    case LG_Opcode_Sub: {
+    case LG_LogicalOpcode_Add:
+    case LG_LogicalOpcode_Sub: {
         lg_unreachable("TODO");
     }
 
-    case LG_Opcode_Contract: {
+    case LG_LogicalOpcode_Contract: {
         LG_Polyhedron iter_domain = {0};
         LG_AffineTransform y_atran = {0}, x0_atran = {0}, x1_atran = {0};
         LG_StatusKind status = lg_create_contracted_iteration_space(
@@ -782,15 +782,15 @@ lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_Logica
         break;
     }
         
-    case LG_Opcode_Sink:
-    case LG_Opcode_Param:
-    case LG_Opcode_ReLU:
-    case LG_Opcode_StableSoftmax:
-    case LG_Opcode_Sigmoid:
-    case LG_Opcode_LN:
-    case LG_Opcode_Hadamard:
-    case LG_Opcode_MSELoss:
-    case LG_Opcode_CrossEntropyLoss:
+    case LG_LogicalOpcode_Sink:
+    case LG_LogicalOpcode_Param:
+    case LG_LogicalOpcode_ReLU:
+    case LG_LogicalOpcode_StableSoftmax:
+    case LG_LogicalOpcode_Sigmoid:
+    case LG_LogicalOpcode_LN:
+    case LG_LogicalOpcode_Hadamard:
+    case LG_LogicalOpcode_MSELoss:
+    case LG_LogicalOpcode_CrossEntropyLoss:
         lg_unreachable("TODO"); 
         break;
     }

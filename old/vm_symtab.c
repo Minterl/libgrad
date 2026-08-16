@@ -33,7 +33,7 @@ lg_murmur_hash(uint32_t kh) {
 }
 
 LG_StatusKind 
-lg_symtab_init(LG_SymbolTable *table, LG_Allocator *alloc, size_t cap) {
+lg_symtab_init(LG_LogicalSymbolTable *table, LG_Allocator *alloc, size_t cap) {
     const size_t align = 16;
 
     const size_t sz_occupied = cap * sizeof(bool);
@@ -81,15 +81,15 @@ lg_symtab_init(LG_SymbolTable *table, LG_Allocator *alloc, size_t cap) {
 }
 
 void 
-lg_symtab_deinit(LG_SymbolTable *table, LG_Allocator *alloc) {
+lg_symtab_deinit(LG_LogicalSymbolTable *table, LG_Allocator *alloc) {
     alloc->free(alloc->ctx, table->occupied);
     alloc->free(alloc->ctx, table->descs);
-    lg_memzero(table, sizeof(LG_SymbolTable));
+    lg_memzero(table, sizeof(LG_LogicalSymbolTable));
 }
 
 LG_StatusKind 
 lg_symtab_upsert(
-    LG_SymbolTable *table,
+    LG_LogicalSymbolTable *table,
     size_t *lg_nullable out_idx,
     bool *lg_nullable out_was_occupied,
     uint32_t symbol_id
@@ -132,14 +132,14 @@ lg_symtab_upsert(
 }
 
 void 
-lg_symtab_iter_init(LG_SymbolTableIter *iter, LG_SymbolTable *symtab) {
+lg_symtab_iter_init(LG_LogicalSymbolTableIter *iter, LG_LogicalSymbolTable *symtab) {
     lg_assert(symtab != NULL);
-    lg_memzero(iter, sizeof(LG_SymbolTableIter));
+    lg_memzero(iter, sizeof(LG_LogicalSymbolTableIter));
     iter->symtab = symtab;
 }
 
 lg_force_inline bool 
-lg_symtab_iter_advance(LG_SymbolTableIter *iter) {
+lg_symtab_iter_advance(LG_LogicalSymbolTableIter *iter) {
     for (; iter->last_idx < iter->symtab->table_cap; iter->last_idx++) {
         const size_t i = iter->last_idx;
 

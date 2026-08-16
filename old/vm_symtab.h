@@ -9,7 +9,7 @@
 #include <stdbool.h>
 
 typedef struct
-LG_SymbolTable {
+LG_LogicalSymbolTable {
     size_t    table_cap;
     size_t    array_cap;
     size_t    n_symbols;
@@ -21,36 +21,36 @@ LG_SymbolTable {
     LG_StridedDesc  *descs           lg_check_bounds(array_cap);
     size_t          *buffer_offsets  lg_check_bounds(array_cap);
     uint32_t        *buffer_ids      lg_check_bounds(array_cap);
-} LG_SymbolTable;
+} LG_LogicalSymbolTable;
 
 typedef struct
-LG_SymbolTableIter {
-    LG_SymbolTable *symtab;
+LG_LogicalSymbolTableIter {
+    LG_LogicalSymbolTable *symtab;
     uint32_t symbol_id;
     size_t array_idx;
     
     size_t last_idx;
-} LG_SymbolTableIter;
+} LG_LogicalSymbolTableIter;
 
 LG_StatusKind 
-lg_symtab_init(LG_SymbolTable *table, LG_Allocator *alloc, size_t cap);
+lg_symtab_init(LG_LogicalSymbolTable *table, LG_Allocator *alloc, size_t cap);
 
 void 
-lg_symtab_deinit(LG_SymbolTable *table, LG_Allocator *alloc);
+lg_symtab_deinit(LG_LogicalSymbolTable *table, LG_Allocator *alloc);
 
 LG_StatusKind 
 lg_symtab_upsert(
-    LG_SymbolTable *table,
+    LG_LogicalSymbolTable *table,
     size_t *lg_nullable out_idx,
     bool *lg_nullable out_was_occupied,
     uint32_t symbol_id
 );
 
 void 
-lg_symtab_iter_init(LG_SymbolTableIter *iter, LG_SymbolTable *symtab);
+lg_symtab_iter_init(LG_LogicalSymbolTableIter *iter, LG_LogicalSymbolTable *symtab);
 
 /// Returns false once there are no more entries to iterate.
 lg_force_inline bool 
-lg_symtab_iter_advance(LG_SymbolTableIter *iter);
+lg_symtab_iter_advance(LG_LogicalSymbolTableIter *iter);
 
 #endif // LG_VM_SYMTAB_H_

@@ -17,8 +17,8 @@
 
 typedef struct
 LG_AppendOpOptions {
-    LG_Symbol x0_logical;
-    LG_Symbol x1_logical;
+    LG_LogicalSymbol x0_logical;
+    LG_LogicalSymbol x1_logical;
 
     LG_StridedDesc x0_physical;
     LG_StridedDesc x1_physical;
@@ -28,10 +28,10 @@ LG_AppendOpOptions {
 
 #define lg_append_op(ctx, opcode, ...) lg_append_op_((ctx), (opcode), (LG_AppendOpOptions){__VA_ARGS__})
 
-LG_Symbol 
+LG_LogicalSymbol 
 lg_append_op_(
     LG_CompilationContext *ctx,
-    LG_Opcode opcode,
+    LG_LogicalOpcode opcode,
     LG_AppendOpOptions opts
 ) {
     LG_ExprNode node = (LG_ExprNode){
@@ -46,7 +46,7 @@ lg_append_op_(
     };
 
     // Allocate a new symbol in the table
-    LG_Symbol y;
+    LG_LogicalSymbol y;
     {
         if (lg_opcode_creates_symbol(opcode)) {
             const size_t id = ctx->next_symbol_id;
@@ -64,20 +64,20 @@ lg_append_op_(
                 } else {
                     lg_report_error(ctx, status, lg_str8_lit("failed to allocate a symbol in the symbol table"));
                 }
-                return lg_nil(LG_Symbol);
+                return lg_nil(LG_LogicalSymbol);
             }
             lg_assert(!was_occupied);
 
-            y = (LG_Symbol){ .id = id };
+            y = (LG_LogicalSymbol){ .id = id };
 
             // In a source operation, the input == the output
             // @bugs revisit this invariant if the correctness of source operations is causing trouble
-            if (opcode == LG_Opcode_Source) {
+            if (opcode == LG_LogicalOpcode_Source) {
                 ctx->symtab.descs[symtab_idx] = opts.x0_physical;
                 node.x0_logical = y;
             }
         } else {
-            y = lg_nil(LG_Symbol);
+            y = lg_nil(LG_LogicalSymbol);
         }
 
         node.y_logical = y;
@@ -87,7 +87,7 @@ lg_append_op_(
     {
         if (ctx->expr->nodes_len >= ctx->expr->nodes_cap) {
             lg_report_error(ctx, LG_StatusKind_Overflow, lg_str8_lit("overflowed the expr at index %{i64}"), ctx->expr->nodes_len);
-            return lg_nil(LG_Symbol);
+            return lg_nil(LG_LogicalSymbol);
         }
 
         size_t next_idx = ctx->expr->nodes_len;
@@ -180,7 +180,7 @@ lg_buftab_update(LG_BufferTable *buftab, uint32_t id, LG_BufferTableEntry new_en
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-LG_Symbol 
+LG_LogicalSymbol 
 lg_declare_source(
     LG_CompilationContext *ctx,
     LG_StridedDesc physical_desc,
@@ -193,27 +193,27 @@ lg_declare_source(
         } else {
             lg_report_error(ctx, status, lg_str8_lit("failed to get buffer id for source symbol"));
         }
-        return lg_nil(LG_Symbol);
+        return lg_nil(LG_LogicalSymbol);
     }
 
-    LG_Symbol y = lg_append_op(ctx, LG_Opcode_Source, .x0_physical = physical_desc);
+    LG_LogicalSymbol y = lg_append_op(ctx, LG_LogicalOpcode_Source, .x0_physical = physical_desc);
 
     return y;
 }
 
 void
-lg_declare_sink(LG_CompilationContext *ctx, LG_Symbol sym) {
+lg_declare_sink(LG_CompilationContext *ctx, LG_LogicalSymbol sym) {
     for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
         if (
             ctx->expr->nodes[i].y_logical.id == sym.id ||
             ctx->expr->nodes[i].x0_logical.id == sym.id ||
             ctx->expr->nodes[i].x1_logical.id == sym.id 
         ) {
-            if (ctx->expr->nodes[i].opcode == LG_Opcode_Sink) {
+            if (ctx->expr->nodes[i].opcode == LG_LogicalOpcode_Sink) {
                 lg_report_error(ctx, LG_StatusKind_Duplicate, lg_str8_lit("attempted to create multiple sink declarations for the same symbol %{i64}"), sym.id);
                 return;
             }
-            lg_append_op(ctx, LG_Opcode_Sink, .x0_logical = sym);
+            lg_append_op(ctx, LG_LogicalOpcode_Sink, .x0_logical = sym);
             return;
         }
     }
@@ -228,7 +228,7 @@ lg_get_sink_location(
     uint32_t *lg_nullable out_buf_id,
     size_t *lg_nullable out_offset,
     LG_StridedDesc *lg_nullable out_desc,
-    LG_Symbol sym,
+    LG_LogicalSymbol sym,
     LG_Expr *expr
 ) {
     uint32_t buf_id = 0;
@@ -236,7 +236,7 @@ lg_get_sink_location(
     LG_StridedDesc desc = {0};
 
     for (size_t i = 0; i < expr->nodes_len; i++) {
-        if (expr->nodes[i].opcode != LG_Opcode_Sink) {
+        if (expr->nodes[i].opcode != LG_LogicalOpcode_Sink) {
             continue;
         }
         if (expr->nodes[i].y_logical.id == sym.id) {
@@ -273,25 +273,25 @@ found:;
     return LG_StatusKind_OK;
 }
 
-LG_Symbol 
+LG_LogicalSymbol 
 lg_append_add(
     LG_CompilationContext *ctx,
-    const LG_Symbol x0,
-    const LG_Symbol x1
+    const LG_LogicalSymbol x0,
+    const LG_LogicalSymbol x1
 ) {
-    LG_Symbol y = lg_append_op(ctx, LG_Opcode_Add, .x0_logical = x0, .x1_logical = x1);
+    LG_LogicalSymbol y = lg_append_op(ctx, LG_LogicalOpcode_Add, .x0_logical = x0, .x1_logical = x1);
     return y;
 }
 
-LG_Symbol 
+LG_LogicalSymbol 
 lg_append_contract(
     LG_CompilationContext *ctx,
-    LG_Symbol x0,
-    LG_Symbol x1,
+    LG_LogicalSymbol x0,
+    LG_LogicalSymbol x1,
     size_t n_contracted_axes, 
     size_t n_batch_axes
 ) {
-    LG_Symbol y = lg_append_op(ctx, LG_Opcode_Contract, .x0_logical = x0, .x1_logical = x1, .meta = (LG_ExprNodeMeta){
+    LG_LogicalSymbol y = lg_append_op(ctx, LG_LogicalOpcode_Contract, .x0_logical = x0, .x1_logical = x1, .meta = (LG_ExprNodeMeta){
         .contract.n_contracted_axes = n_contracted_axes,
         .contract.n_batch_axes = n_batch_axes,
     });
@@ -320,7 +320,7 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
         for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
             // Source declarations must be the first section of the ctx->expr,
             // while sink declarations must be at the end.
-            if (ctx->expr->nodes[i].opcode == LG_Opcode_Source && !sources_begin) {
+            if (ctx->expr->nodes[i].opcode == LG_LogicalOpcode_Source && !sources_begin) {
                 if (i != 0) {
                     lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
                         "found the first source declaration at node index %{i64}\n"
@@ -329,24 +329,24 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
                     return LG_StatusKind_InvalidArgument;
                 }
                 sources_begin = true;
-            } else if (ctx->expr->nodes[i].opcode == LG_Opcode_Source && sources_end) {
+            } else if (ctx->expr->nodes[i].opcode == LG_LogicalOpcode_Source && sources_end) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
                     "found a source declaration after a non-source operation at node index %{i64}\n"
                     "note: source declarations must happen one after another"
                 ), i);
                 return LG_StatusKind_InvalidArgument;
-            } else if (ctx->expr->nodes[i].opcode != LG_Opcode_Source && sources_begin) {
+            } else if (ctx->expr->nodes[i].opcode != LG_LogicalOpcode_Source && sources_begin) {
                 sources_end = true;
             }
 
-            if (ctx->expr->nodes[i].opcode == LG_Opcode_Sink) {
+            if (ctx->expr->nodes[i].opcode == LG_LogicalOpcode_Sink) {
                 lg_assert(sources_end);
                 sinks_begin = true;
             }
 
             // Sink declarations must also always be followed by a sink
             // declaration or be the end of the ctx->expr
-            if (sinks_begin && ctx->expr->nodes[i].opcode != LG_Opcode_Sink) {
+            if (sinks_begin && ctx->expr->nodes[i].opcode != LG_LogicalOpcode_Sink) {
                 lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit(
                     "found a non-sink operation after a sink operation at node index %{i64}\n"
                     "note: sink declarations must happen one after another"
@@ -356,7 +356,7 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
             }
         }
 
-        lg_assert(!sinks_begin || (ctx->expr->nodes[ctx->expr->nodes_len - 1].opcode == LG_Opcode_Sink));
+        lg_assert(!sinks_begin || (ctx->expr->nodes[ctx->expr->nodes_len - 1].opcode == LG_LogicalOpcode_Sink));
     }
 
     // Scope validation
@@ -374,7 +374,7 @@ lg_pass_validate_expr_structure(LG_CompilationContext *ctx) {
         for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
             uint32_t new_id = 0;
 
-            if (ctx->expr->nodes[i].opcode == LG_Opcode_Source) {
+            if (ctx->expr->nodes[i].opcode == LG_LogicalOpcode_Source) {
                 new_id = ctx->expr->nodes[i].x0_logical.id;
                 for (size_t j = 0; j < seen_ids_len; j++) {
                     if (seen_ids[j] == new_id) {
@@ -438,7 +438,7 @@ lg_pass_infer_dims(LG_CompilationContext *ctx) {
     LG_StatusKind status = LG_StatusKind_OK;
 
     for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
-        if (ctx->expr->nodes[i].opcode == LG_Opcode_Source) {
+        if (ctx->expr->nodes[i].opcode == LG_LogicalOpcode_Source) {
             size_t symtab_idx;
             status = lg_symtab_upsert(&ctx->symtab, &symtab_idx, NULL, ctx->expr->nodes[i].x0_logical.id);
             lg_assert(status == LG_StatusKind_OK);
@@ -463,15 +463,15 @@ lg_pass_infer_dims(LG_CompilationContext *ctx) {
         size_t dim[LG_MAX_RANK] = {0};
 
         switch (ctx->expr->nodes[i].opcode) {
-        case LG_Opcode_Source:
+        case LG_LogicalOpcode_Source:
             lg_unreachable();
             continue;
 
-        case LG_Opcode_Sink:
+        case LG_LogicalOpcode_Sink:
             continue;
 
-        case LG_Opcode_Add:
-        case LG_Opcode_Sub: {
+        case LG_LogicalOpcode_Add:
+        case LG_LogicalOpcode_Sub: {
             status = lg_infer_broadcasted_dims(
                 &rank,
                 dim, 
@@ -487,7 +487,7 @@ lg_pass_infer_dims(LG_CompilationContext *ctx) {
             break;
         }
 
-        case LG_Opcode_Contract: {
+        case LG_LogicalOpcode_Contract: {
             status = lg_infer_contracted_dims(
                 &rank,
                 dim, 
@@ -502,13 +502,13 @@ lg_pass_infer_dims(LG_CompilationContext *ctx) {
             break;
         }
 
-        case LG_Opcode_Hadamard:
-        case LG_Opcode_MSELoss:
-        case LG_Opcode_CrossEntropyLoss:
-        case LG_Opcode_ReLU:
-        case LG_Opcode_StableSoftmax:
-        case LG_Opcode_Sigmoid:
-        case LG_Opcode_LN:
+        case LG_LogicalOpcode_Hadamard:
+        case LG_LogicalOpcode_MSELoss:
+        case LG_LogicalOpcode_CrossEntropyLoss:
+        case LG_LogicalOpcode_ReLU:
+        case LG_LogicalOpcode_StableSoftmax:
+        case LG_LogicalOpcode_Sigmoid:
+        case LG_LogicalOpcode_LN:
             lg_unreachable("TODO");
         }
 
@@ -613,7 +613,7 @@ lg_pass_bufferize(
     }
     // Construct the size table
     {
-        LG_SymbolTableIter iter = {0};
+        LG_LogicalSymbolTableIter iter = {0};
         lg_symtab_iter_init(&iter, &ctx->symtab);
         while (lg_symtab_iter_advance(&iter)) {
             if (ctx->symtab.buffer_ids[iter.array_idx] != buf_id) {
@@ -687,7 +687,7 @@ lg_pass_bufferize(
             lg_wide_set_bit(row_elements, live_set, true, x1_idx);
 
             // After the live set has been updated, we update the matrix
-            LG_SymbolTableIter iter = {0};
+            LG_LogicalSymbolTableIter iter = {0};
             lg_symtab_iter_init(&iter, &ctx->symtab);
             while (lg_symtab_iter_advance(&iter)) {
                 bool is_live = lg_wide_get_bit(row_elements, live_set, iter.array_idx);
@@ -887,11 +887,11 @@ void
 lg_pass_decorate_with_maps(LG_CompilationContext *ctx) {
     for (size_t i = 0; i < ctx->expr->nodes_len; i++) {
         switch (ctx->expr->nodes[i].opcode) {
-        case LG_Opcode_Source:
-        case LG_Opcode_Sink:
+        case LG_LogicalOpcode_Source:
+        case LG_LogicalOpcode_Sink:
             continue;
-        case LG_Opcode_Add:
-        case LG_Opcode_Sub: {
+        case LG_LogicalOpcode_Add:
+        case LG_LogicalOpcode_Sub: {
             LG_StatusKind status = lg_create_broadcast_space((LG_StridedDesc*[]){
                 &ctx->expr->nodes[i].y_physical,         
                 &ctx->expr->nodes[i].x0_physical,         
@@ -901,7 +901,7 @@ lg_pass_decorate_with_maps(LG_CompilationContext *ctx) {
             break;
         }
 
-        case LG_Opcode_Contract: {
+        case LG_LogicalOpcode_Contract: {
             LG_StatusKind status = lg_create_contraction_space(
                 &ctx->expr->nodes[i].y_physical,
                 &ctx->expr->nodes[i].x0_physical,         
@@ -912,13 +912,13 @@ lg_pass_decorate_with_maps(LG_CompilationContext *ctx) {
             break;
         }
 
-        case LG_Opcode_ReLU:
-        case LG_Opcode_StableSoftmax:
-        case LG_Opcode_Sigmoid:
-        case LG_Opcode_LN:
-        case LG_Opcode_Hadamard:
-        case LG_Opcode_MSELoss:
-        case LG_Opcode_CrossEntropyLoss:
+        case LG_LogicalOpcode_ReLU:
+        case LG_LogicalOpcode_StableSoftmax:
+        case LG_LogicalOpcode_Sigmoid:
+        case LG_LogicalOpcode_LN:
+        case LG_LogicalOpcode_Hadamard:
+        case LG_LogicalOpcode_MSELoss:
+        case LG_LogicalOpcode_CrossEntropyLoss:
             lg_unreachable("TODO");
         }
     }

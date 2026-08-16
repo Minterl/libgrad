@@ -69,12 +69,12 @@ int main(void) {
         return status;
     }
 
-    LG_Symbol x = lg_declare_source(&ctx, lg_mkshape(28 * 28), 100);
-    LG_Symbol W_0 = lg_declare_source(&ctx, lg_mkshape(128, 28 * 28), 101);
-    LG_Symbol b_0 = lg_declare_source(&ctx, lg_mkshape(128), 102);
+    LG_LogicalSymbol x = lg_declare_source(&ctx, lg_mkshape(28 * 28), 100);
+    LG_LogicalSymbol W_0 = lg_declare_source(&ctx, lg_mkshape(128, 28 * 28), 101);
+    LG_LogicalSymbol b_0 = lg_declare_source(&ctx, lg_mkshape(128), 102);
 
-    LG_Symbol y_0 = lg_append_contract(&ctx, W_0, x, 1, 0);
-    LG_Symbol y_1 = lg_append_add(&ctx, y_0, b_0);
+    LG_LogicalSymbol y_0 = lg_append_contract(&ctx, W_0, x, 1, 0);
+    LG_LogicalSymbol y_1 = lg_append_add(&ctx, y_0, b_0);
 
     lg_declare_sink(&ctx, y_1);
 
