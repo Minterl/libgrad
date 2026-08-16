@@ -69,11 +69,6 @@ _Static_assert(LG_LAST_UNARY_OP + 1 == LG_FIRST_BINARY_OP, "opcodes must be cont
 #define lg_opcode_is_unary(op) ((LG_FIRST_UNARY_OP <= (op)) && ((op) <= LG_LAST_UNARY_OP))
 #define lg_opcode_is_binary(op) ((LG_FIRST_BINARY_OP <= (op)) && ((op) <= LG_LAST_BINARY_OP))
 
-typedef struct
-LG_Symbol {
-    uint32_t id;
-} LG_Symbol;
-
 // typedef union
 // LG_ExprNodeMeta {
 //     struct {

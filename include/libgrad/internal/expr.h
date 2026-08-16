@@ -3,8 +3,9 @@
 
 #include <libgrad/internal/core.h>
 #include <libgrad/internal/affine.h>
-#include <libgrad/internal/vm.h> // TODO: maybe this should be the thing that defines logical opcodes and symbols
+#include <libgrad/internal/strings.h>
 
+#define LG_MAX_ERR_LEN 1024
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -23,11 +24,76 @@ LG_Context {
     uint8_t          err_msg_backing_buf[LG_MAX_ERR_LEN];
 } LG_Context;
 
+/// Discriminator for an operation.
+///
+/// The integer representations of opcodes are not designed
+/// to be stable and should not be serialized.
+typedef enum
+LG_Opcode {
+
+    //////////////////////////////////
+    // ~~ Unary Operations ~~
+
+#   define LG_FIRST_UNARY_OP LG_Opcode_Sink
+    LG_Opcode_Sink,
+
+    // Constructive operations create new symbols,
+    // while non-constructive ones do not.
+#   define LG_FIRST_CONSTRUCTIVE_OP LG_Opcode_Source
+
+    LG_Opcode_Param,
+    /// Element-wise ReLU
+    LG_Opcode_ReLU,
+    /// Element-wise stable softmax
+    LG_Opcode_StableSoftmax,
+    /// Element-wise sigmoid
+    LG_Opcode_Sigmoid,
+    /// Element-wise natural log
+    LG_Opcode_LN,
+
+#   define LG_LAST_UNARY_OP LG_Opcode_LN
+
+
+    //////////////////////////////////
+    // ~~ Binary Operations ~~
+
+#   define LG_FIRST_BINARY_OP LG_Opcode_Add
+
+    /// Element-wise tensor addition
+    LG_Opcode_Add,
+    /// Element-wise tensor subtraction
+    LG_Opcode_Sub,
+    /// Generalized tensor contraction i.e
+    /// dot-product over strided dimensions.
+    /// Is generalizable to N-rank tensors.
+    LG_Opcode_Contract,
+    /// Hadamard product
+    LG_Opcode_Hadamard,
+    /// Mean Squared Error loss
+    LG_Opcode_MSELoss,
+    /// Cross-entropy loss
+    LG_Opcode_CrossEntropyLoss,
+
+#   define LG_LAST_BINARY_OP LG_Opcode_CrossEntropyLoss
+#   define LG_LAST_CONSTRUCTIVE_OP LG_LAST_BINARY_OP
+} LG_Opcode;
+
+_Static_assert(LG_LAST_UNARY_OP + 1 == LG_FIRST_BINARY_OP, "opcodes must be contigugous");
+
+#define lg_opcode_creates_symbol(op) ((LG_FIRST_CONSTRUCTIVE_OP <= (op)) && ((op) <= LG_LAST_CONSTRUCTIVE_OP))
+#define lg_opcode_is_unary(op) ((LG_FIRST_UNARY_OP <= (op)) && ((op) <= LG_LAST_UNARY_OP))
+#define lg_opcode_is_binary(op) ((LG_FIRST_BINARY_OP <= (op)) && ((op) <= LG_LAST_BINARY_OP))
+
 typedef uint32_t 
 LG_SymbolFlags;
 enum {
     LG_SymbolFlag_Pin = UINT32_C(0x1),
 };
+
+typedef struct
+LG_Symbol {
+    uint32_t id;
+} LG_Symbol;
 
 typedef union
 LG_ExprNodeMeta {
