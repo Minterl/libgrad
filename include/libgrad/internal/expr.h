@@ -77,7 +77,7 @@ LG_LogicalOpcode {
 #   define LG_LAST_CONSTRUCTIVE_OP LG_LAST_BINARY_OP
 } LG_LogicalOpcode;
 
-_Static_assert(LG_LAST_UNARY_OP + 1 == LG_FIRST_BINARY_OP, "opcodes must be contigugous");
+lg_static_assert(LG_LAST_UNARY_OP + 1 == LG_FIRST_BINARY_OP);
 
 #define lg_opcode_creates_symbol(op) ((LG_FIRST_CONSTRUCTIVE_OP <= (op)) && ((op) <= LG_LAST_CONSTRUCTIVE_OP))
 #define lg_opcode_is_unary(op) ((LG_FIRST_UNARY_OP <= (op)) && ((op) <= LG_LAST_UNARY_OP))

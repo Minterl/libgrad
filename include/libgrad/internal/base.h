@@ -69,6 +69,17 @@
 #   define lg_force_inline inline
 #endif // defined(__has_attribute) && __has_attribute(always_inline)
 
+/// Static assertions
+#if defined(_Static_assert)
+#   define lg_static_assert(cond) _Static_assert((cond), "")
+#elif defined(__COUNTER__)
+#   define lg_static_assert_concat_(a, b) a##b 
+#   define lg_static_assert_concat(a, b) lg_static_assert_concat_(a, b)
+#   define lg_static_assert(cond) size_t lg_static_assert_concat(lg_static_assert, __COUNTER__) =  sizeof(uint8_t[(cond) ? 1: -1])
+#else
+#   define lg_static_assert(cond)
+#endif // defined(_Static_assert)
+
 /// memory utils
 
 #define lg_align_up(x, align) (((x) + (align) - 1) & ~((align) - 1))
