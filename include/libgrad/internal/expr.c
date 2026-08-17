@@ -730,16 +730,55 @@ lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_Logica
     switch (lnode->opcode) {
     case LG_LogicalOpcode_Add:
     case LG_LogicalOpcode_Sub: {
-        lg_unreachable("TODO");
+        LG_MappedSpace iter_space = {0};
+        LG_StatusKind status = lg_create_broadcasted_iteration_space(
+            &ctx->arena,
+            &shapes[lnode->y.id], &shapes[lnode->x0.id], &shapes[lnode->x1.id],
+            &iter_space
+        );
+        if (status != LG_StatusKind_OK) {
+            goto oom;
+        }
+
+        LG_AffineTransform y_addr_op = {0};
+        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->y.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &y_addr_op);
+        if (status != LG_StatusKind_OK) {
+            goto oom;
+        }
+        LG_AffineTransform x0_addr_op = {0};
+        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->x0.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &x0_addr_op);
+        if (status != LG_StatusKind_OK) {
+            goto oom;
+        }
+        LG_AffineTransform x1_addr_op = {0};
+        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->x1.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &x1_addr_op);
+        if (status != LG_StatusKind_OK) {
+            goto oom;
+        }
+        
+        LG_HedralAddressTriple addrs = lg_hbuilder_template_get_binop_addrs(
+            ctx, hbuilder,
+            &iter_space.iteration_domain,
+            &iter_space.to_y_coords, &iter_space.to_x0_coords, &iter_space.to_x1_coords, 
+            &y_addr_op, &x0_addr_op, &x1_addr_op
+        );
+
+        LG_HedralSymbol x0_value = lg_hbuilder_access(ctx, hbuilder, addrs.x0);
+        LG_HedralSymbol x1_value = lg_hbuilder_access(ctx, hbuilder, addrs.x1);
+        LG_HedralSymbol y_value = lg_hbuilder_add(ctx, hbuilder, x0_value, x1_value);
+
+        lg_hbuilder_yield_accumulate(ctx, hbuilder, addrs.y, y_value);
+
+        break;
     }
 
     case LG_LogicalOpcode_Contract: {
-        LG_MappedSpace iteration_space = {0};
+        LG_MappedSpace iter_space = {0};
         LG_StatusKind status = lg_create_contracted_iteration_space(
             &ctx->arena,
             &shapes[lnode->y.id], &shapes[lnode->x0.id], &shapes[lnode->x1.id],
             lnode->meta_as.contract.n_batch_axes,
-            &iteration_space
+            &iter_space
         );
         if (status != LG_StatusKind_OK) {
             goto oom;
@@ -763,8 +802,8 @@ lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_Logica
 
         LG_HedralAddressTriple addrs = lg_hbuilder_template_get_binop_addrs(
             ctx, hbuilder,
-            &iteration_space.iteration_domain,
-            &iteration_space.to_y_coords, &iteration_space.to_x0_coords, &iteration_space.to_x1_coords, 
+            &iter_space.iteration_domain,
+            &iter_space.to_y_coords, &iter_space.to_x0_coords, &iter_space.to_x1_coords, 
             &y_addr_op, &x0_addr_op, &x1_addr_op
         );
 

@@ -121,6 +121,15 @@ lg_infer_broadcasted_dims(
     size_t n_descs
 );
 
+LG_StatusKind
+lg_create_broadcasted_iteration_space(
+    LG_Arena *arena,
+    const LG_LogicalShape *y,
+    const LG_LogicalShape *x0,
+    const LG_LogicalShape *x1,
+    LG_MappedSpace *out_space
+);
+
 LG_StatusKind 
 lg_create_contracted_iteration_space(
     LG_Arena *arena,
