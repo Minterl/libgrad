@@ -104,6 +104,11 @@
      } while(0) 
 #endif // defined(__has_builtin) && __has_builtin(__builtin_memset)
 
+#if defined(__has_builtin) && __has_builtin(__builtin_memcmp)
+#   define lg_memcmp(a, b, len) __builtin_memcmp((a), (b), (len));
+#else
+#   define lg_memcmp(a, b, len) lg_memcmp_((uint8_t*)(a), (uint8_t*)(b), (len))
+#endif // defined(__has_builtin) && __has_builtin(__builtin_memcmp)
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

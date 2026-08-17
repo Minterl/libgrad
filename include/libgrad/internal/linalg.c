@@ -1,6 +1,5 @@
+#include <libgrad/internal/base.h>
 #include <libgrad/internal/linalg.h>
-#include <libgrad/internal/alloc.h>
-#include <libgrad/internal/debug.h>
 
 LG_StatusKind
 lg_atran_strided_projection_from_shape(
@@ -203,18 +202,124 @@ lg_infer_contracted_dims(
     return LG_StatusKind_OK;
 }
 
-LG_StatusKind 
-lg_create_contracted_iteration_space(
+LG_StatusKind
+lg_create_broadcasted_iteration_space(
     LG_Arena *arena,
+
     const LG_LogicalShape *y,
     const LG_LogicalShape *x0,
     const LG_LogicalShape *x1,
-    size_t n_batch_axes,
+    
     LG_Polyhedron *out_poly,
     LG_AffineTransform *out_y_atran,
     LG_AffineTransform *out_x0_atran,
     LG_AffineTransform *out_x1_atran
 ) {
+    // TODO: think of a way to do this function without duplicating the work
+
+    lg_assert(out_poly != NULL);
+    lg_assert(out_y_atran != NULL);
+    lg_assert(out_x0_atran != NULL);
+    lg_assert(out_x1_atran != NULL);
+
+    LG_LogicalShape y_should;
+    LG_StatusKind status = lg_infer_broadcasted_dims(&y_should, (const LG_LogicalShape*[]){x0, x1}, 2);
+    if (status != LG_StatusKind_OK) {
+        return status;
+    }
+
+    if (y->rank != y_should.rank) {
+        return LG_StatusKind_InvalidRank;
+    }
+    for (uint8_t i = 0; i < y_should.rank; i++) {
+        if (y_should.dim[i] != y->dim[i]) {
+            return LG_StatusKind_ShapeMismatch;
+        }
+    }
+
+    const size_t iter_domain_rank = y->rank;
+
+    int64_t *iter_domain_extents = lg_arena_alloc_array(arena, int64_t, iter_domain_rank);
+    if (iter_domain_extents == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+    int64_t *y_A = lg_arena_alloc_array(arena, int64_t, iter_domain_rank * y->rank);
+    if (y_A == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+    int64_t *x0_A = lg_arena_alloc_array(arena, int64_t, iter_domain_rank * x0->rank);
+    if (x0_A == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+    int64_t *x1_A = lg_arena_alloc_array(arena, int64_t, iter_domain_rank * x1->rank);
+    if (x1_A == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+    
+    lg_memcpy(iter_domain_extents, y->dim, iter_domain_rank * sizeof(uint64_t));
+
+    for (uint8_t i_rev = 1; i_rev <= iter_domain_rank; i_rev++) {
+        uint8_t r = iter_domain_rank - r;
+        if (x0->dim[r] != y->dim[r]) {
+            lg_assert(x0->dim[r] == 1);
+            x0_A[r*x1->rank + r] = 0;
+        }
+        if (x1->dim[r] != y->dim[r]) {
+            lg_assert(x1->dim[r] == 1);
+            x1_A[r*x1->rank + r] = 0;
+        }
+        y_A[r*y->rank + r] = 1;
+    }
+
+    LG_Polyhedron iter_domain = {
+        .repr_kind = LG_PolyhedronReprKind_CanonicalAABB,
+        .as.canonical_aabb.rank = iter_domain_rank,
+        .as.canonical_aabb.extents = iter_domain_extents,
+    };
+
+    out_y_atran->n_rows = y->rank;
+    out_y_atran->n_cols = iter_domain_rank;
+    out_y_atran->data = y_A;
+
+    out_x0_atran->n_rows = x0->rank;
+    out_x0_atran->n_cols = iter_domain_rank;
+    out_x0_atran->data = x0_A;
+
+    out_x1_atran->n_rows = x1->rank;
+    out_x1_atran->n_cols = iter_domain_rank;
+    out_x1_atran->data = x1_A;
+
+    *out_poly = iter_domain;
+
+    // The resulting state of our tensor views looks like this:
+    // - All tensors have the same logical rank
+    // - All tensors have the exact same logical dims
+    // - The only thing that changes between tensor views is
+    //   striding.
+
+    return LG_StatusKind_OK;
+}
+
+LG_StatusKind 
+lg_create_contracted_iteration_space(
+    LG_Arena *arena,
+
+    const LG_LogicalShape *y,
+    const LG_LogicalShape *x0,
+    const LG_LogicalShape *x1,
+
+    size_t n_batch_axes,
+    
+    LG_Polyhedron *out_poly,
+    LG_AffineTransform *out_y_atran,
+    LG_AffineTransform *out_x0_atran,
+    LG_AffineTransform *out_x1_atran
+) {
+    lg_assert(out_poly != NULL);
+    lg_assert(out_y_atran != NULL);
+    lg_assert(out_x0_atran != NULL);
+    lg_assert(out_x1_atran != NULL);
+
     LG_StatusKind status = LG_StatusKind_OK;
 
     if (

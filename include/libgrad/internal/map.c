@@ -1,8 +1,4 @@
-#include <libgrad/internal/alloc.h>
 #include <libgrad/internal/map.h>
-#include <libgrad/internal/debug.h>
-
-#include <stdint.h>
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -16,7 +12,6 @@ typedef enum
 LG_MapSentinel {
     LG_MapSentinel_Empty = UINT8_C(0x0),
 } LG_MapSentinel;
-
 
 #define LG_MMH_C1 0xcc9e2d51u
 #define LG_MMH_C2 0x1b873593u

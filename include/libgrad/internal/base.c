@@ -1,17 +1,22 @@
 #include <libgrad/internal/base.h>
 
+int32_t
+lg_memcmp_(uint8_t *a, uint8_t *b, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        if (a[i] != b[i]) {
+            return (int32_t)a[i] - (int32_t)b[i];
+        }
+    }
+    return 0;
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ///
 /// string implementation stuff
 ///
 ////////////////////////////////////////////////////////////////////////////////
-
-typedef struct
-LG_FmtFnLut {
-    uint32_t hash;
-    void (*fn)(va_list ap, LG_Writer *writer);
-} LG_FmtFnLut;
 
 void 
 lg_vformat_i64(va_list ap, LG_Writer *writer) {
@@ -39,7 +44,10 @@ void lg_vformat_status_kind(va_list ap, LG_Writer *writer) {
 }
 
 #define LG_FMT_FN_LUT_LEN 4
-static const LG_FmtFnLut LG_FMT_FN_LUT[LG_FMT_FN_LUT_LEN] = {
+static const struct {
+    uint32_t hash;
+    void (*fn)(va_list ap, LG_Writer *writer);
+} LG_FMT_FN_LUT[LG_FMT_FN_LUT_LEN] = {
     {lg_hash_lit_16("i64"),     lg_vformat_i64},
     {lg_hash_lit_16("str"),     lg_vformat_string},
     {lg_hash_lit_16("cstr"),    lg_vformat_cstring},
@@ -51,22 +59,8 @@ lg_strcmp(const lg_str8 a, const lg_str8 b) {
     if (a.p == b.p && a.len == b.len) {
         return 0;
     }
-    if (a.len != b.len) {
-        return a.len > b.len ? 1 : -1;
-    }
-
-#   if defined(__has_builtin) && __has_builtin(__builtin_memcmp)
-        return __builtin_memcmp(a.p, b.p, a.len);
-#   else
-        for (size_t i = 0; i < a.len; i++) {
-            if (a.p[i] == b.p[i]) {
-                continue;
-            } else {
-                return (int32_t)a.p[i] - (int32_t)b.p[i];
-            }
-        }
-        return 0;
-#   endif // defined(__has_builtin) && __has_builtin(__builtin_memcmp)
+    const size_t len = a.len > b.len ? b.len : a.len;
+    return lg_memcmp(a.p, b.p, len);
 }
 
 size_t 
@@ -92,7 +86,7 @@ lg_copy_to_cstring(uint8_t *dest, const lg_str8 src) {
 
 void 
 lg_write_itoa(LG_Writer *writer, int64_t n) {
-    _Static_assert(INT64_MAX == 9223372036854775807, "");
+    lg_static_assert(INT64_MAX == 9223372036854775807);
     //          ... which is -- 1234567890123456789 -- 19 digits long
     // +1 for the sign character.
     // `lg_string` does not need a null terminator

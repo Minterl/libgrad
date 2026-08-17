@@ -20,7 +20,7 @@ LG_LayoutKind {
 
 typedef struct
 LG_LogicalShape {
-    size_t rank; \
+    size_t rank;
     size_t dim[LG_MAX_RANK];
 } LG_LogicalShape;
 
