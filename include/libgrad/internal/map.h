@@ -1,10 +1,7 @@
 #ifndef LG_MAP_H_
 #define LG_MAP_H_
 
-#include <libgrad/internal/core.h>
-#include <libgrad/internal/alloc.h>
-
-#include <stdint.h>
+#include <libgrad/internal/base.h>
 
 typedef union 
 LG_MapFingerprintBlock {

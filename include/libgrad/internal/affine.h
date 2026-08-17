@@ -1,9 +1,8 @@
 #ifndef LG_AFFINE_H_
 #define LG_AFFINE_H_
 
-#include <libgrad/internal/core.h>
-#include <libgrad/internal/alloc.h>
-#include <stdint.h>
+#include <libgrad/internal/base.h>
+#include <libgrad/internal/expr.h>
 
 typedef uint8_t LG_PolyhedronReprKind;
 enum {

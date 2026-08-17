@@ -1,9 +1,8 @@
 #ifndef LG_EXPR_H_
 #define LG_EXPR_H_
 
-#include <libgrad/internal/core.h>
+#include <libgrad/internal/base.h>
 #include <libgrad/internal/affine.h>
-#include <libgrad/internal/strings.h>
 
 #define LG_MAX_ERR_LEN 1024
 
