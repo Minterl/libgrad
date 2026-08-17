@@ -20,24 +20,7 @@
 /// ergonomics/core macro utilities
 ///
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Maximum possible shape rank
-/// All shapes will have an array of this size to store
-/// dims, so  keep this to a minimum.
-#ifndef LG_MAX_RANK
-#   define LG_MAX_RANK 8
-#endif // LG_MAX_RANK
-
-/// The number of tensors tracked by `lg_nditer`.
-#ifndef LG_N_TRACKED_TENSORS
-#   define LG_N_TRACKED_TENSORS 4
-#endif // LG_N_TRACKED_TENSORS 4
-
-/// Backs tensor data
-#ifndef lg_scalar
-#   define lg_scalar float
-#endif // lg_scalar
-
+      
 /// Nullability
 #if defined(__has_feature) && __has_feature(nullability)
 #   define lg_nullable _Nullable

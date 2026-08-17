@@ -1,4 +1,4 @@
-#include <libgrad/internal/affine.h>
+#include <libgrad/internal/linalg.h>
 #include <libgrad/internal/alloc.h>
 #include <libgrad/internal/debug.h>
 
@@ -107,6 +107,96 @@ lg_poly_make_parallelotope(LG_Arena *arena, LG_Polyhedron *out_poly, uint8_t ran
             A[(2*i + 1) * out_poly->as.hyperplane.n_cols + i] = 1;
             b[2*i] = -lower[i];
             b[2*i + 1] = upper[i];
+        }
+    }
+
+    return LG_StatusKind_OK;
+}
+
+LG_StatusKind 
+lg_infer_broadcasted_dims(
+    LG_LogicalShape *lg_nullable out,
+    const LG_LogicalShape **shapes,
+    size_t n_descs
+) {
+    size_t max_rank = 0;
+    for (size_t i = 0; i < n_descs; i++) {
+        if (shapes[i]->rank > max_rank) {
+            max_rank = shapes[i]->rank;
+        }
+    }
+
+    // Every tensor participating in the tracking must be broadcast-compatible
+    // with every other tensor.
+    // Naively, we would perform an O(n^2) check across a matrix of all of the participating tensors.
+    // The shortcut below is equivalent.
+    //
+    // Tensors are broadcast-compatible if all of their dimensions are broadcast-compatible.
+    // Two dimensions are broadcast-compatible if one of three things is true:
+    // 1) The dimensions are the same.
+    // 2) One of the dimensions is 1.
+    // 3) One of the dimensions does not exist.
+    
+    size_t master_dim[LG_MAX_RANK];
+    for (size_t i = 0; i < max_rank; i++) {
+        master_dim[i] = 1;
+    }
+
+    for (size_t i_desc = 0; i_desc < n_descs; i_desc++) {
+        for (size_t i_axis = 0; i_axis < shapes[i_desc]->rank; i_axis++) {
+            const size_t dim_desc = shapes[i_desc]->dim[shapes[i_desc]->rank - i_axis - 1];
+            size_t *const dim_master = &master_dim[max_rank - i_axis - 1];
+            if (dim_desc == 1) {
+                continue;
+            }
+            if (*dim_master == 1) {
+                *dim_master = dim_desc;
+            } else if (*dim_master != dim_desc) {
+                return LG_StatusKind_ShapeMismatch;
+            }
+        }
+    }
+
+    if (out != NULL) {
+        out->rank = max_rank;
+        for (size_t i = 0; i < LG_MAX_RANK; i++) {
+            out->dim[i] = master_dim[i];
+        }
+    }
+
+    return LG_StatusKind_OK;
+} 
+
+LG_StatusKind 
+lg_infer_contracted_dims(
+    LG_LogicalShape *lg_nullable out_y,
+    const LG_LogicalShape *x0,
+    const LG_LogicalShape *x1,
+    size_t n_contracted_axes,
+    size_t n_batch_axes
+) {
+    if (x0->rank < n_contracted_axes || n_contracted_axes + n_batch_axes > x1->rank) {
+        return LG_StatusKind_InvalidArgument;
+    }
+
+    // repeated below
+    const size_t x0_first_contracted_axis = x0->rank - n_contracted_axes;
+    const size_t x1_first_free_axis = n_contracted_axes + n_batch_axes;
+
+    size_t rank = 0;
+
+    size_t dim[LG_MAX_RANK] = {0};
+    for (size_t i = n_batch_axes; i < x0_first_contracted_axis; i++, rank++) {
+        dim[rank] = x0->dim[i];
+    }
+    for (size_t i = x1->rank; i > x1_first_free_axis; i--, rank++) {
+        dim[rank] = x1->dim[i - 1];
+    }
+
+    if (out_y != NULL) {
+        out_y->rank = rank;
+        for (size_t i = 0; i < rank; i++) {
+            out_y->dim[i] = dim[i];
         }
     }
 

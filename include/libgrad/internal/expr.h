@@ -2,7 +2,7 @@
 #define LG_EXPR_H_
 
 #include <libgrad/internal/base.h>
-#include <libgrad/internal/affine.h>
+#include <libgrad/internal/linalg.h>
 
 #define LG_MAX_ERR_LEN 1024
 

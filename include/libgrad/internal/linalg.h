@@ -1,8 +1,28 @@
-#ifndef LG_AFFINE_H_
-#define LG_AFFINE_H_
+#ifndef LG_LINALG_H_
+#define LG_LINALG_H_
 
 #include <libgrad/internal/base.h>
 #include <libgrad/internal/expr.h>
+ 
+/// Maximum possible shape rank
+/// All shapes will have an array of this size to store
+/// dims, so  keep this to a minimum.
+#ifndef LG_MAX_RANK
+#   define LG_MAX_RANK 8
+#endif // LG_MAX_RANK
+ 
+/// Layout of a physical buffer
+typedef enum
+LG_LayoutKind {
+    LG_LayoutKind_RowMajor,
+    LG_LayoutKind_ColumnMajor,
+} LG_LayoutKind;
+
+typedef struct
+LG_LogicalShape {
+    size_t rank; \
+    size_t dim[LG_MAX_RANK];
+} LG_LogicalShape;
 
 typedef uint8_t LG_PolyhedronReprKind;
 enum {
@@ -62,19 +82,6 @@ LG_AffineTransform {
 #define lg_atran_get_b(atran) ((atran)->data + ((size_t)(atran)->n_rows * (atran)->n_cols))
 #define lg_atran_is_valid_address_operator(atran) ((atran)->n_rows == 1)
 
-LG_StatusKind 
-lg_create_contracted_iteration_space(
-    LG_Arena *arena,
-    const LG_LogicalShape *y,
-    const LG_LogicalShape *x0,
-    const LG_LogicalShape *x1,
-    size_t n_batch_axes,
-    LG_Polyhedron *out_poly,
-    LG_AffineTransform *out_y_atran,
-    LG_AffineTransform *out_x0_atran,
-    LG_AffineTransform *out_x1_atran
-);
-
 LG_StatusKind
 lg_poly_make_parallelotope(LG_Arena *arena, LG_Polyhedron *out_poly, uint8_t rank, int64_t *lower, int64_t *upper);
 
@@ -90,4 +97,33 @@ lg_atran_strided_projection_from_shape(
 void
 lg_atran_apply(const LG_AffineTransform *tran, const int64_t x[static LG_MAX_RANK], int64_t y[static LG_MAX_RANK]);
 
-#endif //LG_AFFINE_H_c
+LG_StatusKind 
+lg_infer_contracted_dims(
+    LG_LogicalShape *lg_nullable out_y,
+    const LG_LogicalShape *x0,
+    const LG_LogicalShape *x1,
+    size_t n_contracted_axes,
+    size_t n_batch_axes
+);
+
+LG_StatusKind 
+lg_infer_broadcasted_dims(
+    LG_LogicalShape *lg_nullable out,
+    const LG_LogicalShape **shapes,
+    size_t n_descs
+);
+
+LG_StatusKind 
+lg_create_contracted_iteration_space(
+    LG_Arena *arena,
+    const LG_LogicalShape *y,
+    const LG_LogicalShape *x0,
+    const LG_LogicalShape *x1,
+    size_t n_batch_axes,
+    LG_Polyhedron *out_poly,
+    LG_AffineTransform *out_y_atran,
+    LG_AffineTransform *out_x0_atran,
+    LG_AffineTransform *out_x1_atran
+);
+
+#endif // LG_LINALG_H_c

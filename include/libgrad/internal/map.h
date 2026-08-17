@@ -16,9 +16,7 @@ LG_Map {
     /// Must be a power of two, and will be implicitly rounded to one 
     /// during initialization.
     size_t cap;
-
     LG_MapFingerprintBlock *fingerprints_as;
-
     uint64_t *keys lg_check_bounds(cap);
 } LG_Map;
 
