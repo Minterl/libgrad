@@ -205,22 +205,14 @@ lg_infer_contracted_dims(
 LG_StatusKind
 lg_create_broadcasted_iteration_space(
     LG_Arena *arena,
-
     const LG_LogicalShape *y,
     const LG_LogicalShape *x0,
     const LG_LogicalShape *x1,
-    
-    LG_Polyhedron *out_poly,
-    LG_AffineTransform *out_y_atran,
-    LG_AffineTransform *out_x0_atran,
-    LG_AffineTransform *out_x1_atran
+    LG_MappedSpace *out_space
 ) {
     // TODO: think of a way to do this function without duplicating the work
 
-    lg_assert(out_poly != NULL);
-    lg_assert(out_y_atran != NULL);
-    lg_assert(out_x0_atran != NULL);
-    lg_assert(out_x1_atran != NULL);
+    lg_assert(out_space != NULL);
 
     LG_LogicalShape y_should;
     LG_StatusKind status = lg_infer_broadcasted_dims(&y_should, (const LG_LogicalShape*[]){x0, x1}, 2);
@@ -271,25 +263,27 @@ lg_create_broadcasted_iteration_space(
         y_A[r*y->rank + r] = 1;
     }
 
+    lg_memzero(out_space, sizeof(LG_MappedSpace));
+
     LG_Polyhedron iter_domain = {
         .repr_kind = LG_PolyhedronReprKind_CanonicalAABB,
         .as.canonical_aabb.rank = iter_domain_rank,
         .as.canonical_aabb.extents = iter_domain_extents,
     };
 
-    out_y_atran->n_rows = y->rank;
-    out_y_atran->n_cols = iter_domain_rank;
-    out_y_atran->data = y_A;
+    out_space->iteration_domain = iter_domain;
 
-    out_x0_atran->n_rows = x0->rank;
-    out_x0_atran->n_cols = iter_domain_rank;
-    out_x0_atran->data = x0_A;
+    out_space->to_y_coords.n_rows = y->rank;
+    out_space->to_y_coords.n_cols = iter_domain_rank;
+    out_space->to_y_coords.data   = y_A;
 
-    out_x1_atran->n_rows = x1->rank;
-    out_x1_atran->n_cols = iter_domain_rank;
-    out_x1_atran->data = x1_A;
+    out_space->to_y_coords.n_rows = x0->rank;
+    out_space->to_y_coords.n_cols = iter_domain_rank;
+    out_space->to_y_coords.data   = x0_A;
 
-    *out_poly = iter_domain;
+    out_space->to_y_coords.n_rows = x1->rank;
+    out_space->to_y_coords.n_cols = iter_domain_rank;
+    out_space->to_y_coords.data   = x1_A;
 
     // The resulting state of our tensor views looks like this:
     // - All tensors have the same logical rank
@@ -303,22 +297,13 @@ lg_create_broadcasted_iteration_space(
 LG_StatusKind 
 lg_create_contracted_iteration_space(
     LG_Arena *arena,
-
     const LG_LogicalShape *y,
     const LG_LogicalShape *x0,
     const LG_LogicalShape *x1,
-
     size_t n_batch_axes,
-    
-    LG_Polyhedron *out_poly,
-    LG_AffineTransform *out_y_atran,
-    LG_AffineTransform *out_x0_atran,
-    LG_AffineTransform *out_x1_atran
+    LG_MappedSpace *out_space
 ) {
-    lg_assert(out_poly != NULL);
-    lg_assert(out_y_atran != NULL);
-    lg_assert(out_x0_atran != NULL);
-    lg_assert(out_x1_atran != NULL);
+    lg_assert(out_space != NULL);
 
     LG_StatusKind status = LG_StatusKind_OK;
 
@@ -460,25 +445,27 @@ lg_create_contracted_iteration_space(
     ////////////////
     /// ~~ fin ~~
 
+    lg_memzero(out_space, sizeof(LG_MappedSpace));
+
     LG_Polyhedron iter_domain = {
         .repr_kind = LG_PolyhedronReprKind_CanonicalAABB,
         .as.canonical_aabb.rank = iter_domain_rank,
         .as.canonical_aabb.extents = iter_domain_extents,
     };
 
-    out_y_atran->n_rows = y->rank;
-    out_y_atran->n_cols = iter_domain_rank;
-    out_y_atran->data = y_A;
+    out_space->iteration_domain    = iter_domain;
 
-    out_x0_atran->n_rows = x0->rank;
-    out_x0_atran->n_cols = iter_domain_rank;
-    out_x0_atran->data = x0_A;
+    out_space->to_y_coords.n_rows  = y->rank;
+    out_space->to_y_coords.n_cols  = iter_domain_rank;
+    out_space->to_y_coords.data    = y_A;
 
-    out_x1_atran->n_rows = x1->rank;
-    out_x1_atran->n_cols = iter_domain_rank;
-    out_x1_atran->data = x1_A;
+    out_space->to_x0_coords.n_rows = x0->rank;
+    out_space->to_x0_coords.n_cols = iter_domain_rank;
+    out_space->to_x0_coords.data   = x0_A;
 
-    *out_poly = iter_domain;
+    out_space->to_x1_coords.n_rows = x1->rank;
+    out_space->to_x1_coords.n_cols = iter_domain_rank;
+    out_space->to_x1_coords.data   = x1_A;
 
     lg_assert(status == LG_StatusKind_OK);
     return status;

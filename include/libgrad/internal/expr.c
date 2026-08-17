@@ -734,14 +734,12 @@ lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_Logica
     }
 
     case LG_LogicalOpcode_Contract: {
-        LG_Polyhedron iter_domain = {0};
-        LG_AffineTransform y_atran = {0}, x0_atran = {0}, x1_atran = {0};
+        LG_MappedSpace iteration_space = {0};
         LG_StatusKind status = lg_create_contracted_iteration_space(
             &ctx->arena,
             &shapes[lnode->y.id], &shapes[lnode->x0.id], &shapes[lnode->x1.id],
             lnode->meta_as.contract.n_batch_axes,
-            &iter_domain,
-            &y_atran, &x0_atran, &x1_atran
+            &iteration_space
         );
         if (status != LG_StatusKind_OK) {
             goto oom;
@@ -765,8 +763,8 @@ lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_Logica
 
         LG_HedralAddressTriple addrs = lg_hbuilder_template_get_binop_addrs(
             ctx, hbuilder,
-            &iter_domain,
-            &y_atran, &x0_atran, &x1_atran, 
+            &iteration_space.iteration_domain,
+            &iteration_space.to_y_coords, &iteration_space.to_x0_coords, &iteration_space.to_x1_coords, 
             &y_addr_op, &x0_addr_op, &x1_addr_op
         );
 

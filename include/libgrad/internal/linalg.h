@@ -76,6 +76,14 @@ LG_AffineTransform {
     // int64_t  *b; // R^(rows)
 } LG_AffineTransform;
 
+typedef struct
+LG_MappedSpace {
+    LG_Polyhedron       iteration_domain;
+    LG_AffineTransform  to_y_coords;
+    LG_AffineTransform  to_x0_coords;
+    LG_AffineTransform  to_x1_coords;
+} LG_MappedSpace;
+
 #define lg_hpoly_get_A(hpoly) ((hpoly)->data)
 #define lg_hpoly_get_b(hpoly) ((hpoly)->data + ((size_t)(hpoly)->n_rows * (hpoly)->n_cols))
 #define lg_atran_get_A(atran) ((atran)->data)
@@ -120,10 +128,7 @@ lg_create_contracted_iteration_space(
     const LG_LogicalShape *x0,
     const LG_LogicalShape *x1,
     size_t n_batch_axes,
-    LG_Polyhedron *out_poly,
-    LG_AffineTransform *out_y_atran,
-    LG_AffineTransform *out_x0_atran,
-    LG_AffineTransform *out_x1_atran
+    LG_MappedSpace *out_space
 );
 
 #endif // LG_LINALG_H_c
