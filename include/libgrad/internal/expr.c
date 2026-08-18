@@ -409,7 +409,7 @@ lg_force_inline LG_HedralSymbol
 lg_hbuilder_begin_iter_domain(
     LG_Context *ctx,
     LG_HedralBuilder *builder,
-    LG_Polyhedron domain
+    LG_Polyhedron *domain
 ) {
     LG_HedralSymbol y = lg_hbuilder_append(ctx, builder, LG_HedralOpcode_BeginIterationDomain, (LG_HedralOperands){
         .begin_iteration_domain = domain 
@@ -427,7 +427,7 @@ lg_hbuilder_end_iter_domain(LG_Context *ctx, LG_HedralBuilder *hbuilder) {
 }
 
 lg_force_inline LG_HedralSymbol 
-lg_hbuilder_construct_atran(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_AffineTransform atran) {
+lg_hbuilder_construct_atran(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_AffineTransform *atran) {
     LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_ConstructAffineTransform, (LG_HedralOperands){
         .construct_affine_transform = atran,
     });
@@ -447,8 +447,8 @@ lg_hbuilder_apply_atran(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_HedralSy
 }
 
 lg_force_inline LG_HedralSymbol 
-lg_hbuilder_construct_affine_addr_op(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_AffineTransform addr_op) {
-    lg_assert(lg_atran_is_valid_address_operator(&addr_op));
+lg_hbuilder_construct_affine_addr_op(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_AffineTransform *addr_op) {
+    lg_assert(lg_atran_is_valid_address_operator(addr_op));
     LG_HedralSymbol y = lg_hbuilder_append(ctx, hbuilder, LG_HedralOpcode_ConstructAffineAddressOperator, (LG_HedralOperands){
         .construct_affine_address_operator = addr_op,
     });
@@ -505,30 +505,30 @@ lg_hbuilder_template_get_binop_addrs(
     LG_Context *ctx,
     LG_HedralBuilder *hbuilder,
 
-    const LG_Polyhedron *iter_domain,
+    LG_Polyhedron *iter_domain,
 
-    const LG_AffineTransform *y_atran,
-    const LG_AffineTransform *x0_atran,
-    const LG_AffineTransform *x1_atran,
+    LG_AffineTransform *y_atran,
+    LG_AffineTransform *x0_atran,
+    LG_AffineTransform *x1_atran,
 
-    const LG_AffineTransform *y_addr_op,
-    const LG_AffineTransform *x0_addr_op,
-    const LG_AffineTransform *x1_addr_op
+    LG_AffineTransform *y_addr_op,
+    LG_AffineTransform *x0_addr_op,
+    LG_AffineTransform *x1_addr_op
 ) {
-    LG_HedralSymbol induction_vector = lg_hbuilder_begin_iter_domain(ctx, hbuilder, *iter_domain);
+    LG_HedralSymbol induction_vector = lg_hbuilder_begin_iter_domain(ctx, hbuilder, iter_domain);
 
-    LG_HedralSymbol y_atran_s = lg_hbuilder_construct_atran(ctx, hbuilder, *y_atran);
-    LG_HedralSymbol y_addr_op_s = lg_hbuilder_construct_affine_addr_op(ctx, hbuilder, *y_addr_op);
+    LG_HedralSymbol y_atran_s = lg_hbuilder_construct_atran(ctx, hbuilder, y_atran);
+    LG_HedralSymbol y_addr_op_s = lg_hbuilder_construct_affine_addr_op(ctx, hbuilder, y_addr_op);
     LG_HedralSymbol y_coord_s = lg_hbuilder_apply_atran(ctx, hbuilder, y_atran_s, induction_vector);
     LG_HedralSymbol y_addr_s = lg_hbuilder_apply_affine_addr_op(ctx, hbuilder, y_addr_op_s, y_coord_s);
 
-    LG_HedralSymbol x0_atran_s = lg_hbuilder_construct_atran(ctx, hbuilder, *x0_atran);
-    LG_HedralSymbol x0_addr_op_s = lg_hbuilder_construct_affine_addr_op(ctx, hbuilder, *x0_addr_op);
+    LG_HedralSymbol x0_atran_s = lg_hbuilder_construct_atran(ctx, hbuilder, x0_atran);
+    LG_HedralSymbol x0_addr_op_s = lg_hbuilder_construct_affine_addr_op(ctx, hbuilder, x0_addr_op);
     LG_HedralSymbol x0_coord_s = lg_hbuilder_apply_atran(ctx, hbuilder, x0_atran_s, induction_vector);
     LG_HedralSymbol x0_addr_s = lg_hbuilder_apply_affine_addr_op(ctx, hbuilder, x0_addr_op_s, x0_coord_s);
 
-    LG_HedralSymbol x1_atran_s = lg_hbuilder_construct_atran(ctx, hbuilder, *x1_atran);
-    LG_HedralSymbol x1_addr_op_s = lg_hbuilder_construct_affine_addr_op(ctx, hbuilder, *x1_addr_op);
+    LG_HedralSymbol x1_atran_s = lg_hbuilder_construct_atran(ctx, hbuilder, x1_atran);
+    LG_HedralSymbol x1_addr_op_s = lg_hbuilder_construct_affine_addr_op(ctx, hbuilder, x1_addr_op);
     LG_HedralSymbol x1_coord_s = lg_hbuilder_apply_atran(ctx, hbuilder, x1_atran_s, induction_vector);
     LG_HedralSymbol x1_addr_s = lg_hbuilder_apply_affine_addr_op(ctx, hbuilder, x1_addr_op_s, x1_coord_s);
 
@@ -725,7 +725,7 @@ lg_lexpr_node_to_hbuilder(
     LG_HedralBuilder *hbuilder,
     LG_LogicalExprNode *lnode,
     const LG_LogicalShape *shapes,
-    const LG_AffineTransform *addr_ops
+    LG_AffineTransform *const *addr_ops
 ) {
     LG_StatusKind status = LG_StatusKind_OK;
 
@@ -742,14 +742,14 @@ lg_lexpr_node_to_hbuilder(
             goto oom;
         }
 
-        const LG_AffineTransform *const y_addr_op = &addr_ops[lnode->y.id];
-        const LG_AffineTransform *const x0_addr_op = &addr_ops[lnode->x0.id];
-        const LG_AffineTransform *const x1_addr_op = &addr_ops[lnode->x1.id];
+        LG_AffineTransform *const y_addr_op = addr_ops[lnode->y.id];
+        LG_AffineTransform *const x0_addr_op = addr_ops[lnode->x0.id];
+        LG_AffineTransform *const x1_addr_op = addr_ops[lnode->x1.id];
         
         LG_HedralAddressTriple addrs = lg_hbuilder_template_get_binop_addrs(
             ctx, hbuilder,
-            &iter_space.iteration_domain,
-            &iter_space.to_y_coords, &iter_space.to_x0_coords, &iter_space.to_x1_coords, 
+            iter_space.iteration_domain,
+            iter_space.to_y_coords, iter_space.to_x0_coords, iter_space.to_x1_coords, 
             y_addr_op, x0_addr_op, x1_addr_op
         );
 
@@ -757,7 +757,7 @@ lg_lexpr_node_to_hbuilder(
         LG_HedralSymbol x1_value = lg_hbuilder_access(ctx, hbuilder, addrs.x1);
         LG_HedralSymbol y_value = lg_hbuilder_add(ctx, hbuilder, x0_value, x1_value);
 
-        lg_hbuilder_yield_accumulate(ctx, hbuilder, addrs.y, y_value);
+        lg_hbuilder_yield_assign(ctx, hbuilder, addrs.y, y_value);
 
         break;
     }
@@ -774,14 +774,14 @@ lg_lexpr_node_to_hbuilder(
             goto oom;
         }
 
-        const LG_AffineTransform *const y_addr_op = &addr_ops[lnode->y.id];
-        const LG_AffineTransform *const x0_addr_op = &addr_ops[lnode->x0.id];
-        const LG_AffineTransform *const x1_addr_op = &addr_ops[lnode->x1.id];
+        LG_AffineTransform *const y_addr_op = addr_ops[lnode->y.id];
+        LG_AffineTransform *const x0_addr_op = addr_ops[lnode->x0.id];
+        LG_AffineTransform *const x1_addr_op = addr_ops[lnode->x1.id];
 
         LG_HedralAddressTriple addrs = lg_hbuilder_template_get_binop_addrs(
             ctx, hbuilder,
-            &iter_space.iteration_domain,
-            &iter_space.to_y_coords, &iter_space.to_x0_coords, &iter_space.to_x1_coords, 
+            iter_space.iteration_domain,
+            iter_space.to_y_coords, iter_space.to_x0_coords, iter_space.to_x1_coords, 
             y_addr_op, x0_addr_op, x1_addr_op
         );
 
@@ -863,7 +863,7 @@ lg_lower_lexpr(
     /////////////////////////////////////////////////////////////////
     // ~~ calculate address operators ~~
     
-    LG_AffineTransform *addr_ops = lg_arena_alloc_array(&ctx->arena, LG_AffineTransform, lexpr->max_symbol_id);
+    LG_AffineTransform **addr_ops = lg_arena_alloc_array(&ctx->arena, LG_AffineTransform*, lexpr->max_symbol_id);
     if (addr_ops == NULL) {
         status = LG_StatusKind_OutOfMemory;
         lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
@@ -882,7 +882,7 @@ lg_lower_lexpr(
             goto out;
         }
 
-        lg_assert(lg_atran_is_valid_address_operator(&addr_ops[i]));
+        lg_assert(lg_atran_is_valid_address_operator(addr_ops[i]));
     }
 
 
@@ -892,9 +892,11 @@ lg_lower_lexpr(
     LG_HedralBuilder hbuilder = {0};
     for (size_t i = 0; i < lexpr->len; i++) {
         status = lg_lexpr_node_to_hbuilder(ctx, &hbuilder, &lexpr->nodes[i], shapes, addr_ops);
-        lg_assert(status == LG_StatusKind_OutOfMemory);
-        lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
-        goto out;
+        if (status != LG_StatusKind_OK) {
+            lg_assert(status == LG_StatusKind_OutOfMemory);
+            lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
+            goto out;
+        }
     }
 
 

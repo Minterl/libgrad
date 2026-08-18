@@ -24,7 +24,8 @@ LG_LogicalShape {
     size_t dim[LG_MAX_RANK];
 } LG_LogicalShape;
 
-typedef uint8_t LG_PolyhedronReprKind;
+typedef uint8_t 
+LG_PolyhedronReprKind;
 enum {
     LG_PolyhedronReprKind_Hyperplane,
     LG_PolyhedronReprKind_CanonicalAABB,
@@ -35,8 +36,7 @@ enum {
 typedef struct
 LG_HPolyhedron {
     uint8_t  n_rows, n_cols;
-    int64_t *data;
-    
+
     // what this would look like with separate pointers:
     // int64_t  *A; // R^(rows, cols)
     // int64_t  *b; // R^(rows)
@@ -49,7 +49,6 @@ LG_HPolyhedron {
 typedef struct
 LG_CanonicalAABB {
     uint8_t  rank;
-    int64_t *extents;
 } LG_CanonicalAABB;
 
 typedef union
@@ -62,6 +61,7 @@ typedef struct
 LG_Polyhedron {
     LG_PolyhedronReprKind  repr_kind;
     LG_PolyhedronRepr      as; 
+    int64_t                data[];
 } LG_Polyhedron;
 
 /// Affine map representing the equation y = Ax + b
@@ -69,7 +69,7 @@ LG_Polyhedron {
 typedef struct
 LG_AffineTransform {
     uint8_t  n_rows, n_cols;
-    int64_t *data;
+    int64_t  data[];
     
     // what this would look like with separate pointers:
     // int64_t  *A; // R^(rows, cols)
@@ -78,20 +78,29 @@ LG_AffineTransform {
 
 typedef struct
 LG_MappedSpace {
-    LG_Polyhedron       iteration_domain;
-    LG_AffineTransform  to_y_coords;
-    LG_AffineTransform  to_x0_coords;
-    LG_AffineTransform  to_x1_coords;
+    LG_Polyhedron       *iteration_domain;
+    LG_AffineTransform  *to_y_coords;
+    LG_AffineTransform  *to_x0_coords;
+    LG_AffineTransform  *to_x1_coords;
 } LG_MappedSpace;
 
-#define lg_hpoly_get_A(hpoly) ((hpoly)->data)
-#define lg_hpoly_get_b(hpoly) ((hpoly)->data + ((size_t)(hpoly)->n_rows * (hpoly)->n_cols))
+#define lg_hpoly_get_A(poly) ((poly)->data)
+#define lg_hpoly_get_b(poly) ((poly)->data + ((size_t)((poly)->as.hyperplane.n_rows) * (poly)->as.hyperplane.n_cols))
+
+#define lg_canonical_aabb_get_extents(poly) ((poly)->data)
+
 #define lg_atran_get_A(atran) ((atran)->data)
-#define lg_atran_get_b(atran) ((atran)->data + ((size_t)(atran)->n_rows * (atran)->n_cols))
+#define lg_atran_get_b(atran) ((atran)->data + ((size_t)((atran)->n_rows) * (atran)->n_cols))
 #define lg_atran_is_valid_address_operator(atran) ((atran)->n_rows == 1)
 
 LG_StatusKind
-lg_poly_make_parallelotope(LG_Arena *arena, LG_Polyhedron *out_poly, uint8_t rank, int64_t *lower, int64_t *upper);
+lg_poly_make_parallelotope(
+    LG_Arena *arena,
+    LG_Polyhedron **out_poly,
+    uint8_t rank,
+    int64_t *lower,
+    int64_t *upper
+);
 
 LG_StatusKind
 lg_atran_strided_projection_from_shape(
@@ -99,7 +108,7 @@ lg_atran_strided_projection_from_shape(
     const LG_LogicalShape *shape,
     LG_LayoutKind layout,
     uint32_t unit_align,
-    LG_AffineTransform *out_atran
+    LG_AffineTransform **out_atran
 );
 
 void

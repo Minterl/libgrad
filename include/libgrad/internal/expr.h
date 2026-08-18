@@ -276,7 +276,7 @@ static const struct {
     LG_HedralType   operand_types[2];
     const lg_str8   string_name;
 } LG_HEDRAL_OPERATION_TABLE[] = {
-#   define LG_X(opcode, return_type_, ...) [LG_HedralOpcode_##opcode] = {\
+#   define LG_X(opcode, return_type_, ...) [LG_HedralOpcode_##opcode] = { \
         .return_type   = (return_type_), \
         .operand_types = {__VA_ARGS__}, \
         .string_name   = lg_str8_lit(#opcode), \
@@ -294,21 +294,21 @@ LG_HedralSymbol {
 // TODO: use anonymous structs with names instead
 typedef union 
 LG_HedralOperands {
-    LG_HedralSymbol     add[2];
-    LG_HedralSymbol     multiply[2];
+    LG_HedralSymbol      add[2];
+    LG_HedralSymbol      multiply[2];
 
-    LG_Polyhedron       begin_iteration_domain;
-    LG_HedralSymbol     end_iteration_domain;
-    LG_AffineTransform  construct_affine_transform;
-    LG_AffineTransform  construct_affine_address_operator;
+    LG_Polyhedron       *begin_iteration_domain;
+    LG_HedralSymbol      end_iteration_domain;
+    LG_AffineTransform  *construct_affine_transform;
+    LG_AffineTransform  *construct_affine_address_operator;
 
-    LG_HedralSymbol     apply_affine_transform[2];
-    LG_HedralSymbol     apply_affine_address_operator[2];
+    LG_HedralSymbol      apply_affine_transform[2];
+    LG_HedralSymbol      apply_affine_address_operator[2];
 
-    LG_HedralSymbol     access;
+    LG_HedralSymbol      access;
 
-    LG_HedralSymbol     yield_assign[2];
-    LG_HedralSymbol     yield_accumulate[2];
+    LG_HedralSymbol      yield_assign[2];
+    LG_HedralSymbol      yield_accumulate[2];
 } LG_HedralOperands;
 
 typedef struct

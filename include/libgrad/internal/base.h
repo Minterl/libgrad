@@ -260,8 +260,9 @@ lg_alloc_contiguous_blocks(
     size_t align
 );
 
-#define lg_arena_alloc_struct(arena, T) (T*)lg_arena_alloc((arena), sizeof(T), _Alignof(T))
 #define lg_arena_alloc_array(arena, T, len) (T*)lg_arena_alloc((arena), (len) * sizeof(T), _Alignof(T))
+#define lg_arena_alloc_struct(arena, T) (T*)lg_arena_alloc((arena), sizeof(T), _Alignof(T))
+#define lg_arena_alloc_famstruct(arena, THeader, data_size) (THeader*)lg_arena_alloc((arena), sizeof(THeader) + (data_size), _Alignof(THeader))
 
 void
 lg_arena_init(LG_Arena *arena, LG_Allocator *host);

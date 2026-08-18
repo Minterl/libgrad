@@ -7,18 +7,19 @@ lg_atran_strided_projection_from_shape(
     const LG_LogicalShape *shape,
     LG_LayoutKind layout,
     uint32_t unit_align,
-    LG_AffineTransform *out_atran
+    LG_AffineTransform **out_atran
 ) {
-    uint64_t *data = lg_arena_alloc_array(arena, uint64_t, shape->rank);
-    if (data == NULL) {
+    lg_assert(out_atran != NULL);
+
+    LG_AffineTransform *atran = lg_arena_alloc_famstruct(arena, LG_AffineTransform, shape->rank * sizeof(uint64_t));
+    if (atran == NULL) {
         return LG_StatusKind_OutOfMemory;
     }
 
-    LG_AffineTransform atran = {0};
-    atran.n_rows = 1;
-    atran.n_cols = shape->rank;
+    atran->n_rows = 1;
+    atran->n_cols = shape->rank;
 
-    int64_t *const A = lg_atran_get_A(&atran);
+    int64_t *const A = lg_atran_get_A(atran);
 
     uint8_t last_stride = 1;
     for (uint8_t i = 1; i <= shape->rank; i++) {
@@ -35,16 +36,18 @@ lg_atran_strided_projection_from_shape(
         }
     }
 
-    lg_assert(lg_atran_is_valid_address_operator(&atran));
-    lg_assert(out_atran != NULL);
-
-    *out_atran = atran;
+    lg_assert(lg_atran_is_valid_address_operator(atran));
 
     return LG_StatusKind_OK;
 }
 
+// TODO: this is very wrong fix this
 void
-lg_atran_apply(const LG_AffineTransform *tran, const int64_t x[static LG_MAX_RANK], int64_t y[static LG_MAX_RANK]) {
+lg_atran_apply(
+    const LG_AffineTransform *tran,
+    const int64_t x[static LG_MAX_RANK],
+    int64_t y[static LG_MAX_RANK]
+) {
     const int64_t *const restrict A = lg_atran_get_A(tran);
     const int64_t *const restrict b = lg_atran_get_b(tran);
 
@@ -62,7 +65,13 @@ lg_atran_apply(const LG_AffineTransform *tran, const int64_t x[static LG_MAX_RAN
 }
 
 LG_StatusKind
-lg_poly_make_parallelotope(LG_Arena *arena, LG_Polyhedron *out_poly, uint8_t rank, int64_t *lower, int64_t *upper) {
+lg_poly_make_parallelotope(
+    LG_Arena *arena,
+    LG_Polyhedron **out_poly,
+    uint8_t rank,
+    int64_t *lower,
+    int64_t *upper
+) {
     bool is_canonical_aabb = true;
     for (uint8_t i = 0; i < rank; i++) {
         if (lower[i] != 0 || upper[i] < 0) {
@@ -72,38 +81,36 @@ lg_poly_make_parallelotope(LG_Arena *arena, LG_Polyhedron *out_poly, uint8_t ran
     }
 
     if (is_canonical_aabb) {
-        int64_t *extents = lg_arena_alloc_array(arena, int64_t, rank);
-        if (extents == NULL) {
+        LG_Polyhedron *poly = lg_arena_alloc_famstruct(arena, LG_Polyhedron, rank * sizeof(int64_t));
+        if (poly == NULL) {
             return LG_StatusKind_OutOfMemory;
         }
 
-        lg_memzero(out_poly, sizeof(LG_Polyhedron));
-        out_poly->repr_kind = LG_PolyhedronReprKind_CanonicalAABB;
-        out_poly->as.canonical_aabb.rank = rank;
-        out_poly->as.canonical_aabb.extents = extents;
+        poly->repr_kind = LG_PolyhedronReprKind_CanonicalAABB;
+        poly->as.canonical_aabb.rank = rank;
 
+        int64_t *const extents = lg_canonical_aabb_get_extents(poly);
         lg_memcpy(extents, upper, rank * sizeof(int64_t));
     } else {
         const uint8_t n_cols = rank;
         const uint8_t n_rows = rank * 2;
 
-        int64_t *data = lg_arena_alloc_array(arena, int64_t, n_rows * n_cols);
-        if (data == NULL) {
+        LG_Polyhedron *poly = lg_arena_alloc_famstruct(arena, LG_Polyhedron, rank * sizeof(int64_t));
+        if (poly == NULL) {
             return LG_StatusKind_OutOfMemory;
         }
 
         lg_memzero(out_poly, sizeof(LG_Polyhedron));
-        out_poly->repr_kind = LG_PolyhedronReprKind_Hyperplane;
-        out_poly->as.hyperplane.n_cols = n_cols;
-        out_poly->as.hyperplane.n_rows = n_rows;
-        out_poly->as.hyperplane.data = data;
+        poly->repr_kind = LG_PolyhedronReprKind_Hyperplane;
+        poly->as.hyperplane.n_cols = n_cols;
+        poly->as.hyperplane.n_rows = n_rows;
 
-        int64_t *A = lg_hpoly_get_A(&out_poly->as.hyperplane);
-        int64_t *b = lg_hpoly_get_b(&out_poly->as.hyperplane);
+        int64_t *A = lg_hpoly_get_A(poly);
+        int64_t *b = lg_hpoly_get_b(poly);
 
         for (uint8_t i = 0; i < rank; i++) {
-            A[2*i * out_poly->as.hyperplane.n_cols + i] = -1;
-            A[(2*i + 1) * out_poly->as.hyperplane.n_cols + i] = 1;
+            A[2*i * poly->as.hyperplane.n_cols + i] = -1;
+            A[(2*i + 1) * poly->as.hyperplane.n_cols + i] = 1;
             b[2*i] = -lower[i];
             b[2*i + 1] = upper[i];
         }
@@ -230,66 +237,58 @@ lg_create_broadcasted_iteration_space(
     }
 
     const size_t iter_domain_rank = y->rank;
+    LG_Polyhedron *iter_domain = lg_arena_alloc_famstruct(arena, LG_Polyhedron, iter_domain_rank * sizeof(uint64_t));
+    if (iter_domain == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
 
-    int64_t *iter_domain_extents = lg_arena_alloc_array(arena, int64_t, iter_domain_rank);
-    if (iter_domain_extents == NULL) {
-        return LG_StatusKind_OutOfMemory;
-    }
-    int64_t *y_A = lg_arena_alloc_array(arena, int64_t, iter_domain_rank * y->rank);
-    if (y_A == NULL) {
-        return LG_StatusKind_OutOfMemory;
-    }
-    int64_t *x0_A = lg_arena_alloc_array(arena, int64_t, iter_domain_rank * x0->rank);
-    if (x0_A == NULL) {
-        return LG_StatusKind_OutOfMemory;
-    }
-    int64_t *x1_A = lg_arena_alloc_array(arena, int64_t, iter_domain_rank * x1->rank);
-    if (x1_A == NULL) {
-        return LG_StatusKind_OutOfMemory;
-    }
-    
+    iter_domain->repr_kind = LG_PolyhedronReprKind_CanonicalAABB,
+    iter_domain->as.canonical_aabb.rank = iter_domain_rank;
+    int64_t *iter_domain_extents = lg_canonical_aabb_get_extents(iter_domain);
     lg_memcpy(iter_domain_extents, y->dim, iter_domain_rank * sizeof(uint64_t));
 
+    LG_AffineTransform *to_y_coords = lg_arena_alloc_famstruct(arena, LG_AffineTransform, iter_domain_rank * y->rank * sizeof(uint64_t));
+    if (to_y_coords == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+    LG_AffineTransform *to_x0_coords = lg_arena_alloc_famstruct(arena, LG_AffineTransform, iter_domain_rank * x0->rank * sizeof(uint64_t));
+    if (to_x0_coords == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+    LG_AffineTransform *to_x1_coords = lg_arena_alloc_famstruct(arena, LG_AffineTransform, iter_domain_rank * x1->rank * sizeof(uint64_t));
+    if (to_x1_coords == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+
+    int64_t *const restrict A_y  = lg_atran_get_A(to_y_coords);
+    int64_t *const restrict A_x0 = lg_atran_get_A(to_x0_coords);
+    int64_t *const restrict A_x1 = lg_atran_get_A(to_x1_coords);
+
     for (uint8_t i_rev = 1; i_rev <= iter_domain_rank; i_rev++) {
-        uint8_t r = iter_domain_rank - r;
+        uint8_t r = iter_domain_rank - i_rev;
         if (x0->dim[r] != y->dim[r]) {
             lg_assert(x0->dim[r] == 1);
-            x0_A[r*x1->rank + r] = 0;
+            A_x1[r*x1->rank + r] = 0;
         }
         if (x1->dim[r] != y->dim[r]) {
             lg_assert(x1->dim[r] == 1);
-            x1_A[r*x1->rank + r] = 0;
+            A_x0[r*x1->rank + r] = 0;
         }
-        y_A[r*y->rank + r] = 1;
+        A_y[r*y->rank + r] = 1;
     }
-
-    lg_memzero(out_space, sizeof(LG_MappedSpace));
-
-    LG_Polyhedron iter_domain = {
-        .repr_kind = LG_PolyhedronReprKind_CanonicalAABB,
-        .as.canonical_aabb.rank = iter_domain_rank,
-        .as.canonical_aabb.extents = iter_domain_extents,
-    };
-
-    out_space->iteration_domain = iter_domain;
-
-    out_space->to_y_coords.n_rows = y->rank;
-    out_space->to_y_coords.n_cols = iter_domain_rank;
-    out_space->to_y_coords.data   = y_A;
-
-    out_space->to_y_coords.n_rows = x0->rank;
-    out_space->to_y_coords.n_cols = iter_domain_rank;
-    out_space->to_y_coords.data   = x0_A;
-
-    out_space->to_y_coords.n_rows = x1->rank;
-    out_space->to_y_coords.n_cols = iter_domain_rank;
-    out_space->to_y_coords.data   = x1_A;
 
     // The resulting state of our tensor views looks like this:
     // - All tensors have the same logical rank
     // - All tensors have the exact same logical dims
     // - The only thing that changes between tensor views is
     //   striding.
+
+    lg_memzero(out_space, sizeof(LG_MappedSpace));
+
+    out_space->iteration_domain = iter_domain;
+    out_space->to_y_coords      = to_y_coords;
+    out_space->to_x0_coords     = to_x0_coords;
+    out_space->to_x1_coords     = to_x1_coords;
 
     return LG_StatusKind_OK;
 }
@@ -366,22 +365,32 @@ lg_create_contracted_iteration_space(
     ////////////////////////////////////////////////////////////////////
     /// ~~ Calculate iteration domain extents & map to transforms ~~
 
-    int64_t *iter_domain_extents = lg_arena_alloc_array(arena, int64_t, iter_domain_rank);
-    if (iter_domain_extents == NULL) {
+    LG_Polyhedron *iter_domain = lg_arena_alloc_famstruct(arena, LG_Polyhedron, iter_domain_rank * sizeof(uint64_t));
+    if (iter_domain == NULL) {
         return LG_StatusKind_OutOfMemory;
     }
-    int64_t *y_A = lg_arena_alloc_array(arena, int64_t, iter_domain_rank * y->rank);
-    if (y_A == NULL) {
+
+    LG_AffineTransform *to_y_coords = lg_arena_alloc_famstruct(arena, LG_AffineTransform, iter_domain_rank * y->rank * sizeof(uint64_t));
+    if (to_y_coords == NULL) {
         return LG_StatusKind_OutOfMemory;
     }
-    int64_t *x0_A = lg_arena_alloc_array(arena, int64_t, iter_domain_rank * x0->rank);
-    if (x0_A == NULL) {
+    LG_AffineTransform *to_x0_coords = lg_arena_alloc_famstruct(arena, LG_AffineTransform, iter_domain_rank * x0->rank * sizeof(uint64_t));
+    if (to_x0_coords == NULL) {
         return LG_StatusKind_OutOfMemory;
     }
-    int64_t *x1_A = lg_arena_alloc_array(arena, int64_t, iter_domain_rank * x1->rank);
-    if (x1_A == NULL) {
+    LG_AffineTransform *to_x1_coords = lg_arena_alloc_famstruct(arena, LG_AffineTransform, iter_domain_rank * x1->rank * sizeof(uint64_t));
+    if (to_x1_coords == NULL) {
         return LG_StatusKind_OutOfMemory;
     }
+
+    int64_t *iter_domain_extents = lg_canonical_aabb_get_extents(iter_domain);
+
+    iter_domain->repr_kind = LG_PolyhedronReprKind_CanonicalAABB,
+    iter_domain->as.canonical_aabb.rank = iter_domain_rank;
+
+    int64_t *const restrict A_y  = lg_atran_get_A(to_y_coords);
+    int64_t *const restrict A_x0 = lg_atran_get_A(to_x0_coords);
+    int64_t *const restrict A_x1 = lg_atran_get_A(to_x1_coords);
 
     {
         uint8_t r = 0;
@@ -395,9 +404,9 @@ lg_create_contracted_iteration_space(
             ) {
                 return LG_StatusKind_ShapeMismatch;
             }
-            y_A[r*y->rank + r] = 1;
-            x0_A[r*x0->rank + r] = 1;
-            x1_A[r*x1->rank + r] = 1;
+            A_y[r*y->rank + r] = 1;
+            A_x0[r*x0->rank + r] = 1;
+            A_x1[r*x1->rank + r] = 1;
             iter_domain_extents[r] = x0->dim[r];
         }
 
@@ -406,18 +415,18 @@ lg_create_contracted_iteration_space(
             if (y->dim[r] != x0->dim[i]) {
                 return LG_StatusKind_ShapeMismatch;
             }
-            y_A[r*y->rank + r] = 1;
-            x0_A[r*x0->rank + r] = 1;
-            x1_A[r*x1->rank + r] = 0;
+            A_y[r*y->rank + r] = 1;
+            A_x0[r*x0->rank + r] = 1;
+            A_x1[r*x1->rank + r] = 0;
             iter_domain_extents[r] = x0->dim[i];
         }
         for (uint8_t i = x1_first_free_axis; i < x1->rank; i++, r++) {
             if (y->dim[r] != x1->dim[i]) {
                 return LG_StatusKind_ShapeMismatch;
             }
-            y_A[r*y->rank + r] = 1;
-            x0_A[r*x0->rank + r] = 0;
-            x1_A[r*x1->rank + r] = 1;
+            A_y[r*y->rank + r] = 1;
+            A_x0[r*x0->rank + r] = 0;
+            A_x1[r*x1->rank + r] = 1;
             iter_domain_extents[r] = x1->dim[i];
         }
 
@@ -428,12 +437,13 @@ lg_create_contracted_iteration_space(
                 x0_ax < x0->rank; // x1_ax > 0
                 x0_ax++, x1_ax--, r++
             ) {
+                lg_assert(x1_ax > 0);
                 if (x0->dim[x0_ax] != x1->dim[x1_ax]) {
-                    y_A[r*y->rank + r] = 0;
-                    x0_A[r*x0->rank + r] = 1;
-                    x1_A[r*x1->rank + r] = 1;
                     return LG_StatusKind_ShapeMismatch;
                 }
+                A_y[r*y->rank + r] = 0;
+                A_x0[r*x0->rank + r] = 1;
+                A_x1[r*x1->rank + r] = 1;
                 iter_domain_extents[r] = x0->dim[x0_ax];
             }
         }
@@ -442,31 +452,17 @@ lg_create_contracted_iteration_space(
     }
 
 
-    ////////////////
+    ///////////////////////////////////////////
     /// ~~ fin ~~
 
     lg_memzero(out_space, sizeof(LG_MappedSpace));
 
-    LG_Polyhedron iter_domain = {
-        .repr_kind = LG_PolyhedronReprKind_CanonicalAABB,
-        .as.canonical_aabb.rank = iter_domain_rank,
-        .as.canonical_aabb.extents = iter_domain_extents,
-    };
-
-    out_space->iteration_domain    = iter_domain;
-
-    out_space->to_y_coords.n_rows  = y->rank;
-    out_space->to_y_coords.n_cols  = iter_domain_rank;
-    out_space->to_y_coords.data    = y_A;
-
-    out_space->to_x0_coords.n_rows = x0->rank;
-    out_space->to_x0_coords.n_cols = iter_domain_rank;
-    out_space->to_x0_coords.data   = x0_A;
-
-    out_space->to_x1_coords.n_rows = x1->rank;
-    out_space->to_x1_coords.n_cols = iter_domain_rank;
-    out_space->to_x1_coords.data   = x1_A;
+    out_space->iteration_domain = iter_domain;
+    out_space->to_y_coords      = to_y_coords;
+    out_space->to_x0_coords     = to_x0_coords;
+    out_space->to_x1_coords     = to_x1_coords;
 
     lg_assert(status == LG_StatusKind_OK);
+
     return status;
 }
