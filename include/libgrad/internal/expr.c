@@ -720,11 +720,13 @@ lg_infer_y_shape(LG_Context *ctx, const LG_LogicalExprNode *node, LG_LogicalShap
 }
 
 LG_StatusKind
-lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_LogicalExprNode *lnode, const LG_LogicalShape *shapes) {
-    // TODO: the layout assignment and alignment needs to be smarter than this
-    static const LG_LayoutKind DEFAULT_LAYOUT = LG_LayoutKind_RowMajor;
-    static const LG_LayoutKind DEFAULT_ALIGN = 16;
-
+lg_lexpr_node_to_hbuilder(
+    LG_Context *ctx,
+    LG_HedralBuilder *hbuilder,
+    LG_LogicalExprNode *lnode,
+    const LG_LogicalShape *shapes,
+    const LG_AffineTransform *addr_ops
+) {
     LG_StatusKind status = LG_StatusKind_OK;
 
     switch (lnode->opcode) {
@@ -740,27 +742,15 @@ lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_Logica
             goto oom;
         }
 
-        LG_AffineTransform y_addr_op = {0};
-        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->y.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &y_addr_op);
-        if (status != LG_StatusKind_OK) {
-            goto oom;
-        }
-        LG_AffineTransform x0_addr_op = {0};
-        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->x0.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &x0_addr_op);
-        if (status != LG_StatusKind_OK) {
-            goto oom;
-        }
-        LG_AffineTransform x1_addr_op = {0};
-        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->x1.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &x1_addr_op);
-        if (status != LG_StatusKind_OK) {
-            goto oom;
-        }
+        const LG_AffineTransform *const y_addr_op = &addr_ops[lnode->y.id];
+        const LG_AffineTransform *const x0_addr_op = &addr_ops[lnode->x0.id];
+        const LG_AffineTransform *const x1_addr_op = &addr_ops[lnode->x1.id];
         
         LG_HedralAddressTriple addrs = lg_hbuilder_template_get_binop_addrs(
             ctx, hbuilder,
             &iter_space.iteration_domain,
             &iter_space.to_y_coords, &iter_space.to_x0_coords, &iter_space.to_x1_coords, 
-            &y_addr_op, &x0_addr_op, &x1_addr_op
+            y_addr_op, x0_addr_op, x1_addr_op
         );
 
         LG_HedralSymbol x0_value = lg_hbuilder_access(ctx, hbuilder, addrs.x0);
@@ -784,27 +774,15 @@ lg_lexpr_node_to_hbuilder(LG_Context *ctx, LG_HedralBuilder *hbuilder, LG_Logica
             goto oom;
         }
 
-        LG_AffineTransform y_addr_op = {0};
-        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->y.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &y_addr_op);
-        if (status != LG_StatusKind_OK) {
-            goto oom;
-        }
-        LG_AffineTransform x0_addr_op = {0};
-        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->x0.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &x0_addr_op);
-        if (status != LG_StatusKind_OK) {
-            goto oom;
-        }
-        LG_AffineTransform x1_addr_op = {0};
-        status = lg_atran_strided_projection_from_shape(&ctx->arena, &shapes[lnode->x1.id], DEFAULT_LAYOUT, DEFAULT_ALIGN, &x1_addr_op);
-        if (status != LG_StatusKind_OK) {
-            goto oom;
-        }
+        const LG_AffineTransform *const y_addr_op = &addr_ops[lnode->y.id];
+        const LG_AffineTransform *const x0_addr_op = &addr_ops[lnode->x0.id];
+        const LG_AffineTransform *const x1_addr_op = &addr_ops[lnode->x1.id];
 
         LG_HedralAddressTriple addrs = lg_hbuilder_template_get_binop_addrs(
             ctx, hbuilder,
             &iter_space.iteration_domain,
             &iter_space.to_y_coords, &iter_space.to_x0_coords, &iter_space.to_x1_coords, 
-            &y_addr_op, &x0_addr_op, &x1_addr_op
+            y_addr_op, x0_addr_op, x1_addr_op
         );
 
         LG_HedralSymbol x0_value = lg_hbuilder_access(ctx, hbuilder, addrs.x0);
@@ -846,11 +824,15 @@ lg_lower_lexpr(
     LG_LogicalExprLoweringFlags flags,
     LG_HedralExpr *out_hexpr
 ) {
+    // TODO: the layout assignment and alignment needs to be smarter than this
+    static const LG_LayoutKind DEFAULT_LAYOUT = LG_LayoutKind_RowMajor;
+    static const LG_LayoutKind DEFAULT_ALIGN = 16;
+
     LG_StatusKind status = LG_StatusKind_OK;
     LG_Scope scope = lg_push_scope(&ctx->arena);
 
 
-    ///////////////////////////////////
+    /////////////////////////////////////////////////////////////////
     // ~~ validate SSA invariants ~~
 
     if (!(flags & LG_LogicalExprLoweringFlag_NoStructuralInvariantValidation)) {
@@ -861,14 +843,10 @@ lg_lower_lexpr(
     }
     
 
-    ///////////////////////////////////
+    /////////////////////////////////////////////////////////////////
     // ~~ shape inference ~~
 
-    LG_LogicalShape *shapes = (LG_LogicalShape*)lg_arena_alloc_array(
-        &ctx->arena,
-        LG_LogicalShape,
-        lexpr->max_symbol_id
-    );
+    LG_LogicalShape *shapes = lg_arena_alloc_array(&ctx->arena, LG_LogicalShape, lexpr->max_symbol_id);
     if (shapes == NULL) {
         status = LG_StatusKind_OutOfMemory;
         lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
@@ -881,19 +859,46 @@ lg_lower_lexpr(
         }
     }
 
-    ///////////////////////////////////
+
+    /////////////////////////////////////////////////////////////////
+    // ~~ calculate address operators ~~
+    
+    LG_AffineTransform *addr_ops = lg_arena_alloc_array(&ctx->arena, LG_AffineTransform, lexpr->max_symbol_id);
+    if (addr_ops == NULL) {
+        status = LG_StatusKind_OutOfMemory;
+        lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
+        goto out;
+    }
+    for (size_t i = 0; i < lexpr->len; i++) {
+        status = lg_atran_strided_projection_from_shape(
+            &ctx->arena,
+            &shapes[i],
+            DEFAULT_LAYOUT, DEFAULT_ALIGN,
+            &addr_ops[i]
+        );
+        if (status != LG_StatusKind_OK) {
+            lg_assert(status == LG_StatusKind_OutOfMemory);
+            lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
+            goto out;
+        }
+
+        lg_assert(lg_atran_is_valid_address_operator(&addr_ops[i]));
+    }
+
+
+    /////////////////////////////////////////////////////////////////
     // ~~ build the hexpr ~~
 
     LG_HedralBuilder hbuilder = {0};
     for (size_t i = 0; i < lexpr->len; i++) {
-        status = lg_lexpr_node_to_hbuilder(ctx, &hbuilder, &lexpr->nodes[i], shapes);
+        status = lg_lexpr_node_to_hbuilder(ctx, &hbuilder, &lexpr->nodes[i], shapes, addr_ops);
         lg_assert(status == LG_StatusKind_OutOfMemory);
         lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
         goto out;
     }
 
 
-    /////////////////////////////////////
+    /////////////////////////////////////////////////////////////////
     // ~~ fin ~~
 
 out:
