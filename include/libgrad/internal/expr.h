@@ -228,12 +228,14 @@ lg_contract(
 ///     YieldAccumulate(y_addr, y);
 /// }
 
-typedef uint32_t LG_LogicalExprLoweringFlags;
+typedef uint32_t 
+LG_LogicalExprLoweringFlags;
 enum {
     LG_LogicalExprLoweringFlag_NoStructuralInvariantValidation = (0x1),
 };
 
-typedef uint8_t LG_HedralType;
+typedef uint8_t 
+LG_HedralType;
 enum {
     LG_HedralType_Unit,
     LG_HedralType_Address,

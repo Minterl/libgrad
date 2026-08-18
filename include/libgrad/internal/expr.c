@@ -864,10 +864,10 @@ lg_lower_lexpr(
     ///////////////////////////////////
     // ~~ shape inference ~~
 
-    LG_LogicalShape *shapes = (LG_LogicalShape*)lg_arena_alloc(
+    LG_LogicalShape *shapes = (LG_LogicalShape*)lg_arena_alloc_array(
         &ctx->arena,
-        lexpr->max_symbol_id * sizeof(LG_LogicalShape),
-        _Alignof(LG_LogicalShape)
+        LG_LogicalShape,
+        lexpr->max_symbol_id
     );
     if (shapes == NULL) {
         status = LG_StatusKind_OutOfMemory;

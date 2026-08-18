@@ -87,9 +87,9 @@ lg_copy_to_cstring(uint8_t *dest, const lg_str8 src) {
 void 
 lg_write_itoa(LG_Writer *writer, int64_t n) {
     lg_static_assert(INT64_MAX == 9223372036854775807);
-    //          ... which is -- 1234567890123456789 -- 19 digits long
+    //            ... which is -- 1234567890123456789 -- 19 digits long
     // +1 for the sign character.
-    // `lg_string` does not need a null terminator
+    // `lg_str8` does not need a null terminator
     uint8_t buf[20] = {0};
     size_t len = 0;
 
@@ -218,7 +218,6 @@ out:
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 
 void 
 lg_dbgf_(const char *file, int line, const char* fmt, ...) {
