@@ -384,4 +384,16 @@ lg_vprintf(LG_Writer *writer, const lg_str8 fmt, va_list ap);
 void 
 lg_write_itoa(LG_Writer *writer, int64_t n);
 
+lg_force_inline bool
+lg_char_is_whitespace(uint8_t ch);
+
+lg_force_inline bool
+lg_char_is_alpha(uint8_t ch);
+
+lg_force_inline bool
+lg_char_is_numeric(uint8_t ch);
+
+lg_force_inline bool
+lg_char_is_alphanumeric(uint8_t ch);
+
 #endif // LG_BASE_H_

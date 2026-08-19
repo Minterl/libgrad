@@ -1,0 +1,38 @@
+stencil contraction (
+    iteration_domain: LG_Polyhedron,
+
+    y_transform:   LG_AffineTransform,
+    x0_transform:  LG_AffineTransform,
+    x1_transform:  LG_AffineTransform,
+
+    y_addr_op:     LG_AffineTransform,
+    x0_addr_op:    LG_AffineTransform,
+    x1_addr_op:    LG_AffineTransform,
+) {
+    %D: Domain = IntroduceIterationDomain(iteration_domain);
+
+    %y_transform:  AffineTransform = IntroduceAffineTransform(y_transform);
+    %x0_transform: AffineTransform = IntroduceAffineTransform(x0_transform);
+    %x1_transform: AffineTransform = IntroduceAffineTransform(x1_transform);
+
+    %y_addr_op:    AddressOperator = IntroduceAddressOperator(y_addr_op);
+    %x0_addr_op:   AddressOperator = IntroduceAddressOperator(x0_addr_op);
+    %x1_addr_op:   AddressOperator = IntroduceAddressOperator(x1_addr_op);
+
+    %induction_vector: Coordinate = For(%D) {
+        %y_coord:   Coordinate  = ApplyAffineTransform(%induction_vector, %y_transform);
+        %y_addr:    Address     = ApplyAddressOperator(%y_coord, %y_transform);
+
+        %x0_coord   Coordinate  = ApplyAffineTransform(%induction_vector, %x0_transform);
+        %x0_addr:   Address     = ApplyAddressOperator(%x0_coord, %x0_transform);
+
+        %x1_coord:  Coordinate  = ApplyAffineTransform(%induction_vector, %x1_transform);
+        %x1_addr:   Address     = ApplyAddressOperator(%x1_coord, %x1_transform);
+
+        %x0: Scalar = Access(%x0_addr);
+        %x1: Scalar = Access(%x1_addr);
+        %y:  Scalar = Multiply(%x0, %x1);
+
+        YieldAccumulate(%y_addr, %y);
+    }
+}

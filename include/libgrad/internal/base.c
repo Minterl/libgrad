@@ -204,6 +204,35 @@ out:
     return LG_StatusKind_OK;
 }
 
+lg_force_inline bool
+lg_char_is_whitespace(uint8_t ch) {
+    return (
+        ch == ' '  ||
+        ch == '\n' ||
+        ch == '\r' ||
+        ch == '\t' ||
+        ch == '\f' ||
+        ch == '\v'
+    );
+}
+
+lg_force_inline bool
+lg_char_is_alpha(uint8_t ch) {
+    return (
+        ('a' <= ch && ch <= 'z') ||
+        ('A' <= ch && ch <= 'Z')
+    );
+}
+
+lg_force_inline bool
+lg_char_is_numeric(uint8_t ch) {
+    return '0' <= ch && ch <= '9';
+}
+
+lg_force_inline bool
+lg_char_is_alphanumeric(uint8_t ch) {
+    return lg_char_is_alpha(ch) || lg_char_is_numeric(ch);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
