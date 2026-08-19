@@ -539,6 +539,131 @@ lg_hbuilder_template_get_binop_addrs(
     };
 }
 
+// TODO: this is just pasted from above. this should be factored out
+LG_StatusKind
+lg_hbuilder_finish(
+    LG_Context *ctx,
+    LG_HedralBuilder *hbuilder,
+    LG_Allocator *artifact_allocator,
+    LG_HedralExpr *out_hexpr
+) {
+    if (hbuilder->next_symbol_id == 0 || hbuilder->ir_tail == NULL) {
+        lg_report_error(ctx, LG_StatusKind_InvalidArgument, lg_str8_lit("attempted to finish empty builder"));
+        return LG_StatusKind_InvalidArgument;
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // ~~ find the length of the expr & validate two invariants ~~
+    // 1) no symbol id > the current ctx.next_symbol_id
+    //    - we do this b/c lets us use raw integer indices for the symbol table
+    // 2) there are no cycles in the sll
+
+    size_t metadata_size = 0;
+    size_t hexpr_len = 0;
+    const size_t max_symbol_id = hbuilder->next_symbol_id;
+    {
+        bool is_first_iteration = true;
+        LG_HedralBuilderNode *tortoise = hbuilder->ir_tail;
+        LG_HedralBuilderNode *hare = hbuilder->ir_tail;
+        for (; tortoise != NULL; tortoise = tortoise->prev, hexpr_len++) {
+            if (hare != NULL) {
+                hare = hare->prev;
+            }
+            if (hare != NULL) {
+                hare = hare->prev;
+            }
+
+            lg_assert(is_first_iteration || hare == NULL || tortoise != hare);
+            lg_assert(tortoise->node.y.id <= max_symbol_id);
+
+            is_first_iteration = false;
+
+            switch (tortoise->node.opcode) {
+            case LG_HedralOpcode_BeginIterationDomain:
+                metadata_size += sizeof(LG_Polyhedron);
+                break;
+
+            case LG_HedralOpcode_ConstructAffineTransform:
+            case LG_HedralOpcode_ConstructAffineAddressOperator:
+                metadata_size += sizeof(LG_AffineTransform);
+                break;
+
+            default:;
+            }
+        }
+    }
+
+
+    LG_HedralExprNode *hexpr_nodes = (LG_HedralExprNode*)lg_alloc_zero(artifact_allocator, hexpr_len * sizeof(LG_HedralExprNode));
+    if (hexpr_nodes == NULL) {
+        lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory allocating hedral expr nodes"));
+        return LG_StatusKind_OutOfMemory;
+    }
+
+    LG_HedralBuilderNode *iter_node = hbuilder->ir_tail;
+    for (
+        size_t i_rev = 0;
+        iter_node != NULL;
+        iter_node = iter_node->prev, i_rev++
+    ) { 
+        lg_assert(i_rev < hexpr_len);
+        hexpr_nodes[hexpr_len - 1 - i_rev] = iter_node->node;
+    }
+
+
+    /////////////////////////////////////////////////////////////
+    /// ~~ copy/compact metadata and retarget pointers ~~
+    
+    size_t metadata_current_offset = 0;
+    uint8_t *metadata = lg_alloc_zero(artifact_allocator, metadata_size);
+    if (metadata == NULL) {
+        lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory allocating hedral expr metadata"));
+        return LG_StatusKind_OutOfMemory;
+    }
+
+    for (size_t i = 0; i < hexpr_len; i++) {
+        switch (hexpr_nodes[i].opcode) {
+        case LG_HedralOpcode_BeginIterationDomain: {
+            lg_deep_copy_struct(
+                LG_Polyhedron,
+                metadata + metadata_current_offset,
+                &hexpr_nodes[i].as.begin_iteration_domain
+            );
+            metadata_current_offset += sizeof(LG_Polyhedron);
+            break;
+        }
+
+        // both union members use the same type
+        case LG_HedralOpcode_ConstructAffineTransform:
+        case LG_HedralOpcode_ConstructAffineAddressOperator: {
+            lg_deep_copy_struct(
+                LG_AffineTransform,
+                metadata + metadata_current_offset,
+                &hexpr_nodes[i].as.construct_affine_address_operator
+            );
+            metadata_current_offset += sizeof(LG_AffineTransform);
+            break;
+        }
+
+        default:;
+        }
+    }
+
+    lg_assert(metadata_current_offset == metadata_size);
+
+
+    ////////////////////////////////////////
+    // ~~ fin ~~
+
+    out_hexpr->max_symbol_id = max_symbol_id;
+    out_hexpr->len = hexpr_len;
+    out_hexpr->nodes = hexpr_nodes;
+    out_hexpr->metadata_size = metadata_size;
+    out_hexpr->metadata_block = metadata;
+
+    return LG_StatusKind_OK;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -820,6 +945,7 @@ oom:
 LG_StatusKind
 lg_lower_lexpr(
     LG_Context *ctx,
+    LG_Allocator *artifact_allocator,
     LG_LogicalExpr *lexpr,
     LG_LogicalExprLoweringFlags flags,
     LG_HedralExpr *out_hexpr
@@ -897,6 +1023,12 @@ lg_lower_lexpr(
             lg_report_error(ctx, status, lg_str8_lit("ran out of memory allocating a scratch structure"));
             goto out;
         }
+    }
+
+    status = lg_hbuilder_finish(ctx, &hbuilder, artifact_allocator, out_hexpr);
+    if (status != LG_StatusKind_OK) {
+        lg_assert(status == LG_StatusKind_OutOfMemory);
+        goto out;
     }
 
 

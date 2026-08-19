@@ -385,7 +385,7 @@ lg_create_contracted_iteration_space(
 
     int64_t *iter_domain_extents = lg_canonical_aabb_get_extents(iter_domain);
 
-    iter_domain->repr_kind = LG_PolyhedronReprKind_CanonicalAABB,
+    iter_domain->repr_kind = LG_PolyhedronReprKind_CanonicalAABB;
     iter_domain->as.canonical_aabb.rank = iter_domain_rank;
 
     int64_t *const restrict A_y  = lg_atran_get_A(to_y_coords);

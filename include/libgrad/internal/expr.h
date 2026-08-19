@@ -120,8 +120,8 @@ LG_LogicalExprNode {
 
 typedef struct 
 LG_LogicalExpr {
-    size_t max_symbol_id;
-    size_t len;
+    uint32_t            max_symbol_id;
+    size_t              len;
     LG_LogicalExprNode *nodes lg_check_bounds(len);
 } LG_LogicalExpr;
 
@@ -320,8 +320,13 @@ LG_HedralExprNode {
 
 typedef struct
 LG_HedralExpr {
+    uint32_t            max_symbol_id;
+
     size_t              len;
     LG_HedralExprNode  *nodes lg_check_bounds(len);
+
+    size_t              metadata_size;
+    uint8_t            *metadata_block;
 } LG_HedralExpr;
 
 #define lg_hedral_op_get_return_type(opcode) (LG_HEDRAL_OPERATION_TABLE[(opcode)].return_type)

@@ -75,7 +75,7 @@
 #elif defined(__COUNTER__)
 #   define lg_static_assert_concat_(a, b) a##b 
 #   define lg_static_assert_concat(a, b) lg_static_assert_concat_(a, b)
-#   define lg_static_assert(cond) size_t lg_static_assert_concat(lg_static_assert, __COUNTER__) =  sizeof(uint8_t[(cond) ? 1: -1])
+#   define lg_static_assert(cond) size_t lg_static_assert_concat(lg_static_assert, __COUNTER__) = sizeof(uint8_t[(cond) ? 1: -1])
 #else
 #   define lg_static_assert(cond)
 #endif // defined(_Static_assert)
@@ -85,11 +85,11 @@
 #define lg_align_up(x, align) (((x) + (align) - 1) & ~((align) - 1))
 
 #if defined(__has_builtin) && __has_builtin(__builtin_memcpy)
-#   define lg_memcpy(dest, src, size) __builtin_memcpy(dest, src, size)
+#   define lg_memcpy(dest, src, size) __builtin_memcpy((dest), (src), (size))
 #else
 #   define lg_memcpy(dest, src, size) do { \
          for(size_t LG__MACRO_ITER__ = 0; LG__MACRO_ITER__ < (size); LG__MACRO_ITER__++) { \
-             ((uint8_t*)(dest))[LG__MACRO_ITER__] = ((uint8_t*)(src))[LG__MACRO_ITER__] ; \
+             ((uint8_t*)(dest))[LG__MACRO_ITER__] = ((uint8_t*)(src))[LG__MACRO_ITER__]; \
          } \
      } while(0) 
 #endif // defined(__has_builtin) && __has_builtin(__builtin_memcpy)
@@ -109,6 +109,11 @@
 #else
 #   define lg_memcmp(a, b, len) lg_memcmp_((uint8_t*)(a), (uint8_t*)(b), (len))
 #endif // defined(__has_builtin) && __has_builtin(__builtin_memcmp)
+
+#define lg_deep_copy_struct(T, dest, psrc) do { \
+    lg_memcpy((dest), *(psrc), sizeof(T)); \
+    *(psrc) = (T*)(dest); \
+} while (0)
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -132,20 +137,20 @@
     LG_X(OutOfBounds), \
     LG_X(UnexpectedNaN),
 
-#define LG_X(x) LG_StatusKind_##x
-    typedef enum
-    LG_StatusKind {
-        LG_DEFINE_STATUS_KINDS
-    } LG_StatusKind;
-#undef LG_X
+typedef enum
+LG_StatusKind {
+#   define LG_X(x) LG_StatusKind_##x
+    LG_DEFINE_STATUS_KINDS
+#   undef LG_X
+} LG_StatusKind;
 
 // TODO: maybe these should be lg_str8s
-#define LG_X(x) [LG_StatusKind_##x] = (const uint8_t*)#x
-    lg_maybe_unused static const uint8_t*
-    LG_STATUS_KIND_CSTRING_TABLE[] = {
-        LG_DEFINE_STATUS_KINDS
-    };
-#undef LG_X
+lg_maybe_unused static const uint8_t*
+LG_STATUS_KIND_CSTRING_TABLE[] = {
+#   define LG_X(x) [LG_StatusKind_##x] = (const uint8_t*)#x
+    LG_DEFINE_STATUS_KINDS
+#   undef LG_X
+};
 
 #define lg_status_kind_as_cstring(status) LG_STATUS_KIND_CSTRING_TABLE[(status)]
 
