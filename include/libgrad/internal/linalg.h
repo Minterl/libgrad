@@ -92,6 +92,8 @@ LG_MappedSpace {
 #define lg_atran_get_A(atran) ((atran)->data)
 #define lg_atran_get_b(atran) ((atran)->data + ((size_t)((atran)->n_rows) * (atran)->n_cols))
 #define lg_atran_is_valid_address_operator(atran) ((atran)->n_rows == 1)
+#define lg_atran_get_x_len(atran) ((atran)->n_cols)
+#define lg_atran_get_y_len(atran) ((atran)->n_rows)
 
 LG_StatusKind
 lg_poly_make_parallelotope(
@@ -112,7 +114,11 @@ lg_atran_strided_projection_from_shape(
 );
 
 void
-lg_atran_apply(const LG_AffineTransform *tran, const int64_t x[static LG_MAX_RANK], int64_t y[static LG_MAX_RANK]);
+lg_atran_apply(
+    const LG_AffineTransform *atran,
+    const int64_t *x, // must be an array of length atran.n_cols
+    int64_t *y // must be an array of length atran.n_rows
+);
 
 LG_StatusKind 
 lg_infer_contracted_dims(

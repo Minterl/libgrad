@@ -41,25 +41,24 @@ lg_atran_strided_projection_from_shape(
     return LG_StatusKind_OK;
 }
 
-// TODO: this is very wrong fix this
 void
 lg_atran_apply(
-    const LG_AffineTransform *tran,
-    const int64_t x[static LG_MAX_RANK],
-    int64_t y[static LG_MAX_RANK]
+    const LG_AffineTransform *atran,
+    const int64_t *x, // must be an array of length atran.n_cols
+    int64_t *y // must be an array of length atran.n_rows
 ) {
-    const int64_t *const restrict A = lg_atran_get_A(tran);
-    const int64_t *const restrict b = lg_atran_get_b(tran);
+    const int64_t *const restrict A = lg_atran_get_A(atran);
+    const int64_t *const restrict b = lg_atran_get_b(atran);
 
-    lg_memzero(y, LG_MAX_RANK * sizeof(int64_t));
+    lg_memzero(y, atran->n_rows * sizeof(int64_t));
 
-    for (uint8_t i_rows = 0; i_rows < tran->n_rows; i_rows++) {
-        for (uint8_t i_cols = 0; i_cols < tran->n_cols; i_cols++) {
-            y[i_rows] += A[tran->n_cols*i_rows + i_cols] * x[i_cols];
+    for (uint8_t i_rows = 0; i_rows < atran->n_rows; i_rows++) {
+        for (uint8_t i_cols = 0; i_cols < atran->n_cols; i_cols++) {
+            y[i_rows] += A[atran->n_cols*i_rows + i_cols] * x[i_cols];
         }
     }
 
-    for (uint8_t i_rows = 0; i_rows < tran->n_rows; i_rows++) {
+    for (uint8_t i_rows = 0; i_rows < atran->n_rows; i_rows++) {
         y[i_rows] += b[i_rows];
     }
 }
