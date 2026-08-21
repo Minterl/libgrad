@@ -7,14 +7,14 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ///
-/// error reporting etc.
+/// error reporting & the very important span
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef struct
 MRV_Span {
-    size_t start_offset;
-    size_t end_offset;
+    size_t offset;
+    size_t len;
 } MRV_Span;
 
 typedef struct
@@ -60,6 +60,7 @@ mrv_report_error(MRV_Error *err, MRV_Span span, lg_str8 fmt, ...) {
     va_end(ap);
 }
 
+#define mrv_span_zero_len(offset_) (MRV_Span){ .offset = (offset_) }
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -154,8 +155,6 @@ MRV_LexerContext {
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-#define mrv_span_zero_len(offset) (MRV_Span){ .start_offset = (offset), .end_offset = (offset) }
-
 void
 mrv_tstream_append(MRV_TokenStream *tstream, LG_Allocator *artifact_allocator, MRV_Token tok) {
     if (lg_likely(
@@ -179,7 +178,7 @@ mrv_tstream_append(MRV_TokenStream *tstream, LG_Allocator *artifact_allocator, M
 
 lg_force_inline lg_str8
 mrv_span_to_str8(MRV_Span span, lg_str8 text) {
-    return (lg_str8){ .len = span.end_offset - span.start_offset, .p = text.p + span.start_offset };
+    return (lg_str8){ .len = span.len, .p = text.p + span.offset };
 }
 
 lg_force_inline uint8_t
@@ -230,8 +229,8 @@ mrv_lexer_consume_char(MRV_LexerContext *ctx) {
 
     MRV_Token tok = {
         .kind = kind,
-        .span.start_offset = ctx->current_offset,  
-        .span.end_offset = ctx->current_offset + 1,  
+        .span.offset = ctx->current_offset,  
+        .span.len = 1,
     };
 
     ctx->current_offset++;
@@ -243,7 +242,7 @@ lg_force_inline MRV_Token
 mrv_lexer_scan_ident(MRV_LexerContext *ctx, MRV_TokenKind expected_kind) {
     MRV_Token tok = { 
         .kind = expected_kind,
-        .span.start_offset = ctx->current_offset,
+        .span.offset = ctx->current_offset,
     };
 
     /////////////////////////////////////////////////////
@@ -254,7 +253,7 @@ mrv_lexer_scan_ident(MRV_LexerContext *ctx, MRV_TokenKind expected_kind) {
         uint8_t ch_i = ctx->text.p[ctx->current_offset];
 
         ctx->current_offset++;
-        tok.span.end_offset = ctx->current_offset;
+        tok.span.len++;
 
         if (lg_unlikely(ctx->current_offset >= ctx->text.len)) {
             mrv_report_error(&ctx->err, tok.span, lg_str8_lit("unexpected EOF"));
@@ -271,7 +270,7 @@ mrv_lexer_scan_ident(MRV_LexerContext *ctx, MRV_TokenKind expected_kind) {
         is_first = false;
     }
 
-    if (tok.span.start_offset == tok.span.end_offset) {
+    if (tok.span.len == 0) {
         mrv_report_error(&ctx->err, tok.span, lg_str8_lit("expected alphanumeric sequence"));
         return (MRV_Token){ .kind = MRV_TokenKind_Error };
     }
@@ -370,132 +369,467 @@ mrv_lex(MRV_LexerContext *ctx, MRV_TokenStream *tstream) {
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
+// the below parsing code is some of the grossest code on planet earth.
+// change things with caution.
+
+typedef uint8_t
+MRV_ParserStatusKind;
+enum {
+    MRV_ParserStatusKind_OK,
+    MRV_ParserStatusKind_NOK,
+};
+
+typedef uint8_t
+MRV_ASTNodeKind;
+enum {
+    MRV_ASTNodeKind_Error,
+    MRV_ASTNodeKind_Program,
+    MRV_ASTNodeKind_GlobalIdent,
+    MRV_ASTNodeKind_SymbolIdent,
+    MRV_ASTNodeKind_TypeIdent,
+    MRV_ASTNodeKind_HostSymbolIdent,
+    MRV_ASTNodeKind_HostTypeIdent,
+    MRV_ASTNodeKind_OpCall,
+    MRV_ASTNodeKind_StencilDeclaration,
+    MRV_ASTNodeKind_StencilArg,
+    MRV_ASTNodeKind_StencilArgList,
+    MRV_ASTNodeKind_StencilBody,
+    MRV_ASTNodeKind_SymbolDeclaration,
+};
+
+typedef struct MRV_ASTNode MRV_ASTNode;
+
+typedef union 
+MRV_ASTNodeChildren {
+    struct {} Error;
+
+    struct {
+        size_t         n_children;
+        MRV_ASTNode  **children;
+    } Program;
+
+    struct {} GlobalIdent;
+    struct {} SymbolIdent;
+    struct {} TypeIdent;
+    struct {} HostSymbolIdent;
+    struct {} HostTypeIdent;
+
+    struct {
+        MRV_ASTNode* lhs;
+        MRV_ASTNode* rhs;
+    } OpCall;
+    
+    struct {
+        MRV_ASTNode* ident;
+        MRV_ASTNode* arg_list;
+        MRV_ASTNode* body;
+    } StencilDeclaration;
+
+    struct {
+        MRV_ASTNode* ident;
+        MRV_ASTNode* host_type;
+    } StencilArg;
+
+    struct {
+        size_t         n_args;
+        MRV_ASTNode  **args;
+    } StencilArgList;
+} MRV_ASTNodeChildren;
+
+struct 
+MRV_ASTNode {
+    MRV_ASTNodeChildren children_as;
+
+    MRV_ASTNodeKind kind;
+    MRV_Span span;
+};
+
+typedef struct
+MRV_ASTNodeRefStack {
+    struct MRV_ASTNodeRefStack *prev;
+    MRV_ASTNode *to;
+} MRV_ASTNodeRefStack;
+
 typedef struct
 MRV_ParserContext {
-    lg_str8 text;
+    lg_str8                text;
+
+    MRV_ASTNodeRefStack   *ref_stack_top;
 
     MRV_TokenStream       *tstream;
     MRV_TokenStreamBlock  *cur_block;
     MRV_Token             *cur_token;
 
     MRV_Error              err;
-    LG_Allocator          *artifact_allocator;
+    LG_Arena               scratch;
+    LG_Arena               artifact;
 } MRV_ParserContext;
 
-typedef uint8_t
-MRV_ParserStatusKind;
-enum {
-    MRV_ParserStatusKind_ErrorOccurred = -1,
-    MRV_ParserStatusKind_Continue,
-    MRV_ParserStatusKind_Done,
-};
+#define mrv_parser_has_err(ctx) ((ctx)->err.is_err)
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// iterate over a token stream
+///
+////////////////////////////////////////////////////////////////////////////////
 
 void
-mrv_parser_begin(MRV_ParserContext *parser, MRV_TokenStream *tstream) {
-    lg_assert(parser != NULL);
+mrv_parser_begin(MRV_ParserContext *ctx, MRV_TokenStream *tstream) {
+    lg_assert(ctx != NULL);
     lg_assert(tstream != NULL);
     lg_assert(tstream->tail->next == NULL);
 
-    lg_memzero(parser, sizeof(MRV_ParserContext));
-    parser->tstream = tstream;
+    lg_memzero(ctx, sizeof(MRV_ParserContext));
+    ctx->tstream = tstream;
 
     // this will loop forever if there are cycles
     MRV_TokenStreamBlock *iter_block = tstream->tail;
     while (iter_block != NULL) {
-        parser->cur_block = iter_block;
+        ctx->cur_block = iter_block;
         iter_block = iter_block->prev;
     }
 
-    if (parser->cur_block != NULL) {
-        parser->cur_token = parser->cur_block->tokens;
+    if (ctx->cur_block != NULL) {
+        ctx->cur_token = ctx->cur_block->tokens;
     }
 }
 
 lg_force_inline MRV_ParserStatusKind 
 mrv_parser_find_next(
-    MRV_ParserContext *parser,
+    MRV_ParserContext *ctx,
     MRV_Token **out_next_token,
     MRV_TokenStreamBlock **out_next_block
 ) {
-    lg_assert(parser != NULL);
+    lg_assert(ctx != NULL);
     lg_assert(out_next_block != NULL);
     lg_assert(out_next_token != NULL);
 
-    if (parser->cur_block == NULL) {
-        return MRV_ParserStatusKind_Done;
+    if (ctx->cur_block == NULL) {
+        return MRV_ParserStatusKind_NOK;
     }
-    if (parser->cur_token == NULL) {
-        *out_next_block = parser->cur_block;
-        *out_next_token = parser->cur_block->tokens;
-        return MRV_ParserStatusKind_Continue;
+    if (ctx->cur_token == NULL) {
+        *out_next_block = ctx->cur_block;
+        *out_next_token = ctx->cur_block->tokens;
+        return MRV_ParserStatusKind_OK;
     }
 
-    const ptrdiff_t cur_offset = parser->cur_token - parser->cur_block->tokens;
+    const ptrdiff_t cur_offset = ctx->cur_token - ctx->cur_block->tokens;
     lg_assert(cur_offset >= 0);
 
-    const size_t cur_len = parser->cur_block == parser->tstream->tail ? 
-        parser->tstream->tail_len :
+    const size_t cur_len = ctx->cur_block == ctx->tstream->tail ? 
+        ctx->tstream->tail_len :
         MRV_TOKEN_STREAM_BLOCK_CAPACITY;
 
     if (lg_likely((size_t)cur_offset < cur_len)) {
-        *out_next_block = parser->cur_block;
-        *out_next_token = parser->cur_token + 1;
-        return MRV_ParserStatusKind_Continue;
+        *out_next_block = ctx->cur_block;
+        *out_next_token = ctx->cur_token + 1;
+        return MRV_ParserStatusKind_OK;
     }
 
-    if (parser->cur_block->next == NULL) {
-        return MRV_ParserStatusKind_Done;
+    if (ctx->cur_block->next == NULL) {
+        return MRV_ParserStatusKind_NOK;
     }
 
-    *out_next_block = parser->cur_block->next;
-    *out_next_token = parser->cur_block->next->tokens;
+    *out_next_block = ctx->cur_block->next;
+    *out_next_token = ctx->cur_block->next->tokens;
 
     return true;
 }
 
-MRV_ParserStatusKind
-mrv_parser_expect_consume(MRV_ParserContext *parser, MRV_TokenKind expected_kind, MRV_Token *out_token) {
-    lg_assert(parser != NULL);
-    lg_assert(out_token != NULL);
-    lg_assert(expected_kind != MRV_TokenKind_Error);
+MRV_Token
+mrv_parser_consume(MRV_ParserContext *ctx) {
+    lg_assert(ctx != NULL);
 
     MRV_Token *next_token;
     MRV_TokenStreamBlock *next_block;
-    bool has_next = mrv_parser_find_next(parser, &next_token, &next_block);
-    lg_assert(has_next); // this function shouldn't be called where there isn't a next token
+    MRV_ParserStatusKind status = mrv_parser_find_next(ctx, &next_token, &next_block);
+    lg_assert(status == MRV_ParserStatusKind_OK); // this function shouldn't be called where there isn't a next token
                          // e.g don't expect a token after an EOF
 
-    if (expected_kind != next_token->kind) {
-        mrv_report_error(
-            &parser->err,
-            next_token->span,
-            lg_str8_lit("expected %{str}, found %{str}"), 
-            mrv_token_as_str(expected_kind),    
-            mrv_span_to_str8(next_token->span, parser->text)
-        );
-        return MRV_ParserStatusKind_ErrorOccurred;        
-    }
+    ctx->cur_token = next_token;
+    ctx->cur_block = next_block;
 
-    parser->cur_token = next_token;
-    parser->cur_block = next_block;
-
-    *out_token = *next_token;
-
-    return MRV_ParserStatusKind_Continue;
+    return *next_token;
 }
 
-MRV_ParserStatusKind
-mrv_parser_peek(MRV_ParserContext *parser, MRV_Token *out_token) {
-    lg_assert(out_token != NULL);
+MRV_Token
+mrv_parser_expect(
+    MRV_ParserContext *ctx,
+    MRV_TokenKind expected_kind
+) {
+    lg_assert(ctx != NULL);
+    lg_assert(expected_kind != MRV_TokenKind_Error);
 
-    MRV_Token *next_token;
-    MRV_TokenStreamBlock *next_block;
-    bool has_next = mrv_parser_find_next(parser, &next_token, &next_block);
-    if (!has_next) {
-        return MRV_ParserStatusKind_Done;
+    MRV_Token next_token = mrv_parser_consume(ctx);
+
+    if (expected_kind != next_token.kind) {
+        mrv_report_error(
+            &ctx->err,
+            next_token.span,
+            lg_str8_lit("expected %{str}, found %{str}"), 
+            mrv_token_as_str(expected_kind),    
+            mrv_span_to_str8(next_token.span, ctx->text)
+        );
+        return lg_nil(MRV_Token);        
     }
 
-    *out_token = *next_token;
+    return next_token;
+}
 
-    return MRV_ParserStatusKind_Continue;
+MRV_Token
+mrv_parser_peek(MRV_ParserContext *ctx) {
+    MRV_Token *next_token;
+    MRV_TokenStreamBlock *next_block;
+    MRV_ParserStatusKind status = mrv_parser_find_next(ctx, &next_token, &next_block);
+    if (status != MRV_ParserStatusKind_OK) {
+        return lg_nil(MRV_Token);
+    }
+
+    return *next_token;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// rdp helpers
+///
+////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////
+/// note: with these nrs helpers, you still have to use lg_push/pop_scope
+
+lg_force_inline void
+mrv_parser_nrs_push(MRV_ParserContext *ctx, MRV_ASTNode *to) {
+    MRV_ASTNodeRefStack* to_push = (MRV_ASTNodeRefStack*)lg_arena_alloc_struct(&ctx->scratch, MRV_ASTNodeRefStack);
+    lg_assert(to_push != NULL);
+
+    to_push->to = to;
+
+    if (ctx->ref_stack_top != NULL) {
+        to_push->prev = ctx->ref_stack_top;
+    }
+    ctx->ref_stack_top = to_push;
+}
+
+lg_force_inline MRV_ASTNode**
+mrv_parser_nrs_unwind_cpy(MRV_ParserContext *ctx, uint32_t n_refs) {
+    MRV_ASTNode **refs = lg_arena_alloc_array(&ctx->artifact, MRV_ASTNode*, n_refs);
+    lg_assert(refs != NULL);
+
+    uint32_t i = 0;
+    while (ctx->ref_stack_top != NULL && i < n_refs) {
+        MRV_ASTNode *next = ctx->ref_stack_top->to;
+        refs[i] = next;
+
+        ctx->ref_stack_top = ctx->ref_stack_top->prev;
+        i++;
+    }
+
+    return refs;
+}
+
+#define mrv_parser_mknode(ctx, kind, span, ...) mrv_parser_mknode_( \
+    ctx, \
+    MRV_ASTNodeKind_##kind, \
+    span, \
+    (MRV_ASTNodeChildren){ .kind = {__VA_ARGS__} } \
+)
+
+lg_force_inline MRV_ASTNode*
+mrv_parser_mknode_(MRV_ParserContext *ctx, MRV_ASTNodeKind kind, MRV_Span span, MRV_ASTNodeChildren children) {
+    MRV_ASTNode *node = lg_arena_alloc_struct(&ctx->artifact, MRV_ASTNode);
+    lg_assert(node != NULL);
+
+    node->kind = kind;
+    node->span = span;
+    node->children_as = children;
+
+    return node;
+}
+
+lg_force_inline MRV_Span
+mrv_get_bounding_span(size_t n_nodes, MRV_ASTNode **nodes) {
+    lg_assert(n_nodes != 0);
+
+    size_t min_offset = SIZE_MAX,
+           max_offset = 0;
+    for (size_t i = 0; i < n_nodes; i++) {
+        if (nodes[i]->span.offset < min_offset) {
+            min_offset = nodes[i]->span.offset;
+        }
+
+        size_t offset = nodes[i]->span.offset + nodes[i]->span.len;
+        if (offset > max_offset) {
+            max_offset = offset;
+        }
+    }
+
+    lg_assert(min_offset != SIZE_MAX);
+    lg_assert(max_offset != 0);
+    lg_assert(min_offset < max_offset);
+
+    return (MRV_Span){ .offset = min_offset, .len = max_offset - min_offset };
+}
+
+lg_force_inline void
+mrv_parser_unexpected_token(MRV_ParserContext *ctx, MRV_Token tok) {
+    mrv_report_error(&ctx->err, tok.span, lg_str8_lit("unexpected token %{str}"), mrv_span_to_str8(tok.span, ctx->text));
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// actual rdp procedures
+///
+////////////////////////////////////////////////////////////////////////////////
+
+MRV_ASTNode*
+mrv_parse_global_ident(MRV_ParserContext *ctx) {
+    MRV_Token name = mrv_parser_expect(ctx, MRV_TokenKind_Ident);
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, GlobalIdent, name.span);
+    return node;
+}
+
+MRV_ASTNode*
+mrv_parse_block(MRV_ParserContext *ctx) {
+    (void)ctx;
+    lg_unreachable("TODO");
+    return NULL;
+}
+
+MRV_ASTNode*
+mrv_parse_host_symbol_ident(MRV_ParserContext *ctx) {
+    MRV_Token ident = mrv_parser_expect(ctx, MRV_TokenKind_Ident);
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, HostSymbolIdent, ident.span);
+    return node;
+}
+
+MRV_ASTNode*
+mrv_parse_host_type_ident(MRV_ParserContext *ctx) {
+    MRV_Token ident = mrv_parser_expect(ctx, MRV_TokenKind_Ident);
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, HostTypeIdent, ident.span);
+    return node;
+}
+
+MRV_ASTNode*
+mrv_parse_stencil_arg(MRV_ParserContext *ctx) {
+    MRV_ASTNode* name = mrv_parse_host_symbol_ident(ctx);
+    mrv_parser_expect(ctx, MRV_TokenKind_Colon);
+    MRV_ASTNode* type = mrv_parse_host_type_ident(ctx);
+    
+    MRV_Span all_span = mrv_get_bounding_span(2, (MRV_ASTNode*[]){name ,type});
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, StencilArg, all_span, .ident = name, .host_type = type);
+
+    return node;
+}
+
+MRV_ASTNode*
+mrv_parse_stencil_arg_list(MRV_ParserContext *ctx) {
+    LG_Scope scope = lg_push_scope(&ctx->scratch);
+
+    uint32_t n_children = 0;
+
+    while (true) {
+        MRV_Token peek = mrv_parser_peek(ctx);
+        switch (peek.kind) {
+        case MRV_TokenKind_CloseParen:
+            mrv_parser_consume(ctx);
+            goto end;
+        case MRV_TokenKind_Comma:
+            mrv_parser_consume(ctx);
+            break;
+        case MRV_TokenKind_Ident: {
+            MRV_ASTNode *arg = mrv_parse_stencil_arg(ctx);
+            mrv_parser_nrs_push(ctx, arg);
+            n_children++;
+            break;
+        }
+        default:
+            mrv_parser_unexpected_token(ctx, peek);
+            mrv_parser_consume(ctx);
+        }
+    }
+end:;
+
+    MRV_ASTNode **children = mrv_parser_nrs_unwind_cpy(ctx, n_children);
+    MRV_Span all_span = mrv_get_bounding_span(n_children, children);
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, StencilArgList, all_span, .args = children, .n_args = n_children);
+
+    lg_pop_scope(&ctx->scratch, scope);
+
+    return node;
+}
+
+MRV_ASTNode*
+mrv_parse_stencil_decl(MRV_ParserContext *ctx) {
+    MRV_ASTNode *ident = mrv_parse_global_ident(ctx);
+    MRV_ASTNode *arg_list = mrv_parse_stencil_arg_list(ctx);
+    MRV_ASTNode *body = mrv_parse_block(ctx);
+
+    if (mrv_parser_has_err(ctx)) {
+        return NULL;
+    }
+
+    MRV_Span all_span = mrv_get_bounding_span(3, (MRV_ASTNode*[]){ident, arg_list, body});
+    MRV_ASTNode *node = mrv_parser_mknode(
+        ctx,
+        StencilDeclaration,
+        all_span,
+        .ident = ident,
+        .arg_list = arg_list,
+        .body = body,
+    );
+
+    return node;
+}
+
+MRV_ASTNode*
+mrv_parse_program(MRV_ParserContext *ctx) {
+    LG_Scope scope = lg_push_scope(&ctx->scratch);
+    MRV_ASTNode *root;
+    size_t n_children = 0;
+
+    MRV_Token tok = mrv_parser_peek(ctx);
+    while (true) {
+        switch (tok.kind) {
+        case MRV_TokenKind_EOF: {
+            goto loop_end;
+        }
+
+        case MRV_TokenKind_Stencil: {
+            mrv_parse_stencil_decl(ctx);
+            break;
+        }
+
+        case MRV_TokenKind_Error: 
+            lg_unreachable();
+
+        default: {
+            mrv_parser_unexpected_token(ctx, tok);
+            mrv_parser_consume(ctx);
+            root = mrv_parser_mknode(ctx, Error, tok.span);
+            goto out;
+        }
+        }
+
+        n_children++;
+        tok = mrv_parser_peek(ctx);
+    }
+loop_end:;
+
+    MRV_ASTNode **children = mrv_parser_nrs_unwind_cpy(ctx, n_children);
+    MRV_Span all_span = mrv_get_bounding_span(n_children, children);
+    root = mrv_parser_mknode(ctx, Program, all_span, .n_children = n_children, children = children);
+    lg_assert(root != NULL);
+
+    root->kind = MRV_ASTNodeKind_Program;
+    root->span = tok.span;
+
+out:
+    lg_pop_scope(&ctx->scratch, scope);
+    return root;
 }
