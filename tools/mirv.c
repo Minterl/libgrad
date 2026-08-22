@@ -406,12 +406,16 @@ enum {
     MRV_ASTNodeKind_TypeIdent,
     MRV_ASTNodeKind_HostSymbolIdent,
     MRV_ASTNodeKind_HostTypeIdent,
-    MRV_ASTNodeKind_OpCall,
+    MRV_ASTNodeKind_OperatorIdent,
+    MRV_ASTNodeKind_SymbolDeclaration,
+    MRV_ASTNodeKind_OperatorInvocation,
+    MRV_ASTNodeKind_OperatorArgList,
     MRV_ASTNodeKind_StencilDeclaration,
     MRV_ASTNodeKind_StencilArg,
     MRV_ASTNodeKind_StencilArgList,
     MRV_ASTNodeKind_StencilBody,
-    MRV_ASTNodeKind_SymbolDeclaration,
+    MRV_ASTNodeKind_Block,
+    MRV_ASTNodeKind_Statement,
 };
 
 typedef struct MRV_ASTNode MRV_ASTNode;
@@ -430,27 +434,44 @@ MRV_ASTNodeChildren {
     struct {} TypeIdent;
     struct {} HostSymbolIdent;
     struct {} HostTypeIdent;
+    struct {} OperatorIdent;
 
     struct {
-        MRV_ASTNode* lhs;
-        MRV_ASTNode* rhs;
-    } OpCall;
+        MRV_ASTNode *ident;
+        MRV_ASTNode *left_arg;
+        MRV_ASTNode *right_arg;
+    } OperatorInvocation;
+
+    struct {
+        MRV_ASTNode *symbol_ident;
+        MRV_ASTNode *type_ident;
+    } SymbolDeclaration;
     
     struct {
-        MRV_ASTNode* ident;
-        MRV_ASTNode* arg_list;
-        MRV_ASTNode* body;
+        MRV_ASTNode *ident;
+        MRV_ASTNode *arg_list;
+        MRV_ASTNode *body;
     } StencilDeclaration;
 
     struct {
-        MRV_ASTNode* ident;
-        MRV_ASTNode* host_type;
+        MRV_ASTNode *ident;
+        MRV_ASTNode *host_type;
     } StencilArg;
 
     struct {
         size_t         n_args;
         MRV_ASTNode  **args;
     } StencilArgList;
+
+    struct {
+        size_t         n_statements;
+        MRV_ASTNode  **statements;
+    } Block;
+
+    struct {
+        MRV_ASTNode *symbol_decl;
+        MRV_ASTNode *operator_invocation;
+    } Statement;
 } MRV_ASTNodeChildren;
 
 struct 
@@ -479,7 +500,9 @@ MRV_ParserContext {
 
     MRV_Error              err;
     LG_Arena               scratch;
+
     LG_Arena               artifact;
+    MRV_ASTNode           *nil_node;
 } MRV_ParserContext;
 
 typedef struct
@@ -547,6 +570,8 @@ mrv_parser_consume(MRV_ParserContext *ctx) {
     MRV_ParserStatusKind status = mrv_parser_find_next(ctx, &next_token, &next_block);
     lg_assert(status == MRV_ParserStatusKind_OK); // this function shouldn't be called where there isn't a next token
                          // e.g don't expect a token after an EOF
+                         // TODO: this assumption may case nodes with variadic children left unterminated
+                         // to crash the parser
 
     ctx->cur_token = next_token;
     ctx->cur_block = next_block;
@@ -568,9 +593,10 @@ mrv_parser_expect(
         mrv_report_error(
             &ctx->err,
             next_token.span,
-            lg_str8_lit("expected %{str}, found %{str}"), 
+            lg_str8_lit("expected %{str}, found string \"%{str}\" of token kind %{str}"), 
             mrv_token_as_str(expected_kind),    
-            mrv_span_to_str8(next_token.span, ctx->text)
+            mrv_span_to_str8(next_token.span, ctx->text),
+            mrv_token_as_str(next_token.kind)
         );
         return lg_nil(MRV_Token);        
     }
@@ -601,6 +627,21 @@ mrv_parser_peek(MRV_ParserContext *ctx) {
 ///////////////////////////////////////////////////////////////////////////////
 /// note: with these nrs helpers, you still have to use lg_push/pop_scope
 
+lg_force_inline MRV_ASTNode*
+mrv_parser_nil_node(MRV_ParserContext *ctx) {
+    lg_assert(ctx != NULL);
+    lg_assert(ctx->nil_node != NULL);
+    lg_memzero(ctx->nil_node, sizeof(MRV_ASTNode));
+    return ctx->nil_node;
+}
+
+lg_force_inline bool
+mrv_parser_is_nil_node(MRV_ParserContext *ctx, MRV_ASTNode *node) {
+    lg_assert(ctx != NULL);
+    lg_assert(ctx->nil_node != NULL);
+    return node == ctx->nil_node;
+}
+
 lg_force_inline void
 mrv_parser_nrs_push(MRV_ParserContext *ctx, MRV_ASTNode *to) {
     MRV_ASTNodeRefStack* to_push = (MRV_ASTNodeRefStack*)lg_arena_alloc_struct(&ctx->scratch, MRV_ASTNodeRefStack);
@@ -616,6 +657,8 @@ mrv_parser_nrs_push(MRV_ParserContext *ctx, MRV_ASTNode *to) {
 
 lg_force_inline MRV_ASTNode**
 mrv_parser_nrs_unwind_cpy(MRV_ParserContext *ctx, uint32_t n_refs) {
+    lg_assert(n_refs != 0); // doesn't handle this well yet
+
     MRV_ASTNode **refs = lg_arena_alloc_array(&ctx->artifact, MRV_ASTNode*, n_refs);
     lg_assert(refs != NULL);
 
@@ -676,7 +719,13 @@ mrv_get_bounding_span(size_t n_nodes, MRV_ASTNode **nodes) {
 
 lg_force_inline void
 mrv_parser_unexpected_token(MRV_ParserContext *ctx, MRV_Token tok) {
-    mrv_report_error(&ctx->err, tok.span, lg_str8_lit("unexpected token: %{str}"), mrv_span_to_str8(tok.span, ctx->text));
+    mrv_report_error(
+        &ctx->err,
+        tok.span,
+        lg_str8_lit("unexpected token: \"%{str}\" of token kind %{str}"),
+        mrv_span_to_str8(tok.span, ctx->text),
+        mrv_token_as_str(tok.kind)
+    );
 }
 
 
@@ -695,13 +744,6 @@ mrv_parse_global_ident(MRV_ParserContext *ctx) {
 }
 
 MRV_ASTNode*
-mrv_parse_block(MRV_ParserContext *ctx) {
-    (void)ctx;
-    lg_unreachable("TODO");
-    return NULL;
-}
-
-MRV_ASTNode*
 mrv_parse_host_symbol_ident(MRV_ParserContext *ctx) {
     MRV_Token ident = mrv_parser_expect(ctx, MRV_TokenKind_Ident);
     MRV_ASTNode *node = mrv_parser_mknode(ctx, HostSymbolIdent, ident.span);
@@ -712,6 +754,197 @@ MRV_ASTNode*
 mrv_parse_host_type_ident(MRV_ParserContext *ctx) {
     MRV_Token ident = mrv_parser_expect(ctx, MRV_TokenKind_Ident);
     MRV_ASTNode *node = mrv_parser_mknode(ctx, HostTypeIdent, ident.span);
+    return node;
+}
+
+
+MRV_ASTNode*
+mrv_parse_symbol_ident(MRV_ParserContext *ctx) {
+    MRV_Token tok = mrv_parser_expect(ctx, MRV_TokenKind_SymbolIdent);
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, SymbolIdent, tok.span);
+    return node;
+}
+
+MRV_ASTNode* 
+mrv_parse_type_ident(MRV_ParserContext *ctx) {
+    MRV_Token tok = mrv_parser_expect(ctx, MRV_TokenKind_Ident);
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, TypeIdent, tok.span);
+    return node;
+}
+
+MRV_ASTNode*
+mrv_parse_symbol_decl(MRV_ParserContext *ctx) {
+    MRV_ASTNode *symbol_ident = mrv_parse_symbol_ident(ctx);
+    mrv_parser_expect(ctx, MRV_TokenKind_Colon);
+    MRV_ASTNode *type_ident = mrv_parse_type_ident(ctx);
+
+    MRV_Span all_span = mrv_get_bounding_span(2, (MRV_ASTNode*[]){symbol_ident, type_ident});
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, SymbolDeclaration, all_span, symbol_ident, type_ident);
+
+    return node;
+}
+
+MRV_ASTNode* 
+mrv_parse_operator_ident(MRV_ParserContext *ctx) {
+    MRV_Token tok = mrv_parser_expect(ctx, MRV_TokenKind_Ident);
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, TypeIdent, tok.span);
+    return node;
+}
+
+// forward decl b/c blocks can contain blocks 
+MRV_ASTNode*
+mrv_parse_block(MRV_ParserContext *ctx);
+
+MRV_ASTNode*
+mrv_parse_operator_invocation(MRV_ParserContext *ctx) {
+    MRV_ASTNode *op_ident = mrv_parse_operator_ident(ctx);
+    mrv_parser_expect(ctx, MRV_TokenKind_OpenParen);
+    MRV_ASTNode *left_arg = mrv_parser_nil_node(ctx);
+    MRV_ASTNode *right_arg = mrv_parser_nil_node(ctx);
+
+    // currently, there can only be two args in an op invocation
+    while (true) {
+        MRV_Token peek = mrv_parser_peek(ctx);
+        switch (peek.kind) {
+        case MRV_TokenKind_SymbolIdent: {
+            if (mrv_parser_is_nil_node(ctx, left_arg)) {
+                left_arg = mrv_parse_symbol_ident(ctx);
+            } else {
+                lg_assert(mrv_parser_is_nil_node(ctx, right_arg));
+                right_arg = mrv_parse_symbol_ident(ctx);
+            }
+            break;
+        }
+
+        case MRV_TokenKind_Ident: {
+            if (mrv_parser_is_nil_node(ctx, left_arg)) {
+                left_arg = mrv_parse_host_symbol_ident(ctx);
+            } else {
+                lg_assert(mrv_parser_is_nil_node(ctx, right_arg));
+                right_arg = mrv_parse_host_symbol_ident(ctx);
+            }
+            break;
+        }
+
+        case MRV_TokenKind_OpenBrace: {
+            mrv_parser_consume(ctx);
+            if (mrv_parser_is_nil_node(ctx, left_arg)) {
+                left_arg = mrv_parse_block(ctx);
+            } else {
+                lg_assert(mrv_parser_is_nil_node(ctx, right_arg));
+                right_arg = mrv_parse_block(ctx);
+            }
+            break;
+        }
+
+        // TODO: currently, this means you can just write
+        // MyOperator(,,,,,,,,)
+        // this may or may not actually be a problem
+        case MRV_TokenKind_Comma:
+            mrv_parser_consume(ctx);
+            break;
+
+        case MRV_TokenKind_CloseParen:
+            mrv_parser_consume(ctx);
+            goto loop_end;
+            
+        default: {
+            mrv_parser_unexpected_token(ctx, peek);
+            mrv_parser_consume(ctx);
+            goto loop_end;
+        }
+        }
+    }
+loop_end:;
+
+    MRV_Span all_span = mrv_get_bounding_span(3, (MRV_ASTNode*[]){op_ident, left_arg, right_arg});
+    MRV_ASTNode *node = mrv_parser_mknode(
+        ctx,
+        OperatorInvocation,
+        all_span,
+        .ident = op_ident,
+        .left_arg = left_arg,
+        .right_arg = right_arg,
+    );
+
+    return node;
+}
+
+MRV_ASTNode*
+mrv_parse_statement(MRV_ParserContext *ctx) {
+    MRV_ASTNode *symbol_decl = mrv_parser_nil_node(ctx);
+
+    MRV_Token peek = mrv_parser_peek(ctx);
+    switch (peek.kind) {
+    case MRV_TokenKind_SymbolIdent: {
+        symbol_decl = mrv_parse_symbol_decl(ctx);
+        mrv_parser_expect(ctx, MRV_TokenKind_Equals);
+        break;
+    }
+
+    case MRV_TokenKind_Ident: {
+        break;
+    };
+
+    default: {
+        mrv_parser_unexpected_token(ctx, peek);
+        mrv_parser_consume(ctx);
+    }
+    }
+
+    MRV_ASTNode *operator_invocation = mrv_parse_operator_invocation(ctx);
+    mrv_parser_expect(ctx, MRV_TokenKind_Semicolon);
+
+    MRV_ASTNode *first_node = mrv_parser_is_nil_node(ctx, symbol_decl) ?
+        operator_invocation :
+        symbol_decl;
+    MRV_Span all_span = mrv_get_bounding_span(2, (MRV_ASTNode*[]){first_node, operator_invocation});
+    MRV_ASTNode *node = mrv_parser_mknode(
+        ctx,
+        Statement,
+        all_span,
+        .symbol_decl = symbol_decl,
+        .operator_invocation = operator_invocation
+    );
+
+    return node; 
+}
+
+MRV_ASTNode*
+mrv_parse_block(MRV_ParserContext *ctx) {
+    LG_Scope scope = lg_push_scope(&ctx->scratch);
+
+    uint32_t n_children = 0;
+
+    while (true) {
+        MRV_Token peek = mrv_parser_peek(ctx);
+        switch (peek.kind) {
+        case MRV_TokenKind_Ident:
+        case MRV_TokenKind_SymbolIdent: {
+            MRV_ASTNode *stmt = mrv_parse_statement(ctx);
+            mrv_parser_nrs_push(ctx, stmt);
+            n_children++;
+            break;
+        }
+
+        case MRV_TokenKind_CloseBrace: {
+            mrv_parser_consume(ctx);
+            goto loop_end;
+        }
+
+        default:
+            mrv_parser_unexpected_token(ctx, peek);
+            mrv_parser_consume(ctx);
+            goto loop_end;
+        }
+    }
+loop_end:;
+
+    MRV_ASTNode **children = mrv_parser_nrs_unwind_cpy(ctx, n_children);
+    MRV_Span all_span = mrv_get_bounding_span(n_children, children);
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, Block, all_span, .n_statements = n_children, .statements = children);
+
+    lg_pop_scope(&ctx->scratch, scope);
     return node;
 }
 
@@ -738,7 +971,7 @@ mrv_parse_stencil_arg_list(MRV_ParserContext *ctx) {
         switch (peek.kind) {
         case MRV_TokenKind_CloseParen:
             mrv_parser_consume(ctx);
-            goto end;
+            goto loop_end;
         case MRV_TokenKind_Comma:
             mrv_parser_consume(ctx);
             break;
@@ -751,9 +984,10 @@ mrv_parse_stencil_arg_list(MRV_ParserContext *ctx) {
         default:
             mrv_parser_unexpected_token(ctx, peek);
             mrv_parser_consume(ctx);
+            goto loop_end;
         }
     }
-end:;
+loop_end:;
 
     MRV_ASTNode **children = mrv_parser_nrs_unwind_cpy(ctx, n_children);
     MRV_Span all_span = mrv_get_bounding_span(n_children, children);
@@ -775,7 +1009,7 @@ mrv_parse_stencil_decl(MRV_ParserContext *ctx) {
     MRV_ASTNode *body = mrv_parse_block(ctx);
 
     if (mrv_parser_has_err(ctx)) {
-        return NULL; // TODO: nil node
+        return mrv_parser_nil_node(ctx);
     }
 
     MRV_Span all_span = mrv_get_bounding_span(3, (MRV_ASTNode*[]){ident, arg_list, body});
@@ -794,7 +1028,7 @@ mrv_parse_stencil_decl(MRV_ParserContext *ctx) {
 MRV_ASTNode*
 mrv_parse_program(MRV_ParserContext *ctx) {
     LG_Scope scope = lg_push_scope(&ctx->scratch);
-    MRV_ASTNode *root;
+    MRV_ASTNode *root = mrv_parser_nil_node(ctx);
     size_t n_children = 0;
 
     MRV_Token tok = mrv_parser_peek(ctx);
@@ -806,7 +1040,8 @@ mrv_parse_program(MRV_ParserContext *ctx) {
 
         case MRV_TokenKind_Stencil: {
             mrv_parser_consume(ctx);
-            mrv_parse_stencil_decl(ctx);
+            MRV_ASTNode *stencil = mrv_parse_stencil_decl(ctx);
+            mrv_parser_nrs_push(ctx, stencil);
             break;
         }
 
@@ -850,7 +1085,6 @@ mrv_parse(
     lg_assert(artifact_allocator != NULL);
     lg_assert(scratch_allocator != NULL);
     lg_assert(tstream != NULL);
-    lg_assert(tstream != NULL);
     lg_assert(tstream->tail->next == NULL);
 
     
@@ -873,9 +1107,12 @@ mrv_parse(
     lg_arena_init(&ctx.artifact, artifact_allocator);
     lg_arena_init(&ctx.scratch, scratch_allocator);
 
+    ctx.nil_node = lg_arena_alloc_struct(&ctx.artifact, MRV_ASTNode);
+    lg_assert(ctx.nil_node != NULL);
+
 
     /////////////////////////////////////
-    /// ~~ do the parsing
+    /// ~~ do the parsing ~~
 
     MRV_ASTNode *root = mrv_parse_program(&ctx);
     MRV_AST ast = {

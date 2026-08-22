@@ -19,11 +19,11 @@ stencil contraction (
     %x0_addr_op:   AddressOperator = IntroduceAddressOperator(x0_addr_op);
     %x1_addr_op:   AddressOperator = IntroduceAddressOperator(x1_addr_op);
 
-    %induction_vector: Coordinate = For(%D) {
+    %induction_vector: Coordinate = For(%D, {
         %y_coord:   Coordinate  = ApplyAffineTransform(%induction_vector, %y_transform);
         %y_addr:    Address     = ApplyAddressOperator(%y_coord, %y_transform);
 
-        %x0_coord   Coordinate  = ApplyAffineTransform(%induction_vector, %x0_transform);
+        %x0_coord:  Coordinate  = ApplyAffineTransform(%induction_vector, %x0_transform);
         %x0_addr:   Address     = ApplyAddressOperator(%x0_coord, %x0_transform);
 
         %x1_coord:  Coordinate  = ApplyAffineTransform(%induction_vector, %x1_transform);
@@ -34,5 +34,5 @@ stencil contraction (
         %y:  Scalar = Multiply(%x0, %x1);
 
         YieldAccumulate(%y_addr, %y);
-    }
+    });
 }
