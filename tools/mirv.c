@@ -396,27 +396,45 @@ enum {
     MRV_ParserStatusKind_NOK,
 };
 
+#define MRV_DEFINE_AST_NODE_KINDS \
+    MRV_X(Error) \
+    MRV_X(Program) \
+    MRV_X(GlobalIdent) \
+    MRV_X(SymbolIdent) \
+    MRV_X(TypeIdent) \
+    MRV_X(HostSymbolIdent) \
+    MRV_X(HostTypeIdent) \
+    MRV_X(OperatorIdent) \
+    MRV_X(SymbolDeclaration) \
+    MRV_X(OperatorInvocation) \
+    MRV_X(StencilDeclaration) \
+    MRV_X(StencilArg) \
+    MRV_X(StencilArgList) \
+    MRV_X(Block) \
+    MRV_X(Statement)
+
 typedef uint8_t
 MRV_ASTNodeKind;
 enum {
-    MRV_ASTNodeKind_Error,
-    MRV_ASTNodeKind_Program,
-    MRV_ASTNodeKind_GlobalIdent,
-    MRV_ASTNodeKind_SymbolIdent,
-    MRV_ASTNodeKind_TypeIdent,
-    MRV_ASTNodeKind_HostSymbolIdent,
-    MRV_ASTNodeKind_HostTypeIdent,
-    MRV_ASTNodeKind_OperatorIdent,
-    MRV_ASTNodeKind_SymbolDeclaration,
-    MRV_ASTNodeKind_OperatorInvocation,
-    MRV_ASTNodeKind_OperatorArgList,
-    MRV_ASTNodeKind_StencilDeclaration,
-    MRV_ASTNodeKind_StencilArg,
-    MRV_ASTNodeKind_StencilArgList,
-    MRV_ASTNodeKind_StencilBody,
-    MRV_ASTNodeKind_Block,
-    MRV_ASTNodeKind_Statement,
+#   define MRV_X(kind) MRV_ASTNodeKind_##kind,
+    MRV_DEFINE_AST_NODE_KINDS
+#   undef MRV_X
 };
+
+enum {
+#   define MRV_X(...) + 1
+    MRV_ASTNodeKind_COUNT = 0 MRV_DEFINE_AST_NODE_KINDS
+#   undef MRV_X
+};
+
+lg_str8
+MRV_AST_NODE_STRINGS[MRV_ASTNodeKind_COUNT] = {
+#   define MRV_X(kind) [MRV_ASTNodeKind_##kind] = lg_str8_lit(#kind),
+    MRV_DEFINE_AST_NODE_KINDS
+#   undef MRV_X
+};
+
+#define mrv_ast_node_kind_as_str(kind) MRV_AST_NODE_STRINGS[(kind)]
 
 typedef struct MRV_ASTNode MRV_ASTNode;
 
@@ -507,6 +525,7 @@ MRV_ParserContext {
 
 typedef struct
 MRV_AST {
+    MRV_ASTNode  *nil_node;
     MRV_ASTNode  *root;
     LG_Arena      artifact;
 } MRV_AST;
@@ -787,7 +806,7 @@ mrv_parse_symbol_decl(MRV_ParserContext *ctx) {
 MRV_ASTNode* 
 mrv_parse_operator_ident(MRV_ParserContext *ctx) {
     MRV_Token tok = mrv_parser_expect(ctx, MRV_TokenKind_Ident);
-    MRV_ASTNode *node = mrv_parser_mknode(ctx, TypeIdent, tok.span);
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, OperatorIdent, tok.span);
     return node;
 }
 
@@ -1117,6 +1136,7 @@ mrv_parse(
     MRV_ASTNode *root = mrv_parse_program(&ctx);
     MRV_AST ast = {
         .root = root,
+        .nil_node = ctx.nil_node,
         .artifact = ctx.artifact,
     };
 
@@ -1129,6 +1149,149 @@ void
 mrv_ast_destroy(MRV_AST *ast) {
     lg_arena_free_all(&ast->artifact);
     lg_memzero(ast, sizeof(MRV_AST));
+}
+
+lg_force_inline bool
+mrv_ast_is_root(MRV_AST *ast, MRV_ASTNode *node) {
+    lg_assert(ast != NULL);
+    lg_assert(ast->root != NULL);
+    return node == ast->root;
+}
+
+lg_force_inline bool
+mrv_ast_is_nil_node(MRV_AST *ast, MRV_ASTNode *node) {
+    lg_assert(ast != NULL);
+    lg_assert(ast->nil_node != NULL);
+    return node == ast->nil_node;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// dump the ast
+///
+////////////////////////////////////////////////////////////////////////////////
+
+typedef struct
+MRV_ASTDumpContext {
+    MRV_AST    *ast;
+    LG_Writer  *writer;
+    lg_str8     text;
+    int8_t      indent;
+} MRV_ASTDumpContext;
+
+lg_force_inline void
+mrv_ast_dump_indent(MRV_ASTDumpContext *ctx) {
+    for (int8_t i = 0; i < ctx->indent; i++) {
+        lg_write(ctx->writer, lg_str8_lit("    "));
+    }
+}
+
+void
+mrv_ast_dump_r(MRV_ASTDumpContext *ctx, MRV_ASTNode *lg_nullable parent, MRV_ASTNode *self) {
+    if (mrv_ast_is_nil_node(ctx->ast, self)) {
+        return;
+    }
+
+    bool is_leaf = false;
+    MRV_ASTNodeChildren as = self->children_as;
+
+    switch (self->kind) {
+        case MRV_ASTNodeKind_Error:
+        case MRV_ASTNodeKind_GlobalIdent:
+        case MRV_ASTNodeKind_SymbolIdent:
+        case MRV_ASTNodeKind_TypeIdent:
+        case MRV_ASTNodeKind_HostSymbolIdent:
+        case MRV_ASTNodeKind_HostTypeIdent:
+        case MRV_ASTNodeKind_OperatorIdent:
+            is_leaf = true;
+            break;
+
+        case MRV_ASTNodeKind_Program:
+            for (uint32_t i = 0; i < as.Program.n_children; i++) {
+                mrv_ast_dump_r(ctx, self, as.Program.children[i]);
+            }
+            break;
+
+        case MRV_ASTNodeKind_SymbolDeclaration:
+            mrv_ast_dump_r(ctx, self, as.SymbolDeclaration.symbol_ident);
+            mrv_ast_dump_r(ctx, self, as.SymbolDeclaration.type_ident);
+            break;
+
+        case MRV_ASTNodeKind_OperatorInvocation:
+            mrv_ast_dump_r(ctx, self, as.OperatorInvocation.ident);
+            mrv_ast_dump_r(ctx, self, as.OperatorInvocation.left_arg);
+            mrv_ast_dump_r(ctx, self, as.OperatorInvocation.right_arg);
+            break;
+
+        case MRV_ASTNodeKind_StencilDeclaration:
+            mrv_ast_dump_r(ctx, self, as.StencilDeclaration.ident);
+            mrv_ast_dump_r(ctx, self, as.StencilDeclaration.arg_list);
+            mrv_ast_dump_r(ctx, self, as.StencilDeclaration.body);
+            break;
+
+        case MRV_ASTNodeKind_StencilArg:
+            mrv_ast_dump_r(ctx, self, as.StencilArg.ident);
+            mrv_ast_dump_r(ctx, self, as.StencilArg.host_type);
+            break;
+
+        case MRV_ASTNodeKind_StencilArgList:
+            for (uint32_t i = 0; i < as.StencilArgList.n_args; i++) {
+                mrv_ast_dump_r(ctx, self, as.StencilArgList.args[i]);
+            }
+            break;
+
+        case MRV_ASTNodeKind_Block:
+            lg_write(ctx->writer, lg_str8_lit("\n"));
+            mrv_ast_dump_indent(ctx);
+            lg_printf(ctx->writer, lg_str8_lit("subgraph \"cluster_%{i64}\" {\n"), self);
+            ctx->indent++;
+            for (uint32_t i = 0; i < as.Block.n_statements; i++) {
+                mrv_ast_dump_r(ctx, self, as.Block.statements[i]);
+            }
+            ctx->indent--;
+            mrv_ast_dump_indent(ctx);
+            lg_write(ctx->writer, lg_str8_lit("}\n\n"));
+            break;
+
+        case MRV_ASTNodeKind_Statement:
+            mrv_ast_dump_r(ctx, self, as.Statement.symbol_decl);
+            mrv_ast_dump_r(ctx, self, as.Statement.operator_invocation);
+            break;
+    }
+
+    mrv_ast_dump_indent(ctx);
+    lg_printf(ctx->writer, lg_str8_lit("\"node_%{i64}\""), self);
+    lg_str8 kind_str = mrv_ast_node_kind_as_str(self->kind);
+    if (is_leaf) {
+        lg_printf(ctx->writer, lg_str8_lit(" [label=\"%{str} (\\\"%{str}\\\")\"];\n"), kind_str, mrv_span_to_str8(self->span, ctx->text));
+    } else {
+        lg_printf(ctx->writer, lg_str8_lit(" [label=\"%{str}\"];\n"), kind_str);
+    }
+
+    if (parent != NULL) {
+        mrv_ast_dump_indent(ctx);
+        lg_printf(ctx->writer, lg_str8_lit("\"node_%{i64}\""), parent);
+        lg_write(ctx->writer, lg_str8_lit(" -> "));
+        lg_printf(ctx->writer, lg_str8_lit("\"node_%{i64}\""), self);
+        lg_write(ctx->writer, lg_str8_lit(";\n"));
+    }
+}
+
+void
+mrv_ast_dump(MRV_AST *ast, LG_Writer *writer, lg_str8 text) {
+    MRV_ASTDumpContext ctx = {
+        .ast = ast,
+        .writer = writer,
+        .text = text,
+    };
+
+    lg_write(writer, lg_str8_lit("digraph Abstract_Syntax_Tree {\n"));
+    ctx.indent++;
+    mrv_ast_dump_r(&ctx, NULL, ast->root);
+    ctx.indent--;
+    lg_write(writer, lg_str8_lit("}\n"));
 }
 
 
@@ -1192,6 +1355,8 @@ int main() {
         &tstream,
         text
     );
+
+    mrv_ast_dump(&ast, &libc_writer, text);
 
     mrv_tstream_destroy(&tstream, &libc_allocator);
     mrv_ast_destroy(&ast);
