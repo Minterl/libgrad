@@ -370,6 +370,11 @@ lg_force_inline LG_Slab*
 lg_slab_find_first(LG_Slab *slab) {
     bool is_first_iteration = true;
     LG_Slab *first = slab;
+
+    if (first == NULL) {
+        return NULL;
+    }
+
     while (true) {
         lg_assert(is_first_iteration == true || first != slab);
         is_first_iteration = false;
@@ -378,6 +383,7 @@ lg_slab_find_first(LG_Slab *slab) {
         }
         first = first->prev;
     }
+
     return first;
 }
 

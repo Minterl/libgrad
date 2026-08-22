@@ -57,3 +57,14 @@ examples/mnist:
 		-fsanitize=address \
 		-fsanitize=bounds \
 		examples/mnist/main.c
+
+
+.PHONY: tools/mirv
+tools/mirv:
+	mkdir -p out/tools && \
+	cc -o out/tools/mirv.out \
+		$(CFLAGS) \
+		-Iexamples/include \
+		-fsanitize=address \
+		-fsanitize=bounds \
+		tools/mirv.c

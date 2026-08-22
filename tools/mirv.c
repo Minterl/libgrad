@@ -19,24 +19,10 @@ MRV_Span {
 
 typedef struct
 MRV_Error {
-    bool      is_err;
-
-    MRV_Span  span;
-
-    size_t    msg_len;
-    uint8_t   msg[MRV_MAX_ERR_LEN];
+    bool       is_err;
+    LG_Writer *writer;
+    MRV_Span   span;
 } MRV_Error;
-
-size_t 
-mrv_report_error_write(void *ctx, lg_str8 str) {
-    MRV_Error *err = ctx;
-    size_t bytes_written = lg_strcpy((lg_str8){
-        .len = MRV_MAX_ERR_LEN - err->msg_len,
-        .p = err->msg + err->msg_len,
-    }, str);
-    err->msg_len += bytes_written;
-    return bytes_written;
-}
 
 void
 mrv_report_error(MRV_Error *err, MRV_Span span, lg_str8 fmt, ...) {
@@ -44,23 +30,22 @@ mrv_report_error(MRV_Error *err, MRV_Span span, lg_str8 fmt, ...) {
         return;
     }
 
-    err->msg_len = 0;
     err->is_err = 1;
     err->span = span;
-    
-    LG_Writer w = {
-        .ctx = (void*)err,
-        .write = mrv_report_error_write,
-    };
+
+    lg_printf(err->writer, lg_str8_lit("at offsets %{i64}-%{i64}:\n"), span.offset, span.offset + span.len);
 
     va_list ap;
     va_start(ap, fmt);
-    LG_StatusKind vprintf_status = lg_vprintf(&w, fmt, ap);
+    LG_StatusKind vprintf_status = lg_vprintf(err->writer, fmt, ap);
     (void)vprintf_status;
     va_end(ap);
+
+    lg_write(err->writer, lg_str8_lit("\n"));
 }
 
 #define mrv_span_zero_len(offset_) (MRV_Span){ .offset = (offset_) }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -98,7 +83,7 @@ enum {
 #   undef MRV_X
 };
 
-static const struct {
+const struct {
     lg_str8 string; 
     lg_str8 kind_string;
     uint32_t hash; 
@@ -142,7 +127,7 @@ MRV_LexerContext {
     lg_str8        text;
     size_t         current_offset;
 
-    LG_Allocator  *artifact_allocator;
+    LG_Allocator  *artifact;
 
     MRV_Error      err;
 } MRV_LexerContext;
@@ -159,21 +144,36 @@ void
 mrv_tstream_append(MRV_TokenStream *tstream, LG_Allocator *artifact_allocator, MRV_Token tok) {
     if (lg_likely(
         tstream->tail != NULL &&
-        tstream->tail_len < MRV_TOKEN_STREAM_BLOCK_CAPACITY
+        tstream->tail_len < MRV_TOKEN_STREAM_BLOCK_CAPACITY - 1
     )) {
         lg_memcpy(tstream->tail->tokens + tstream->tail_len, &tok, sizeof(MRV_Token));
+        tstream->tail_len++;
         return;
     }
 
-    MRV_TokenStreamBlock *next_block = (MRV_TokenStreamBlock*)lg_alloc_zero(artifact_allocator, sizeof(MRV_TokenStream));
+    MRV_TokenStreamBlock *next_block = (MRV_TokenStreamBlock*)lg_alloc_zero(artifact_allocator, sizeof(MRV_TokenStreamBlock));
     lg_assert(next_block != NULL);
 
-    tstream->tail->next = next_block;
+    if (tstream->tail != NULL) {
+        tstream->tail->next = next_block;
+    }
     next_block->prev = tstream->tail;
+
     tstream->tail = next_block;
     tstream->tail_len = 0;
 
     mrv_tstream_append(tstream, artifact_allocator, tok);
+}
+
+void
+mrv_tstream_destroy(MRV_TokenStream *tstream, LG_Allocator *artifact_allocator) {
+    MRV_TokenStreamBlock *iter_block = tstream->tail;
+    while (iter_block != NULL) {
+        MRV_TokenStreamBlock *temp = iter_block->prev;
+        lg_free(artifact_allocator, iter_block);
+        iter_block = temp;
+    }
+    lg_memzero(tstream, sizeof(MRV_TokenStream));
 }
 
 lg_force_inline lg_str8
@@ -192,20 +192,10 @@ mrv_lexer_peek(MRV_LexerContext *ctx) {
 
 lg_force_inline void
 mrv_lexer_skip(MRV_LexerContext *ctx) {
-    if (lg_likely(ctx->current_offset < ctx->text.len - 1)) {
+    if (lg_likely(ctx->current_offset < ctx->text.len)) {
         ctx->current_offset++;
     }
 }
-
-lg_force_inline void
-mrv_lexer_skip_whitespace(MRV_LexerContext *ctx) {
-    for (
-        uint8_t ch_i = ctx->text.p[ctx->current_offset];
-        lg_char_is_whitespace(ch_i);
-        ctx->current_offset++, ch_i = ctx->text.p[ctx->current_offset]
-    );
-}
-
 lg_force_inline MRV_Token
 mrv_lexer_consume_char(MRV_LexerContext *ctx) {
     if (ctx->current_offset >= ctx->text.len) {
@@ -238,6 +228,16 @@ mrv_lexer_consume_char(MRV_LexerContext *ctx) {
     return tok;
 }
 
+lg_force_inline void
+mrv_lexer_skip_whitespace(MRV_LexerContext *ctx) {
+    for (
+        uint8_t ch_i = ctx->text.p[ctx->current_offset];
+        lg_char_is_whitespace(ch_i) && ctx->current_offset < ctx->text.len;
+        ctx->current_offset++, ch_i = ctx->text.p[ctx->current_offset]
+    );
+}
+
+
 lg_force_inline MRV_Token
 mrv_lexer_scan_ident(MRV_LexerContext *ctx, MRV_TokenKind expected_kind) {
     MRV_Token tok = { 
@@ -252,22 +252,26 @@ mrv_lexer_scan_ident(MRV_LexerContext *ctx, MRV_TokenKind expected_kind) {
     while (ctx->current_offset < ctx->text.len) {
         uint8_t ch_i = ctx->text.p[ctx->current_offset];
 
-        ctx->current_offset++;
-        tok.span.len++;
-
         if (lg_unlikely(ctx->current_offset >= ctx->text.len)) {
             mrv_report_error(&ctx->err, tok.span, lg_str8_lit("unexpected EOF"));
             return (MRV_Token){ .kind = MRV_TokenKind_Error };
         } 
-        if (lg_unlikely(is_first && expected_kind == MRV_TokenKind_Ident)) {
+        if (lg_unlikely(
+            is_first &&
+            expected_kind == MRV_TokenKind_Ident &&
+            lg_char_is_numeric(ch_i)
+        )) {
             mrv_report_error(&ctx->err, tok.span, lg_str8_lit("expected letter, found number"));
             return (MRV_Token){ .kind = MRV_TokenKind_Error };
         }
-        if (lg_unlikely(!lg_char_is_alphanumeric(ch_i))) {
+        if (lg_unlikely(!lg_char_is_alphanumeric(ch_i) && ch_i != '_')) {
             break;
         }
 
         is_first = false;
+        ctx->current_offset++;
+        tok.span.len++;
+
     }
 
     if (tok.span.len == 0) {
@@ -303,25 +307,32 @@ mrv_lexer_scan_ident(MRV_LexerContext *ctx, MRV_TokenKind expected_kind) {
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-void
-mrv_lex(MRV_LexerContext *ctx, MRV_TokenStream *tstream) {
-    while (ctx->current_offset < ctx->text.len) {
-        mrv_lexer_skip_whitespace(ctx);
+MRV_TokenStream
+mrv_lex(LG_Allocator *artifact_allocator, lg_str8 text, LG_Writer *err_writer) {
+    MRV_LexerContext ctx = {
+        .artifact = artifact_allocator,
+        .text = text,
+        .err.writer = err_writer,
+    };
+    MRV_TokenStream tstream = {0};
 
-        switch (ctx->text.p[ctx->current_offset]) {
+    while (ctx.current_offset < ctx.text.len) {
+        mrv_lexer_skip_whitespace(&ctx);
+
+        switch (ctx.text.p[ctx.current_offset]) {
         case 'A'...'Z':
         case 'a'...'z': {
-            MRV_Token sym_ident = mrv_lexer_scan_ident(ctx, MRV_TokenKind_Ident);
-            mrv_tstream_append(tstream, ctx->artifact_allocator, sym_ident);
+            MRV_Token sym_ident = mrv_lexer_scan_ident(&ctx, MRV_TokenKind_Ident);
+            mrv_tstream_append(&tstream, ctx.artifact, sym_ident);
 
             break; 
         }
 
         case '%': {
-            mrv_lexer_skip(ctx);
+            mrv_lexer_skip(&ctx);
 
-            MRV_Token sym_ident = mrv_lexer_scan_ident(ctx, MRV_TokenKind_SymbolIdent);
-            mrv_tstream_append(tstream, ctx->artifact_allocator, sym_ident);
+            MRV_Token sym_ident = mrv_lexer_scan_ident(&ctx, MRV_TokenKind_SymbolIdent);
+            mrv_tstream_append(&tstream, ctx.artifact, sym_ident);
 
             break;
         }
@@ -334,31 +345,37 @@ mrv_lex(MRV_LexerContext *ctx, MRV_TokenStream *tstream) {
         case ',':
         case ';':
         case '=': {
-            MRV_Token ch = mrv_lexer_consume_char(ctx);
-            mrv_tstream_append(tstream, ctx->artifact_allocator, ch);
+            MRV_Token ch = mrv_lexer_consume_char(&ctx);
+            mrv_tstream_append(&tstream, ctx.artifact, ch);
 
             break;
         }
 
-        default: {
-            MRV_Span err_span = mrv_span_zero_len(ctx->current_offset);
-            lg_str8 unexpected_char = mrv_span_to_str8(err_span, ctx->text);
+        case '\0':
+            mrv_lexer_skip(&ctx);
+            break;
 
-            mrv_tstream_append(tstream, ctx->artifact_allocator, (MRV_Token){
+        default: {
+            MRV_Span err_span = (MRV_Span){ .len = 1, .offset = ctx.current_offset };
+            lg_str8 unexpected_char = mrv_span_to_str8(err_span, ctx.text);
+
+            mrv_tstream_append(&tstream, ctx.artifact, (MRV_Token){
                 .kind = MRV_TokenKind_Error,
                 .span = err_span,
             });
-            mrv_report_error(&ctx->err, err_span, lg_str8_lit("unexpected character %{str}"), unexpected_char);
+            mrv_report_error(&ctx.err, err_span, lg_str8_lit("unexpected character: %{str}"), unexpected_char);
 
-            mrv_lexer_skip(ctx);
+            mrv_lexer_skip(&ctx);
         }
         }
     }
 
-    mrv_tstream_append(tstream, ctx->artifact_allocator, (MRV_Token){
+    mrv_tstream_append(&tstream, ctx.artifact, (MRV_Token){
         .kind = MRV_TokenKind_EOF,
-        .span = mrv_span_zero_len(ctx->current_offset),
+        .span = mrv_span_zero_len(ctx.current_offset),
     });
+
+    return tstream;
 }
 
 
@@ -465,6 +482,12 @@ MRV_ParserContext {
     LG_Arena               artifact;
 } MRV_ParserContext;
 
+typedef struct
+MRV_AST {
+    MRV_ASTNode  *root;
+    LG_Arena      artifact;
+} MRV_AST;
+
 #define mrv_parser_has_err(ctx) ((ctx)->err.is_err)
 
 
@@ -475,27 +498,6 @@ MRV_ParserContext {
 ///
 ////////////////////////////////////////////////////////////////////////////////
 
-void
-mrv_parser_begin(MRV_ParserContext *ctx, MRV_TokenStream *tstream) {
-    lg_assert(ctx != NULL);
-    lg_assert(tstream != NULL);
-    lg_assert(tstream->tail->next == NULL);
-
-    lg_memzero(ctx, sizeof(MRV_ParserContext));
-    ctx->tstream = tstream;
-
-    // this will loop forever if there are cycles
-    MRV_TokenStreamBlock *iter_block = tstream->tail;
-    while (iter_block != NULL) {
-        ctx->cur_block = iter_block;
-        iter_block = iter_block->prev;
-    }
-
-    if (ctx->cur_block != NULL) {
-        ctx->cur_token = ctx->cur_block->tokens;
-    }
-}
-
 lg_force_inline MRV_ParserStatusKind 
 mrv_parser_find_next(
     MRV_ParserContext *ctx,
@@ -503,12 +505,10 @@ mrv_parser_find_next(
     MRV_TokenStreamBlock **out_next_block
 ) {
     lg_assert(ctx != NULL);
+    lg_assert(ctx->cur_block != NULL);
     lg_assert(out_next_block != NULL);
     lg_assert(out_next_token != NULL);
 
-    if (ctx->cur_block == NULL) {
-        return MRV_ParserStatusKind_NOK;
-    }
     if (ctx->cur_token == NULL) {
         *out_next_block = ctx->cur_block;
         *out_next_token = ctx->cur_block->tokens;
@@ -676,7 +676,7 @@ mrv_get_bounding_span(size_t n_nodes, MRV_ASTNode **nodes) {
 
 lg_force_inline void
 mrv_parser_unexpected_token(MRV_ParserContext *ctx, MRV_Token tok) {
-    mrv_report_error(&ctx->err, tok.span, lg_str8_lit("unexpected token %{str}"), mrv_span_to_str8(tok.span, ctx->text));
+    mrv_report_error(&ctx->err, tok.span, lg_str8_lit("unexpected token: %{str}"), mrv_span_to_str8(tok.span, ctx->text));
 }
 
 
@@ -767,11 +767,15 @@ end:;
 MRV_ASTNode*
 mrv_parse_stencil_decl(MRV_ParserContext *ctx) {
     MRV_ASTNode *ident = mrv_parse_global_ident(ctx);
+
+    mrv_parser_expect(ctx, MRV_TokenKind_OpenParen);
     MRV_ASTNode *arg_list = mrv_parse_stencil_arg_list(ctx);
+
+    mrv_parser_expect(ctx, MRV_TokenKind_OpenBrace);
     MRV_ASTNode *body = mrv_parse_block(ctx);
 
     if (mrv_parser_has_err(ctx)) {
-        return NULL;
+        return NULL; // TODO: nil node
     }
 
     MRV_Span all_span = mrv_get_bounding_span(3, (MRV_ASTNode*[]){ident, arg_list, body});
@@ -801,6 +805,7 @@ mrv_parse_program(MRV_ParserContext *ctx) {
         }
 
         case MRV_TokenKind_Stencil: {
+            mrv_parser_consume(ctx);
             mrv_parse_stencil_decl(ctx);
             break;
         }
@@ -833,3 +838,128 @@ out:
     lg_pop_scope(&ctx->scratch, scope);
     return root;
 }
+
+MRV_AST
+mrv_parse(
+    LG_Allocator *artifact_allocator,
+    LG_Allocator *scratch_allocator, 
+    LG_Writer *err_writer,
+    MRV_TokenStream *tstream,
+    lg_str8 text
+) {
+    lg_assert(artifact_allocator != NULL);
+    lg_assert(scratch_allocator != NULL);
+    lg_assert(tstream != NULL);
+    lg_assert(tstream != NULL);
+    lg_assert(tstream->tail->next == NULL);
+
+    
+    /////////////////////////////////////
+    /// ~~ initialize the parser ~~
+
+    MRV_ParserContext ctx = {
+        .tstream = tstream,
+        .err.writer = err_writer,
+        .text = text,
+    };
+
+    // this will loop forever if there are cycles
+    MRV_TokenStreamBlock *iter_block = tstream->tail;
+    while (iter_block != NULL) {
+        ctx.cur_block = iter_block;
+        iter_block = iter_block->prev;
+    }
+
+    lg_arena_init(&ctx.artifact, artifact_allocator);
+    lg_arena_init(&ctx.scratch, scratch_allocator);
+
+
+    /////////////////////////////////////
+    /// ~~ do the parsing
+
+    MRV_ASTNode *root = mrv_parse_program(&ctx);
+    MRV_AST ast = {
+        .root = root,
+        .artifact = ctx.artifact,
+    };
+
+    lg_arena_free_all(&ctx.scratch);
+
+    return ast;
+}
+
+void
+mrv_ast_destroy(MRV_AST *ast) {
+    lg_arena_free_all(&ast->artifact);
+    lg_memzero(ast, sizeof(MRV_AST));
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// actual entry point
+///
+////////////////////////////////////////////////////////////////////////////////
+
+#include <stdio.h>
+#include <stdlib.h>
+
+void*
+alloc_libc(void *_, size_t bytes) {
+    (void)_;
+    return calloc(bytes, 1);
+}
+
+void 
+free_libc(void* _, void *ptr) {
+    (void)_;
+    return free(ptr);
+}
+
+size_t
+write_stdout(void *ctx, lg_str8 msg) {
+    (void)ctx;
+    return printf("%.*s", (int32_t)msg.len, msg.p);
+}
+
+static LG_Allocator 
+libc_allocator = {
+    .alloc = alloc_libc,
+    .free = free_libc,
+    .default_slab_size_bytes = 1024 * 1024 * 1024,
+};
+
+static LG_Writer 
+libc_writer = {
+    .write = write_stdout,
+};
+
+int main() {
+    FILE *file = fopen("./tools/ir_test.mirv", "r+");
+    lg_assert(file != NULL);
+
+    uint8_t file_contents[4096] = {0};
+    size_t chunks_read = fread(file_contents, sizeof(file_contents) / 4, 4, file);
+    lg_assert(chunks_read > 0);
+
+    lg_str8 text = (lg_str8){ .len = 4096, .p = file_contents };
+    MRV_TokenStream tstream = mrv_lex(&libc_allocator, text, &libc_writer);
+
+    (void)text;
+
+    MRV_AST ast = mrv_parse(
+        &libc_allocator,
+        &libc_allocator,
+        &libc_writer,
+        &tstream,
+        text
+    );
+
+    mrv_tstream_destroy(&tstream, &libc_allocator);
+    mrv_ast_destroy(&ast);
+    fclose(file);
+    return 0;
+}
+
+#include <libgrad/internal/base.c>
