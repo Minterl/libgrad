@@ -396,4 +396,64 @@ lg_char_is_numeric(uint8_t ch);
 lg_force_inline bool
 lg_char_is_alphanumeric(uint8_t ch);
 
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// runtime hash table
+///
+////////////////////////////////////////////////////////////////////////////////
+
+typedef union 
+LG_TableFingerprintBlock {
+    uint8_t individual[8];
+    uint64_t block;
+} LG_TableFingerprintBlock;
+
+/// Implements a swiss table-like slot map.
+typedef struct
+LG_Table {
+    /// Must be a power of two, and will be implicitly rounded to one 
+    /// during initialization.
+    size_t cap;
+    LG_TableFingerprintBlock *fingerprints_as;
+    uint64_t *keys lg_check_bounds(cap);
+} LG_Table;
+
+typedef struct
+LG_TableIter {
+    LG_Table *table;
+
+    uint32_t key;
+    size_t idx;
+
+    /// This treats the table fingerprints array as a matrix in R^2
+    /// with dims {8 x `iter.table.cap` / 8} i.e there are 8 fingerprints per
+    /// u64 in the table key list.
+    size_t matrix_coord[2];
+} LG_TableIter;
+
+LG_StatusKind 
+lg_table_init(LG_Table *table, LG_Arena *arena, size_t cap);
+
+/// Ensures a key is present inside the table
+/// Cannot realloc memory
+LG_StatusKind 
+lg_table_ensure(LG_Table *table, uint64_t key, size_t *lg_nullable out_idx, bool *lg_nullable out_was_occupied);
+
+/// Returns the index corresponding to the key in the table, otherwise
+/// zero.
+///
+/// Since zero may be a valid index, use `out_found` to determine whether
+/// an entry was found.
+size_t 
+lg_table_get(LG_Table *table, uint64_t key, bool *lg_nullable out_found);
+
+void 
+lg_table_iter_init(LG_TableIter *iter, LG_Table *table);
+
+/// Returns false once the iterator is finished.
+lg_force_inline bool 
+lg_table_iter_advance(LG_TableIter *iter);
+
 #endif // LG_BASE_H_
