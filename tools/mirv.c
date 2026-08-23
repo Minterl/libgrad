@@ -416,7 +416,7 @@ enum {
 typedef uint8_t
 MRV_ASTNodeKind;
 enum {
-#   define MRV_X(kind) MRV_ASTNodeKind_##kind,
+#   define MRV_X(kind, ...) MRV_ASTNodeKind_##kind,
     MRV_DEFINE_AST_NODE_KINDS
 #   undef MRV_X
 };
@@ -429,7 +429,7 @@ enum {
 
 lg_str8
 MRV_AST_NODE_STRINGS[MRV_ASTNodeKind_COUNT] = {
-#   define MRV_X(kind) [MRV_ASTNodeKind_##kind] = lg_str8_lit(#kind),
+#   define MRV_X(kind, ...) [MRV_ASTNodeKind_##kind] = lg_str8_lit(#kind),
     MRV_DEFINE_AST_NODE_KINDS
 #   undef MRV_X
 };
@@ -1292,6 +1292,111 @@ mrv_ast_dump(MRV_AST *ast, LG_Writer *writer, lg_str8 text) {
     mrv_ast_dump_r(&ctx, NULL, ast->root);
     ctx.indent--;
     lg_write(writer, lg_str8_lit("}\n"));
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
+/// semantic analysis stuff
+///
+////////////////////////////////////////////////////////////////////////////////
+
+typedef struct
+MRV_Symtab {
+    LG_Table  table;
+    lg_str8  *types;
+} MRV_Symtab;
+
+typedef struct
+MRV_SemaContext {
+    MRV_AST    *ast;
+    lg_str8     text;
+    MRV_Symtab  symtab;
+    MRV_Error   err;
+} MRV_SemaContext;
+
+void
+mrv_sema_typecheck_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
+    if (mrv_ast_is_nil_node(ctx->ast, self)) {
+        return;
+    }
+
+    MRV_ASTNodeChildren as = self->children_as;
+
+    switch (self->kind) {
+        case MRV_ASTNodeKind_Error:
+        case MRV_ASTNodeKind_GlobalIdent:
+        case MRV_ASTNodeKind_SymbolIdent:
+        case MRV_ASTNodeKind_TypeIdent:
+        case MRV_ASTNodeKind_HostSymbolIdent:
+        case MRV_ASTNodeKind_HostTypeIdent:
+        case MRV_ASTNodeKind_OperatorIdent:
+            break;
+
+        case MRV_ASTNodeKind_Program:
+            for (uint32_t i = 0; i < as.Program.n_children; i++) {
+                mrv_sema_typecheck_r(ctx, as.Program.children[i]);
+            }
+            break;
+
+        case MRV_ASTNodeKind_SymbolDeclaration: {
+            lg_str8 sym_ident = mrv_span_to_str8(as.SymbolDeclaration.symbol_ident->span, ctx->text);
+            lg_str8 type_ident = mrv_span_to_str8(as.SymbolDeclaration.type_ident->span, ctx->text);
+
+            size_t idx;
+            bool found;
+            LG_StatusKind status = lg_table_ensure_str8(&ctx->symtab.table, sym_ident, &idx, &found);
+            lg_assert(status = LG_StatusKind_OK);
+
+            if (found) {
+                mrv_report_error(
+                    &ctx->err,
+                    self->span,
+                    lg_str8_lit("multiple declarations found for symbol %{str}"),
+                    sym_ident
+                );
+            } else {
+                ctx->symtab.types[idx] = type_ident;
+            }
+
+            break;
+        }
+
+        case MRV_ASTNodeKind_OperatorInvocation:
+            mrv_sema_typecheck_r(ctx, as.OperatorInvocation.ident);
+            mrv_sema_typecheck_r(ctx, as.OperatorInvocation.left_arg);
+            mrv_sema_typecheck_r(ctx, as.OperatorInvocation.right_arg);
+            break;
+
+        case MRV_ASTNodeKind_StencilDeclaration:
+            mrv_sema_typecheck_r(ctx, as.StencilDeclaration.ident);
+            mrv_sema_typecheck_r(ctx, as.StencilDeclaration.arg_list);
+            mrv_sema_typecheck_r(ctx, as.StencilDeclaration.body);
+            break;
+
+        case MRV_ASTNodeKind_StencilArg:
+            mrv_sema_typecheck_r(ctx, as.StencilArg.ident);
+            mrv_sema_typecheck_r(ctx, as.StencilArg.host_type);
+            break;
+
+        case MRV_ASTNodeKind_StencilArgList:
+            for (uint32_t i = 0; i < as.StencilArgList.n_args; i++) {
+                mrv_sema_typecheck_r(ctx, as.StencilArgList.args[i]);
+            }
+            break;
+
+        case MRV_ASTNodeKind_Block:
+            for (uint32_t i = 0; i < as.Block.n_statements; i++) {
+                mrv_sema_typecheck_r(ctx, as.Block.statements[i]);
+            }
+            break;
+
+        case MRV_ASTNodeKind_Statement:
+            mrv_sema_typecheck_r(ctx, as.Statement.symbol_decl);
+            mrv_sema_typecheck_r(ctx, as.Statement.operator_invocation);
+            break;
+    }
 }
 
 

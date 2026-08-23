@@ -448,6 +448,21 @@ lg_table_ensure_u64(LG_Table *table, uint64_t key, size_t *lg_nullable out_idx, 
 size_t 
 lg_table_get_u64(LG_Table *table, uint64_t key, bool *lg_nullable out_found);
 
+LG_StatusKind
+lg_table_ensure_str8(
+    LG_Table *table,
+    lg_str8 key,
+    size_t *lg_nullable out_idx,
+    bool *lg_nullable out_was_occupied
+);
+
+size_t
+lg_table_get_str8(
+    LG_Table *table,
+    lg_str8 key,
+    bool *lg_nullable out_found
+);
+
 void 
 lg_table_iter_init(LG_TableIter *iter, LG_Table *table);
 
