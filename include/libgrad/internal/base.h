@@ -438,7 +438,7 @@ lg_table_init(LG_Table *table, LG_Arena *arena, size_t cap);
 /// Ensures a key is present inside the table
 /// Cannot realloc memory
 LG_StatusKind 
-lg_table_ensure(LG_Table *table, uint64_t key, size_t *lg_nullable out_idx, bool *lg_nullable out_was_occupied);
+lg_table_ensure_u64(LG_Table *table, uint64_t key, size_t *lg_nullable out_idx, bool *lg_nullable out_was_occupied);
 
 /// Returns the index corresponding to the key in the table, otherwise
 /// zero.
@@ -446,7 +446,7 @@ lg_table_ensure(LG_Table *table, uint64_t key, size_t *lg_nullable out_idx, bool
 /// Since zero may be a valid index, use `out_found` to determine whether
 /// an entry was found.
 size_t 
-lg_table_get(LG_Table *table, uint64_t key, bool *lg_nullable out_found);
+lg_table_get_u64(LG_Table *table, uint64_t key, bool *lg_nullable out_found);
 
 void 
 lg_table_iter_init(LG_TableIter *iter, LG_Table *table);
