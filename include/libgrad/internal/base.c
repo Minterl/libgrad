@@ -578,21 +578,25 @@ enum {
 #define lg_u64_has_zero_byte(x) ((((x) - UINT64_C(0x0101010101010101)) & ~(x) & UINT64_C(0x8080808080808080)) != 0)
 
 lg_force_inline uint32_t 
-lg_mmh(uint64_t key) {
+lg_mmh(uint32_t *key, size_t n_chunks) {
     uint32_t hash = LG_MMH_S;
-    for (uint8_t i = 0; i < 2; i++) {
-        uint32_t chunk = key >> (32 * i);
+
+    for (uint8_t i = 0; i < n_chunks; i++) {
+        uint32_t chunk = key[i];
         chunk = lg_mmh_rol(chunk * LG_MMH_C1, 32, LG_MMH_R1);
         chunk *= LG_MMH_C2;
         hash = LG_MMH_S ^ hash;
         hash = lg_mmh_rol(hash, 32, LG_MMH_R2) * LG_MMH_M + LG_MMH_N;
-        hash = hash ^ 4;
-        hash = hash ^ (hash >> 16);
-        hash = hash * LG_MMH_C3;
-        hash = hash ^ (hash >> 13);
-        hash = hash * LG_MMH_C4;
-        hash = hash ^ (hash >> 16);
     }
+
+    hash = hash ^ (uint32_t)len;
+    hash = hash ^ 4;
+    hash = hash ^ (hash >> 16);
+    hash = hash * LG_MMH_C3;
+    hash = hash ^ (hash >> 13);
+    hash = hash * LG_MMH_C4;
+    hash = hash ^ (hash >> 16);
+
     return hash;
 }
 
@@ -633,8 +637,13 @@ lg_table_init(LG_Table *table, LG_Arena *arena, size_t cap) {
 }
 
 lg_force_inline void 
-lg_table_make_hash(uint64_t key, uint64_t *out_hash, uint8_t *out_fingerprint) {
-    const uint64_t full_hash = lg_mmh(key);
+lg_table_make_hash(
+    uint32_t *key,
+    size_t key_n_chunks,
+    uint64_t *out_hash,
+    uint8_t *out_fingerprint
+) {
+    const uint64_t full_hash = lg_mmh(key, key_n_chunks);
     const size_t hash = full_hash & ~UINT8_C(0xF);
     const uint8_t fingerprint = (full_hash & UINT8_C(0xF)) | UINT8_C(0x1);
 
@@ -738,9 +747,11 @@ out_success:
 }
 
 LG_StatusKind 
-lg_table_ensure(
+lg_table_ensure_g(
     LG_Table *table,
-    uint64_t key,
+    uint64_t cmp_key,
+    uint64_t hash,
+    uint8_t fingerprint,
     size_t *lg_nullable out_idx,
     bool *lg_nullable out_was_occupied
 ) {
@@ -748,13 +759,9 @@ lg_table_ensure(
 
     LG_StatusKind status = LG_StatusKind_OK;
 
-    uint64_t hash;
-    uint8_t fingerprint;
-    lg_table_make_hash(key, &hash, &fingerprint);
-
     bool found;
     size_t last_idx;
-    status = lg_table_probe(table, key, hash, fingerprint, &last_idx, &found);
+    status = lg_table_probe(table, cmp_key, hash, fingerprint, &last_idx, &found);
     if (status != LG_StatusKind_OK) {
         found = false;
         last_idx = 0;
@@ -765,7 +772,7 @@ lg_table_ensure(
         const size_t outer_idx = last_idx / 8;
         const size_t inner_idx = last_idx % 8;
         table->fingerprints_as[outer_idx].individual[inner_idx] = fingerprint;
-        table->keys[last_idx] = key;
+        table->keys[last_idx] = cmp_key;
     }
 
 out:
@@ -779,16 +786,18 @@ out:
 }
 
 size_t 
-lg_table_get(LG_Table *table, uint64_t key, bool *lg_nullable out_found) {
+lg_table_get_g(
+    LG_Table *table,
+    uint64_t cmp_key,
+    uint64_t hash,
+    uint8_t fingerprint,
+    bool *lg_nullable out_found
+) {
     lg_assert(lg_next_pow2(table->cap) == table->cap && table->cap >= 8);
-
-    uint64_t hash;
-    uint8_t fingerprint;
-    lg_table_make_hash(key, &hash, &fingerprint);
 
     bool found;
     size_t last_idx;
-    LG_StatusKind status = lg_table_probe(table, key, hash, fingerprint, &last_idx, &found);
+    LG_StatusKind status = lg_table_probe(table, cmp_key, hash, fingerprint, &last_idx, &found);
     lg_assert(status == LG_StatusKind_OK); // we are't allocating a slot, and this only returns
                                            // not ok when we're out of capacity
 
@@ -797,6 +806,33 @@ lg_table_get(LG_Table *table, uint64_t key, bool *lg_nullable out_found) {
     }
 
     return found ? last_idx : 0;
+}
+
+LG_StatusKind
+lg_table_ensure_u64(
+    LG_Table *table,
+    uint64_t key,
+    size_t *lg_nullable out_idx,
+    bool *lg_nullable out_was_occupied
+) {
+    uint64_t hash;
+    uint8_t fingerprint;
+    lg_table_make_hash((uint32_t*)&key, 2, &hash, &fingerprint);
+    LG_StatusKind status = lg_table_ensure_g(table, key, hash, fingerprint, out_idx, out_was_occupied);
+    return status;
+}
+
+size_t
+lg_table_get_u64(
+    LG_Table *table,
+    uint64_t key,
+    bool *lg_nullable out_found
+) {
+    uint64_t hash;
+    uint8_t fingerprint;
+    lg_table_make_hash((uint32_t*)&key, 2, &hash, &fingerprint);
+    size_t idx = lg_table_get_g(table, key, hash, fingerprint, out_found);
+    return idx;
 }
 
 void 
