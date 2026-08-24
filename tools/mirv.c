@@ -568,10 +568,9 @@ MRV_ASTNodeChildren {
 
     struct {
         MRV_ASTNode *ident;
-        MRV_ASTNode *arg_list;
         MRV_ASTNode *left_arg;
         MRV_ASTNode *right_arg;
-        MRV_ASTNode *return_typename;
+        MRV_ASTNode *return_type;
     } OperatorDeclaration;
 
     struct {
@@ -1220,6 +1219,7 @@ mrv_parse_operator_decl(MRV_ParserContext *ctx) {
 
     size_t n_args = 0;
     MRV_ASTNode *args[2] = {mrv_parser_nil_node(ctx), mrv_parser_nil_node(ctx)};
+    MRV_ASTNode *return_type = mrv_parser_nil_node(ctx);
 
     while (true) {
         MRV_Token peek = mrv_parser_peek(ctx);
@@ -1242,8 +1242,7 @@ mrv_parse_operator_decl(MRV_ParserContext *ctx) {
         default: {
             mrv_parser_unexpected_token(ctx, peek);
             mrv_parser_consume(ctx);
-            MRV_ASTNode *node = mrv_parser_mknode(ctx, Error, peek.span,);
-            return node;
+            goto out;
         }
         }
 
@@ -1254,15 +1253,15 @@ mrv_parse_operator_decl(MRV_ParserContext *ctx) {
     }
 end_loop:;
 
-    MRV_ASTNode *typename = mrv_parser_nil_node(ctx);
     MRV_Token peek = mrv_parser_peek(ctx);
     if (peek.kind == MRV_TokenKind_RightArrow) {
         mrv_parser_consume(ctx);
-        typename = mrv_parse_type_ident(ctx);
+        return_type = mrv_parse_type_ident(ctx);
     }
 
     mrv_parser_expect(ctx, MRV_TokenKind_Semicolon);
 
+out:;
     MRV_ASTNode *node = mrv_parser_mknode(
         ctx,
         OperatorDeclaration,
@@ -1270,7 +1269,7 @@ end_loop:;
         .ident = ident,
         .left_arg = args[0],
         .right_arg = args[1],
-        .return_typename = typename,
+        .return_type = return_type,
     );
 
     return node;
@@ -1474,7 +1473,7 @@ mrv_ast_dump_r(MRV_ASTDumpContext *ctx, MRV_ASTNode *lg_nullable parent, MRV_AST
             mrv_ast_dump_r(ctx, self, as.OperatorDeclaration.ident);
             mrv_ast_dump_r(ctx, self, as.OperatorDeclaration.left_arg);
             mrv_ast_dump_r(ctx, self, as.OperatorDeclaration.right_arg);
-            mrv_ast_dump_r(ctx, self, as.OperatorDeclaration.return_typename);
+            mrv_ast_dump_r(ctx, self, as.OperatorDeclaration.return_type);
             break;
 
         case MRV_ASTNodeKind_OperatorDeclarationArg:
@@ -1602,7 +1601,6 @@ MRV_AttrTable {
 
 typedef struct
 MRV_OperatorTableValue {
-    uint8_t n_args;
     lg_str8 left_arg_type;
     lg_str8 right_arg_type;
     lg_str8 return_type;
@@ -1624,6 +1622,355 @@ MRV_SemaContext {
     MRV_Error          err;
 } MRV_SemaContext;
 
+typedef void (*MRV_SemaVisitor)(MRV_SemaContext *ctx, MRV_ASTNode *self);
+
+lg_force_inline void
+mrv_sema_traverse_children(
+    MRV_SemaContext *ctx,
+    MRV_ASTNode *self,
+    MRV_SemaVisitor next
+) {
+    MRV_ASTNodeChildren as = self->children_as;
+
+    mrv_match_ast_node(self->kind) {
+    case MRV_ASTNodeKind_Error:
+        break;
+
+    case MRV_ASTNodeKind_Program:
+        for (uint32_t i = 0; i < as.Program.n_children; i++) {
+            lg_assert(
+                as.Program.children[i]->kind == MRV_ASTNodeKind_StencilDeclaration ||
+                as.Program.children[i]->kind == MRV_ASTNodeKind_TypeDeclaration ||
+                as.Program.children[i]->kind == MRV_ASTNodeKind_OperatorDeclaration ||
+                as.Program.children[i]->kind == MRV_ASTNodeKind_LanguageDeclaration
+            );
+            next(ctx, as.Program.children[i]);
+        }
+        break;
+
+    case MRV_ASTNodeKind_StencilIdent:
+    case MRV_ASTNodeKind_LanguageIdent:
+    case MRV_ASTNodeKind_SymbolIdent:
+    case MRV_ASTNodeKind_TypeIdent:
+    case MRV_ASTNodeKind_HostSymbolIdent:
+    case MRV_ASTNodeKind_HostTypeIdent:
+    case MRV_ASTNodeKind_OperatorIdent:
+        break;
+
+    case MRV_ASTNodeKind_SymbolDeclaration: {
+        lg_assert(as.SymbolDeclaration.symbol_ident->kind == MRV_ASTNodeKind_SymbolIdent);
+        lg_assert(as.SymbolDeclaration.type_ident->kind == MRV_ASTNodeKind_TypeIdent);
+
+        next(ctx, as.SymbolDeclaration.symbol_ident);
+        next(ctx, as.SymbolDeclaration.type_ident);
+
+        break;
+    }
+
+    case MRV_ASTNodeKind_LanguageDeclaration: {
+        next(ctx, as.LanguageDeclaration.ident);
+        break;
+    }
+
+    case MRV_ASTNodeKind_StencilDeclaration: {
+        next(ctx, as.StencilDeclaration.ident);
+        next(ctx, as.StencilDeclaration.arg_list);
+        next(ctx, as.StencilDeclaration.body);
+        break;
+    }
+
+    case MRV_ASTNodeKind_TypeDeclaration: {
+        lg_assert(as.TypeDeclaration.ident->kind == MRV_ASTNodeKind_TypeIdent);
+        next(ctx, as.TypeDeclaration.ident);
+        break;
+    }
+
+    case MRV_ASTNodeKind_OperatorDeclaration: {
+        MRV_ASTNode *op_ident = as.OperatorDeclaration.ident;
+        MRV_ASTNode *left_arg = as.OperatorDeclaration.left_arg;
+        MRV_ASTNode *right_arg = as.OperatorDeclaration.right_arg;
+        MRV_ASTNode *return_type = as.OperatorDeclaration.return_type;
+
+        bool has_left = !mrv_ast_is_nil_node(ctx->ast, left_arg);
+        bool has_right = !mrv_ast_is_nil_node(ctx->ast, right_arg);
+        bool has_return = !mrv_ast_is_nil_node(ctx->ast, return_type);
+
+        lg_assert(op_ident->kind == MRV_ASTNodeKind_OperatorIdent);
+        lg_assert(
+            !has_left ||
+            left_arg->kind == MRV_ASTNodeKind_OperatorDeclarationArg
+        );
+        lg_assert(
+            !has_right ||
+            right_arg->kind == MRV_ASTNodeKind_OperatorDeclarationArg
+        );
+        lg_assert(
+            !has_return ||
+            return_type->kind == MRV_ASTNodeKind_TypeIdent
+        );
+
+        next(ctx, op_ident);
+        next(ctx, left_arg);
+        next(ctx, right_arg);
+        next(ctx, return_type);
+
+        break;
+    }
+
+    case MRV_ASTNodeKind_OperatorDeclarationArg: {
+        MRV_ASTNode *ident = as.OperatorDeclarationArg.ident;
+        MRV_ASTNode *type = as.OperatorDeclarationArg.type;
+
+        lg_assert(
+            mrv_ast_is_nil_node(ctx->ast, ident) ||
+            ident->kind == MRV_ASTNodeKind_HostSymbolIdent
+        );
+        lg_assert(
+            mrv_ast_is_nil_node(ctx->ast, type) ||
+            type->kind == MRV_ASTNodeKind_TypeIdent ||
+            type->kind == MRV_ASTNodeKind_HostTypeIdent
+        );
+
+        next(ctx, ident);
+        next(ctx, type);
+
+        break;
+    }
+        
+    case MRV_ASTNodeKind_OperatorInvocation: {
+        MRV_ASTNode *ident = as.OperatorInvocation.ident;
+        MRV_ASTNode *left_arg = as.OperatorInvocation.left_arg;
+        MRV_ASTNode *right_arg = as.OperatorInvocation.right_arg;
+
+        lg_assert(ident->kind == MRV_ASTNodeKind_OperatorIdent);
+        lg_assert(
+            mrv_ast_is_nil_node(ctx->ast, left_arg) ||
+            left_arg->kind == MRV_ASTNodeKind_SymbolIdent ||
+            left_arg->kind == MRV_ASTNodeKind_HostSymbolIdent ||
+            left_arg->kind == MRV_ASTNodeKind_Block
+        );
+        lg_assert(
+            mrv_ast_is_nil_node(ctx->ast, right_arg) ||
+            right_arg->kind == MRV_ASTNodeKind_SymbolIdent ||
+            right_arg->kind == MRV_ASTNodeKind_HostSymbolIdent ||
+            right_arg->kind == MRV_ASTNodeKind_Block
+        );
+
+        next(ctx, as.OperatorInvocation.ident);
+        next(ctx, as.OperatorInvocation.left_arg);
+        next(ctx, as.OperatorInvocation.right_arg);
+
+        break;
+    }
+
+    case MRV_ASTNodeKind_StencilArg: {
+        lg_assert(as.StencilArg.ident->kind == MRV_ASTNodeKind_HostSymbolIdent);
+        lg_assert(as.StencilArg.host_type->kind == MRV_ASTNodeKind_HostTypeIdent);
+
+        next(ctx, as.StencilArg.ident);
+        next(ctx, as.StencilArg.host_type);
+
+        break;
+    }
+
+    case MRV_ASTNodeKind_StencilArgList:
+        for (uint32_t i = 0; i < as.StencilArgList.n_args; i++) {
+            next(ctx, as.StencilArgList.args[i]);
+        }
+        break;
+        
+    case MRV_ASTNodeKind_Block:
+        for (uint32_t i = 0; i < as.Block.n_statements; i++) {
+            next(ctx, as.Block.statements[i]);
+        }
+        break;
+
+    case MRV_ASTNodeKind_Statement:
+        next(ctx, as.Statement.operator_invocation);
+        next(ctx, as.Statement.symbol_decl);
+        break;
+    }
+}
+
+void
+mrv_sema_record_type_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
+    if (mrv_ast_is_nil_node(ctx->ast, self)) {
+        return;
+    }
+
+    mrv_match_ast_node(self->kind) {
+    case MRV_ASTNodeKind_Program:
+    case MRV_ASTNodeKind_OperatorDeclaration:
+    case MRV_ASTNodeKind_OperatorDeclarationArg:
+    case MRV_ASTNodeKind_OperatorInvocation:
+    case MRV_ASTNodeKind_StencilArg:
+    case MRV_ASTNodeKind_StencilArgList: {
+        mrv_sema_traverse_children(ctx, self, mrv_sema_record_type_decls_r);
+        break;
+    }
+
+    case MRV_ASTNodeKind_HostTypeIdent: {
+        lg_str8 ident = mrv_span_to_str8(self->span, ctx->text);
+
+        size_t idx;
+        LG_StatusKind status = lg_table_ensure_str8(
+            &ctx->attrtab.table,
+            ident,
+            &idx,
+            NULL
+        );
+        lg_assert(status == LG_StatusKind_OK);
+
+        ctx->attrtab.kinds[idx] = MRV_AttrKind_HostType;
+
+        break;
+    }
+
+    case MRV_ASTNodeKind_OperatorIdent:
+    case MRV_ASTNodeKind_SymbolDeclaration:
+    case MRV_ASTNodeKind_LanguageDeclaration:
+        // TODO
+        break;
+
+    case MRV_ASTNodeKind_StencilDeclaration: 
+        // TODO
+        break;
+
+    case MRV_ASTNodeKind_TypeDeclaration: {
+        lg_str8 ident = mrv_span_to_str8(self->span, ctx->text);
+
+        size_t idx;
+        bool found;
+        LG_StatusKind status = lg_table_ensure_str8(
+            &ctx->attrtab.table,
+            ident,                
+            &idx,
+            &found
+        );
+        lg_assert(status == LG_StatusKind_OK);
+        if (found) {
+            mrv_report_error(
+                &ctx->err,
+                self->span,
+                lg_str8_lit("stencil arg %{str} declared multiple times"),
+                ident
+            );
+            break;
+        }
+
+        ctx->attrtab.kinds[idx] = MRV_AttrKind_Type;
+
+        break;
+    }
+
+    default:;
+    }
+}
+
+void
+mrv_sema_record_op_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
+    if (mrv_ast_is_nil_node(ctx->ast, self)) {
+        return;
+    }
+
+    MRV_ASTNodeChildren as = self->children_as;
+
+    mrv_match_ast_node(self->kind) {
+    case MRV_ASTNodeKind_Program:
+        mrv_sema_traverse_children(ctx, self, mrv_sema_record_op_decls_r);
+        break;
+
+    case MRV_ASTNodeKind_OperatorDeclaration: {
+        MRV_ASTNode *op = as.OperatorDeclaration.ident;
+        MRV_ASTNode *left_arg = as.OperatorDeclaration.left_arg;
+        MRV_ASTNode *right_arg = as.OperatorDeclaration.right_arg;
+        MRV_ASTNode *return_type = as.OperatorDeclaration.return_type;
+
+        bool has_left = !mrv_ast_is_nil_node(ctx->ast, left_arg);
+        bool has_right = !mrv_ast_is_nil_node(ctx->ast, right_arg);
+        bool has_return = !mrv_ast_is_nil_node(ctx->ast, return_type);
+
+        lg_str8 op_ident = mrv_span_to_str8(op->span, ctx->text);
+        lg_str8 left_arg_type_ident = has_left ?
+            mrv_span_to_str8(left_arg->children_as.OperatorDeclarationArg.type->span, ctx->text) :
+            lg_nil(lg_str8);
+        lg_str8 right_arg_type_ident = has_right ?
+            mrv_span_to_str8(right_arg->children_as.OperatorDeclarationArg.type->span, ctx->text) :
+            lg_nil(lg_str8);
+        lg_str8 return_type_ident = has_return ?
+            mrv_span_to_str8(return_type->span, ctx->text) :
+            lg_nil(lg_str8);
+
+        size_t op_idx;
+        {
+            bool found;
+            LG_StatusKind status = lg_table_ensure_str8(&ctx->optab.table, op_ident, &op_idx, &found);
+            lg_assert(status == LG_StatusKind_OK);
+            if (found) {
+                mrv_report_error(
+                    &ctx->err,
+                    self->span,
+                    lg_str8_lit("multiple declarations found for operator %{str}"),
+                    op_ident
+                );
+                break;
+            }
+        }
+
+        {
+            bool found;
+
+            if (has_left) {
+                lg_table_get_str8(&ctx->attrtab.table, left_arg_type_ident, &found);
+                if (!found) {
+                    mrv_report_error(
+                        &ctx->err,
+                        left_arg->span,
+                        lg_str8_lit("unknown type in first arg of operator declaration: %{str}"),
+                        left_arg_type_ident
+                    );
+                    break;
+                }
+            }
+
+            if (has_right) {
+                lg_table_get_str8(&ctx->attrtab.table, right_arg_type_ident, &found);
+                if (!found) {
+                    mrv_report_error(
+                        &ctx->err,
+                        right_arg->span,
+                        lg_str8_lit("unknown type in second arg of operator declaration: %{str}"),
+                        right_arg_type_ident
+                    );
+                    break;
+                }
+            }
+
+            if (has_return) {
+                lg_table_get_str8(&ctx->attrtab.table, return_type_ident, &found);
+                if (!found) {
+                    mrv_report_error(
+                        &ctx->err,
+                        return_type->span,
+                        lg_str8_lit("unknown type in return type of operator declaration: %{str}"),
+                        return_type_ident
+                    );
+                    break;
+                }
+            }
+        }
+
+        ctx->optab.values[op_idx].left_arg_type = left_arg_type_ident;
+        ctx->optab.values[op_idx].right_arg_type = right_arg_type_ident;
+        ctx->optab.values[op_idx].return_type = return_type_ident;
+
+        break;
+    }
+
+    default:;
+    }
+}
+
 void
 mrv_sema_typecheck_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
     if (mrv_ast_is_nil_node(ctx->ast, self)) {
@@ -1633,288 +1980,214 @@ mrv_sema_typecheck_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
     MRV_ASTNodeChildren as = self->children_as;
 
     mrv_match_ast_node (self->kind) {
-        case MRV_ASTNodeKind_OperatorDeclarationArg:
-        case MRV_ASTNodeKind_Error:
-        case MRV_ASTNodeKind_StencilIdent:
-        case MRV_ASTNodeKind_SymbolIdent:
-        case MRV_ASTNodeKind_TypeIdent:
-        case MRV_ASTNodeKind_OperatorDeclaration:
-        case MRV_ASTNodeKind_HostSymbolIdent:
-        case MRV_ASTNodeKind_HostTypeIdent:
-        case MRV_ASTNodeKind_OperatorIdent:
-        case MRV_ASTNodeKind_LanguageIdent:
-        case MRV_ASTNodeKind_LanguageDeclaration:
-            break;
+    case MRV_ASTNodeKind_Program:
+    case MRV_ASTNodeKind_StencilDeclaration:
+    case MRV_ASTNodeKind_StencilArgList:
+    case MRV_ASTNodeKind_Block:
+    case MRV_ASTNodeKind_Statement:
+        mrv_sema_traverse_children(ctx, self, mrv_sema_typecheck_r);
+        break;
 
-        case MRV_ASTNodeKind_Program:
-            for (uint32_t i = 0; i < as.Program.n_children; i++) {
-                mrv_sema_typecheck_r(ctx, as.Program.children[i]);
-            }
-            break;
+    case MRV_ASTNodeKind_SymbolDeclaration: {
+        lg_assert(as.SymbolDeclaration.symbol_ident->kind == MRV_ASTNodeKind_SymbolIdent);
+        lg_assert(as.SymbolDeclaration.type_ident->kind == MRV_ASTNodeKind_TypeIdent);
 
-        case MRV_ASTNodeKind_TypeDeclaration: {
-            lg_assert(as.TypeDeclaration.ident->kind == MRV_ASTNodeKind_TypeIdent);
+        lg_str8 sym_ident = mrv_span_to_str8(as.SymbolDeclaration.symbol_ident->span, ctx->text);
+        lg_str8 type_ident = mrv_span_to_str8(as.SymbolDeclaration.type_ident->span, ctx->text);
 
-            lg_str8 type_ident = mrv_span_to_str8(as.TypeDeclaration.ident->span, ctx->text);
-
+        size_t sym_idx;
+        {
             bool found;
-            size_t type_idx;
-            LG_StatusKind status = lg_table_ensure_str8(&ctx->attrtab.table, type_ident, &type_idx, &found);
+            LG_StatusKind status = lg_table_ensure_str8(
+                &ctx->symtab.table,
+                sym_ident,
+                &sym_idx,
+                &found
+            );
             lg_assert(status == LG_StatusKind_OK);
-
             if (found) {
                 mrv_report_error(
                     &ctx->err,
                     self->span,
-                    lg_str8_lit("multiple declarations found for type %{str}"),
-                    type_ident
+                    lg_str8_lit("multiple declarations found for symbol %{str}"),
+                    sym_ident
                 );
                 break;
             }
-
-            ctx->attrtab.kinds[type_idx] = MRV_AttrKind_Type;
-
-            break;
         }
-
-        case MRV_ASTNodeKind_SymbolDeclaration: {
-            lg_assert(as.SymbolDeclaration.symbol_ident->kind == MRV_ASTNodeKind_SymbolIdent);
-            lg_assert(as.SymbolDeclaration.type_ident->kind == MRV_ASTNodeKind_TypeIdent);
-
-            lg_str8 sym_ident = mrv_span_to_str8(as.SymbolDeclaration.symbol_ident->span, ctx->text);
-            lg_str8 type_ident = mrv_span_to_str8(as.SymbolDeclaration.type_ident->span, ctx->text);
-
-            size_t sym_idx;
-            {
-                bool found;
-                LG_StatusKind status = lg_table_ensure_str8(
-                    &ctx->symtab.table,
-                    sym_ident,
-                    &sym_idx,
-                    &found
+        
+        {
+            bool found;
+            size_t type_idx = lg_table_get_str8(&ctx->attrtab.table, type_ident, &found);
+            if (!found) {
+                mrv_report_error(
+                    &ctx->err,
+                    self->span,
+                    lg_str8_lit("declared symbol %{str} with unknown type %{str}"),
+                    sym_ident, type_ident
                 );
-                lg_assert(status == LG_StatusKind_OK);
-                if (found) {
-                    mrv_report_error(
-                        &ctx->err,
-                        self->span,
-                        lg_str8_lit("multiple declarations found for symbol %{str}"),
-                        sym_ident
-                    );
-                    break;
-                }
+                break;
             }
-            
-            {
-                bool found;
-                size_t type_idx = lg_table_get_str8(&ctx->attrtab.table, type_ident, &found);
-                if (!found) {
-                    mrv_report_error(
-                        &ctx->err,
-                        self->span,
-                        lg_str8_lit("declared symbol %{str} with unknown type %{str}"),
-                        sym_ident, type_ident
-                    );
-                    break;
-                }
-                if (ctx->attrtab.kinds[type_idx] == MRV_AttrKind_HostType) {
-                    mrv_report_error(
-                        &ctx->err,
-                        self->span,
-                        lg_str8_lit(
-                            "declared symbol %{str} with host type type %{str}\n"
-                            "non-host symbols cannot be bound to host types"
-                        ),
-                        sym_ident, type_ident
-                    );
-                    break;
-                }
-            }
-
-            ctx->symtab.types[sym_idx] = type_ident;
-
-            break;
-        }
-
-        case MRV_ASTNodeKind_OperatorInvocation: {
-            MRV_ASTNode *ident = as.OperatorInvocation.ident;
-            MRV_ASTNode *left_arg = as.OperatorInvocation.left_arg;
-            MRV_ASTNode *right_arg = as.OperatorInvocation.right_arg;
-
-            lg_assert(ident->kind == MRV_ASTNodeKind_OperatorIdent);
-            lg_assert(
-                mrv_ast_is_nil_node(ctx->ast, left_arg) ||
-                left_arg->kind == MRV_ASTNodeKind_SymbolIdent ||
-                left_arg->kind == MRV_ASTNodeKind_HostSymbolIdent ||
-                left_arg->kind == MRV_ASTNodeKind_Block
-            );
-            lg_assert(
-                mrv_ast_is_nil_node(ctx->ast, right_arg) ||
-                right_arg->kind == MRV_ASTNodeKind_SymbolIdent ||
-                right_arg->kind == MRV_ASTNodeKind_HostSymbolIdent ||
-                right_arg->kind == MRV_ASTNodeKind_Block
-            );
-
-            lg_str8 op_ident = mrv_span_to_str8(ident->span, ctx->text);
-            lg_str8 left_arg_ident = mrv_span_to_str8(left_arg->span, ctx->text);
-            lg_str8 right_arg_ident = mrv_span_to_str8(right_arg->span, ctx->text);
-
-            lg_str8 left_arg_want_type;
-            lg_str8 right_arg_want_type;
-            {
-                bool found;
-                size_t op_idx = lg_table_get_str8(&ctx->optab.table, op_ident, &found);
-                if (!found) {
-                    mrv_report_error(
-                        &ctx->err,
-                        self->span,
-                        lg_str8_lit("attempted to invoke unknown operator %{str}"),
-                        op_ident
-                    );
-                    break;
-                }
-
-                left_arg_want_type = ctx->optab.values[op_idx].left_arg_type;
-                left_arg_want_type = ctx->optab.values[op_idx].right_arg_type;
-            }
-
-            lg_str8 left_arg_got_type;
-            lg_str8 right_arg_got_type;
-            {
-                bool found;
-                size_t left_arg_idx = lg_table_get_str8(&ctx->symtab.table, left_arg_ident, &found);
-                if (!found) {
-                    mrv_report_error(
-                        &ctx->err,
-                        self->span,
-                        lg_str8_lit("attempted to invoke %{str} operator with unknown symbol %{str}"),
-                        op_ident, left_arg_ident
-                    );
-                    break;
-                }
-
-                size_t right_arg_idx = lg_table_get_str8(&ctx->symtab.table, right_arg_ident, &found);
-                if (!found) {
-                    mrv_report_error(
-                        &ctx->err,
-                        self->span,
-                        lg_str8_lit("attempted to invoke %{str} operator with unknown symbol %{str}"),
-                        op_ident, right_arg_ident
-                    );
-                    break;
-                }
-
-                left_arg_got_type = ctx->symtab.types[left_arg_idx];
-                right_arg_got_type = ctx->symtab.types[right_arg_idx];
-            }
-
-            if (
-                !mrv_ast_is_nil_node(ctx->ast, left_arg) &&
-                (lg_strcmp(left_arg_want_type, left_arg_got_type) != 0)
-            ) {
+            if (ctx->attrtab.kinds[type_idx] == MRV_AttrKind_HostType) {
                 mrv_report_error(
                     &ctx->err,
                     self->span,
                     lg_str8_lit(
-                        "symbol %{str} is wrong type for left arg of operator ${str}\n"
-                        "wanted type %{str}, got %{str}"
+                        "declared symbol %{str} with host type type %{str}\n"
+                        "non-host symbols cannot be bound to host types"
                     ),
-                    left_arg_ident, op_ident, left_arg_want_type, left_arg_got_type
+                    sym_ident, type_ident
                 );
                 break;
             }
-            if (
-                !mrv_ast_is_nil_node(ctx->ast, left_arg) &&
-                (lg_strcmp(left_arg_want_type, left_arg_got_type) != 0)
-            ) {
+        }
+
+        ctx->symtab.types[sym_idx] = type_ident;
+
+        break;
+    }
+
+    case MRV_ASTNodeKind_OperatorInvocation: {
+        MRV_ASTNode *ident = as.OperatorInvocation.ident;
+        MRV_ASTNode *left_arg = as.OperatorInvocation.left_arg;
+        MRV_ASTNode *right_arg = as.OperatorInvocation.right_arg;
+
+        lg_str8 op_ident = mrv_span_to_str8(ident->span, ctx->text);
+        lg_str8 left_arg_ident = mrv_span_to_str8(left_arg->span, ctx->text);
+        lg_str8 right_arg_ident = mrv_span_to_str8(right_arg->span, ctx->text);
+
+        lg_str8 left_arg_want_type;
+        lg_str8 right_arg_want_type;
+        {
+            bool found;
+            size_t op_idx = lg_table_get_str8(&ctx->optab.table, op_ident, &found);
+            if (!found) {
+                mrv_report_error(
+                    &ctx->err,
+                    self->span,
+                    lg_str8_lit("attempted to invoke unknown operator %{str}"),
+                    op_ident
+                );
+                break;
+            }
+
+            left_arg_want_type = ctx->optab.values[op_idx].left_arg_type;
+            right_arg_want_type = ctx->optab.values[op_idx].right_arg_type;
+        }
+
+        lg_str8 left_arg_got_type;
+        lg_str8 right_arg_got_type;
+        {
+            bool found;
+            size_t left_arg_idx = lg_table_get_str8(&ctx->symtab.table, left_arg_ident, &found);
+            if (!found) {
+                mrv_report_error(
+                    &ctx->err,
+                    self->span,
+                    lg_str8_lit("attempted to invoke %{str} operator with unknown symbol %{str}"),
+                    op_ident, left_arg_ident
+                );
+                break;
+            }
+
+            size_t right_arg_idx = lg_table_get_str8(&ctx->symtab.table, right_arg_ident, &found);
+            if (!found) {
+                mrv_report_error(
+                    &ctx->err,
+                    self->span,
+                    lg_str8_lit("attempted to invoke %{str} operator with unknown symbol %{str}"),
+                    op_ident, right_arg_ident
+                );
+                break;
+            }
+
+            left_arg_got_type = ctx->symtab.types[left_arg_idx];
+            right_arg_got_type = ctx->symtab.types[right_arg_idx];
+        }
+
+        if (
+            !mrv_ast_is_nil_node(ctx->ast, left_arg) &&
+            (lg_strcmp(left_arg_want_type, left_arg_got_type) != 0)
+        ) {
+            mrv_report_error(
+                &ctx->err,
+                self->span,
+                lg_str8_lit(
+                    "symbol %{str} is wrong type for left arg of operator ${str}\n"
+                    "wanted type %{str}, got %{str}"
+                ),
+                left_arg_ident, op_ident, left_arg_want_type, left_arg_got_type
+            );
+            break;
+        }
+        if (
+            !mrv_ast_is_nil_node(ctx->ast, right_arg) &&
+            (lg_strcmp(right_arg_want_type, right_arg_got_type) != 0)
+        ) {
+            mrv_report_error(
+                &ctx->err,
+                self->span,
+                lg_str8_lit(
+                    "symbol %{str} is wrong type for right arg of operator ${str}\n"
+                    "wanted type %{str}, got %{str}"
+                ),
+                right_arg_ident, op_ident, right_arg_want_type, right_arg_got_type
+            );
+            break;
+        }
+
+        break;
+    }
+
+    case MRV_ASTNodeKind_StencilArg: {
+        lg_str8 sym_ident = mrv_span_to_str8(as.StencilArg.ident->span, ctx->text);
+        lg_str8 host_type_ident = mrv_span_to_str8(as.StencilArg.host_type->span, ctx->text);
+
+        size_t sym_idx;
+        {
+            bool found;
+            LG_StatusKind status = lg_table_ensure_str8(&ctx->symtab.table, sym_ident, &sym_idx, &found);
+            lg_assert(status == LG_StatusKind_OK);
+            if (found) {
+                mrv_report_error(
+                    &ctx->err,
+                    self->span,
+                    lg_str8_lit("stencil arg %{str} declared multiple times"),
+                    sym_ident
+                );
+                break;
+            }
+        }
+
+        {
+            bool found;
+            size_t type_idx;
+            LG_StatusKind status = lg_table_ensure_str8(&ctx->symtab.table, host_type_ident, &type_idx, &found);
+            lg_assert(status == LG_StatusKind_OK);
+
+            if (found && ctx->attrtab.kinds[type_idx] != MRV_AttrKind_HostType) {
                 mrv_report_error(
                     &ctx->err,
                     self->span,
                     lg_str8_lit(
-                        "symbol %{str} is wrong type for right arg of operator ${str}\n"
-                        "wanted type %{str}, got %{str}"
+                        "declared symbol %{str} with non-host type type %{str}\n"
+                        "host symbols must be bound to host types"
                     ),
-                    right_arg_ident, op_ident, right_arg_want_type, right_arg_got_type
+                    sym_ident, host_type_ident
                 );
                 break;
             }
 
-            break;
+            ctx->attrtab.kinds[type_idx] = MRV_AttrKind_HostType;
         }
 
-        case MRV_ASTNodeKind_StencilDeclaration:
-            mrv_sema_typecheck_r(ctx, as.StencilDeclaration.ident);
-            mrv_sema_typecheck_r(ctx, as.StencilDeclaration.arg_list);
-            mrv_sema_typecheck_r(ctx, as.StencilDeclaration.body);
-            break;
+        ctx->symtab.types[sym_idx] = host_type_ident;
 
-        case MRV_ASTNodeKind_StencilArg: {
-            lg_assert(as.StencilArg.ident->kind == MRV_ASTNodeKind_HostSymbolIdent);
-            lg_assert(as.StencilArg.host_type->kind == MRV_ASTNodeKind_HostTypeIdent);
+        break;
+    }
 
-            lg_str8 sym_ident = mrv_span_to_str8(as.StencilArg.ident->span, ctx->text);
-            lg_str8 host_type_ident = mrv_span_to_str8(as.StencilArg.host_type->span, ctx->text);
-
-            size_t sym_idx;
-            {
-                bool found;
-                LG_StatusKind status = lg_table_ensure_str8(&ctx->symtab.table, sym_ident, &sym_idx, &found);
-                lg_assert(status == LG_StatusKind_OK);
-                if (found) {
-                    mrv_report_error(
-                        &ctx->err,
-                        self->span,
-                        lg_str8_lit("stencil arg %{str} declared multiple times"),
-                        sym_ident
-                    );
-                    break;
-                }
-            }
-
-            {
-                bool found;
-                size_t type_idx;
-                LG_StatusKind status = lg_table_ensure_str8(&ctx->symtab.table, host_type_ident, &type_idx, &found);
-                lg_assert(status == LG_StatusKind_OK);
-
-                if (found && ctx->attrtab.kinds[type_idx] != MRV_AttrKind_HostType) {
-                    mrv_report_error(
-                        &ctx->err,
-                        self->span,
-                        lg_str8_lit(
-                            "declared symbol %{str} with non-host type type %{str}\n"
-                            "host symbols must be bound to host types"
-                        ),
-                        sym_ident, host_type_ident
-                    );
-                    break;
-                }
-
-                ctx->attrtab.kinds[type_idx] = MRV_AttrKind_HostType;
-            }
-
-            ctx->symtab.types[sym_idx] = host_type_ident;
-
-            break;
-        }
-
-        case MRV_ASTNodeKind_StencilArgList:
-            for (uint32_t i = 0; i < as.StencilArgList.n_args; i++) {
-                mrv_sema_typecheck_r(ctx, as.StencilArgList.args[i]);
-            }
-            break;
-
-        case MRV_ASTNodeKind_Block:
-            for (uint32_t i = 0; i < as.Block.n_statements; i++) {
-                mrv_sema_typecheck_r(ctx, as.Block.statements[i]);
-            }
-            break;
-
-        case MRV_ASTNodeKind_Statement:
-            mrv_sema_typecheck_r(ctx, as.Statement.symbol_decl);
-            mrv_sema_typecheck_r(ctx, as.Statement.operator_invocation);
-            break;
-        }
+    default:;
+    }
 }
 
 void
@@ -1932,6 +2205,10 @@ mrv_typecheck(
         .text = text,
         .err.writer = err_writer,
     };
+
+
+    //////////////////////////////////////////////
+    /// ~~ initialize tables ~~
     // TODO: remove magic number capacity
 
     LG_StatusKind status = LG_StatusKind_OK;
@@ -1949,6 +2226,28 @@ mrv_typecheck(
     ctx.attrtab.kinds = lg_arena_alloc_array(&arena, MRV_AttrKind, 1024);
     lg_assert(ctx.attrtab.kinds != NULL);
 
+
+    //////////////////////////////////////////////
+    /// ~~ intrinsic types (just one for now) ~~
+    
+    {
+        size_t idx;
+        LG_StatusKind status = lg_table_ensure_str8(
+            &ctx.attrtab.table,
+            lg_str8_lit("Block"),
+            &idx,
+            NULL
+        );
+        lg_assert(status == LG_StatusKind_OK);
+        ctx.attrtab.kinds[idx] = MRV_AttrKind_Type;
+    }
+    
+
+    //////////////////////////////////////////////
+    /// ~~ do the type checking ~~
+
+    mrv_sema_record_type_decls_r(&ctx, ctx.ast->root);
+    mrv_sema_record_op_decls_r(&ctx, ctx.ast->root);
     mrv_sema_typecheck_r(&ctx, ctx.ast->root);
 
     lg_arena_free_all(&arena);

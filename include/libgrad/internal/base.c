@@ -869,11 +869,8 @@ lg_table_ensure_str8(
     // we can't assume the original string memory will still be alive
     // so we can use the first eight bytes (padded) of the string for
     // comparisons.
-    // mmh has a good avalanache effect, so the odds of a hash collision 
-    // where the first eight bytes of the string are equal is so astronomically
-    // low this is perfectly fine.
-    uint64_t padded_cmp_key = 0;
-    lg_memcpy(&padded_cmp_key, key.p, key.len > 8 ? 8 : key.len);
+    // instead, we'll just use a different hash function.
+    uint64_t padded_cmp_key = lg_hash_16(key.p, key.len > 16 ? 16 : key.len);
 
     LG_StatusKind status = lg_table_ensure_g(table, padded_cmp_key, hash, fingerprint, out_idx, out_was_occupied);
 
@@ -897,8 +894,7 @@ lg_table_get_str8(
     uint8_t fingerprint;
     lg_table_make_hash(key.p, key.len, &hash, &fingerprint);
 
-    uint64_t padded_cmp_key = 0;
-    lg_memcpy(&padded_cmp_key, key.p, key.len > 8 ? 8 : key.len);
+    uint64_t padded_cmp_key = lg_hash_16(key.p, key.len > 16 ? 16 : key.len);
 
     size_t idx = lg_table_get_g(table, padded_cmp_key, hash, fingerprint, out_found);
     return idx;
