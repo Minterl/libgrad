@@ -1,5 +1,7 @@
 language hedral;
 
+(* this is a comment *)
+
 type Address;
 type Index;
 type Scalar;
@@ -22,17 +24,17 @@ operator Multiply (x0 : Scalar, x1 : Scalar) -> Scalar;
 stencil contraction (
     iteration_domain : Host<LG_Polyhedron>,
 
-    y_transform  :  Host<LG_AffineTransform>,
-    x0_transform :  Host<LG_AffineTransform>,
-    x1_transform :  Host<LG_AffineTransform>,
+    y_transform  : Host<LG_AffineTransform>,
+    x0_transform : Host<LG_AffineTransform>,
+    x1_transform : Host<LG_AffineTransform>,
 
-    y_addr_op  :    Host<LG_AffineTransform>,
-    x0_addr_op :    Host<LG_AffineTransform>,
-    x1_addr_op :    Host<LG_AffineTransform>,
+    y_addr_op  : Host<LG_AffineTransform>,
+    x0_addr_op : Host<LG_AffineTransform>,
+    x1_addr_op : Host<LG_AffineTransform>,
 ) {
     %D : Domain = IntroduceIterationDomain(iteration_domain);
 
-    %y_transfor   : AffineTransform = IntroduceAffineTransform(y_transform);
+    %y_transform  : AffineTransform = IntroduceAffineTransform(y_transform);
     %x0_transform : AffineTransform = IntroduceAffineTransform(x0_transform);
     %x1_transform : AffineTransform = IntroduceAffineTransform(x1_transform);
 

@@ -203,6 +203,19 @@ mrv_lexer_skip(MRV_LexerContext *ctx) {
     }
 }
 
+lg_force_inline bool
+mrv_lexer_match_sequence(MRV_LexerContext *ctx, lg_str8 seq) {
+    if (ctx->current_offset + seq.len >= ctx->text.len) {
+        return false;
+    }
+    lg_str8 next_n = (lg_str8){ .len = seq.len, .p = &ctx->text.p[ctx->current_offset]};
+    if (lg_strcmp(next_n, seq) == 0) {
+        ctx->current_offset += seq.len;
+        return true;
+    }
+    return false;
+}
+
 lg_force_inline MRV_Token
 mrv_lexer_consume_char(MRV_LexerContext *ctx) {
     if (ctx->current_offset >= ctx->text.len) {
@@ -361,7 +374,22 @@ mrv_lex(LG_Allocator *artifact_allocator, lg_str8 text, LG_Writer *err_writer) {
             break;
         }
 
-        case '(':
+        case '(': {
+            if (!mrv_lexer_match_sequence(&ctx, lg_str8_lit("(*"))) {
+                goto single_char;
+            }
+            mrv_lexer_skip(&ctx);
+            mrv_lexer_skip(&ctx);
+            const lg_str8 close = lg_str8_lit("*)");
+            while (!mrv_lexer_match_sequence(&ctx, close)) {
+                mrv_lexer_skip(&ctx);
+            }
+            mrv_lexer_skip(&ctx);
+
+            break;
+        }
+
+single_char:
         case ')':
         case '{':
         case '}':
