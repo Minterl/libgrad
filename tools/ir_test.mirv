@@ -10,11 +10,11 @@ type Domain;
 type AffineTransform;
 type AffineAddressOperator;
 
-operator IntroduceIterationDomain(h : Host<LG_Polyhedron>) -> Domain;
-operator IntroduceAffineTransform(h : Host<LG_AffineTransform>) -> AffineTransform;
-operator IntroduceAffineAddressOperator(h : Host<LG_AffineTransform>) -> AffineAddressOperator;
+operator IntroduceIterationDomain(host : << LG_Polyhedron >>) -> Domain;
+operator IntroduceAffineTransform(host : << LG_AffineTransform >>) -> AffineTransform;
+operator IntroduceAffineAddressOperator(host : << LG_AffineTransform >>) -> AffineAddressOperator;
 
-operator For (iter_domain : Domain, block : Block) -> Bound<Coordinate>;
+operator For (iter_domain : Domain, block : Block) -> Coordinate;
 operator ApplyAffineTransform (coord : Coordinate, atran : AffineTransform) -> Coordinate;
 operator ApplyAffineAddressOperator (addr_op : AffineAddressOperator, coord : Coordinate) -> Coordinate;
 operator Access (addr : Address) -> Scalar;
@@ -22,15 +22,15 @@ operator Add (x0 : Scalar, x1 : Scalar) -> Scalar;
 operator Multiply (x0 : Scalar, x1 : Scalar) -> Scalar;
 
 stencil contraction (
-    iteration_domain : Host<LG_Polyhedron>,
+    iteration_domain : << LG_Polyhedron >>,
 
-    y_transform  : Host<LG_AffineTransform>,
-    x0_transform : Host<LG_AffineTransform>,
-    x1_transform : Host<LG_AffineTransform>,
+    y_transform  : << LG_AffineTransform >>,
+    x0_transform : << LG_AffineTransform >>,
+    x1_transform : << LG_AffineTransform >>,
 
-    y_addr_op  : Host<LG_AffineTransform>,
-    x0_addr_op : Host<LG_AffineTransform>,
-    x1_addr_op : Host<LG_AffineTransform>,
+    y_addr_op  : << LG_AffineTransform >>,
+    x0_addr_op : << LG_AffineTransform >>,
+    x1_addr_op : << LG_AffineTransform >>,
 ) {
     %D : Domain = IntroduceIterationDomain(iteration_domain);
 
@@ -42,7 +42,7 @@ stencil contraction (
     %x0_addr_op :   AddressOperator = IntroduceAffineAddressOperator(x0_addr_op);
     %x1_addr_op :   AddressOperator = IntroduceAffineAddressOperator(x1_addr_op);
 
-    %induction_vector : Bound<Coordinate> = For(%D, {
+    %induction_vector : Coordinate = For(%D, {
         %y_coord :  Coordinate = ApplyAffineTransform(%induction_vector, %y_transform);
         %y_addr  :  Address    = ApplyAffineAddressOperator(%y_addr_op, %y_coord);
 

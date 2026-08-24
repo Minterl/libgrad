@@ -65,8 +65,8 @@ mrv_report_error(MRV_Error *err, MRV_Span span, lg_str8 fmt, ...) {
     MRV_X(Comma,              ",") \
     MRV_X(Semicolon,          ";") \
     MRV_X(Equals,             "=") \
-    MRV_X(OpenAngleBracket,   "<") \
-    MRV_X(CloseAngleBracket,  ">") \
+    MRV_X(BeginHostType,      "<<") \
+    MRV_X(EndHostType,        ">>") \
     MRV_X(Language,           "language") \
     MRV_X(Type,               "type") \
     MRV_X(Operator,           "operator") \
@@ -204,12 +204,18 @@ mrv_lexer_skip(MRV_LexerContext *ctx) {
 }
 
 lg_force_inline bool
-mrv_lexer_match_sequence(MRV_LexerContext *ctx, lg_str8 seq) {
+mrv_lexer_match_sequence(MRV_LexerContext *ctx, lg_str8 seq, MRV_Span *lg_nullable out_span) {
     if (ctx->current_offset + seq.len >= ctx->text.len) {
         return false;
     }
     lg_str8 next_n = (lg_str8){ .len = seq.len, .p = &ctx->text.p[ctx->current_offset]};
     if (lg_strcmp(next_n, seq) == 0) {
+        if (out_span != NULL) {
+            *out_span = (MRV_Span) {
+                .offset = ctx->current_offset,
+                .len = seq.len,
+            };
+        }
         ctx->current_offset += seq.len;
         return true;
     }
@@ -282,7 +288,7 @@ mrv_lexer_scan_ident(MRV_LexerContext *ctx, MRV_TokenKind expected_kind) {
             lg_char_is_numeric(ch_i)
         )) {
             mrv_report_error(&ctx->err, tok.span, lg_str8_lit("expected letter, found number"));
-            return (MRV_Token){ .kind = MRV_TokenKind_Error };
+           return (MRV_Token){ .kind = MRV_TokenKind_Error };
         }
         if (lg_unlikely(!lg_char_is_alphanumeric(ch_i) && ch_i != '_')) {
             break;
@@ -374,18 +380,44 @@ mrv_lex(LG_Allocator *artifact_allocator, lg_str8 text, LG_Writer *err_writer) {
             break;
         }
 
+
         case '(': {
-            if (!mrv_lexer_match_sequence(&ctx, lg_str8_lit("(*"))) {
+            if (!mrv_lexer_match_sequence(&ctx, lg_str8_lit("(*"), NULL)) {
                 goto single_char;
             }
             mrv_lexer_skip(&ctx);
             mrv_lexer_skip(&ctx);
             const lg_str8 close = lg_str8_lit("*)");
-            while (!mrv_lexer_match_sequence(&ctx, close)) {
+            while (!mrv_lexer_match_sequence(&ctx, close, NULL)) {
                 mrv_lexer_skip(&ctx);
             }
             mrv_lexer_skip(&ctx);
 
+            break;
+        }
+
+        case '<': {
+            MRV_Span span = {0};
+            if (!mrv_lexer_match_sequence(&ctx, lg_str8_lit("<<"), &span)) {
+                goto unexpected_char;
+            }
+            mrv_tstream_append(&tstream, artifact_allocator, (MRV_Token){
+                .kind = MRV_TokenKind_BeginHostType,
+                .span = span,
+            });
+            break;
+        }
+
+        case '>': {
+            MRV_Span span = {0};
+            const lg_str8 close = lg_str8_lit(">>");
+            if (!mrv_lexer_match_sequence(&ctx, close, &span)) {
+                goto unexpected_char;
+            }
+            mrv_tstream_append(&tstream, artifact_allocator, (MRV_Token){
+                .kind = MRV_TokenKind_EndHostType,
+                .span = span,
+            });
             break;
         }
 
@@ -396,9 +428,7 @@ single_char:
         case ':':
         case ',':
         case ';':
-        case '=': 
-        case '<': 
-        case '>': {
+        case '=': {
             MRV_Token ch = mrv_lexer_consume_char(&ctx);
             mrv_tstream_append(&tstream, ctx.artifact, ch);
 
@@ -461,7 +491,6 @@ enum {
     MRV_X(HostSymbolIdent) \
     MRV_X(HostTypeIdent) \
     MRV_X(OperatorIdent) \
-    MRV_X(TypeName) \
     MRV_X(SymbolDeclaration) \
     MRV_X(LanguageDeclaration) \
     MRV_X(StencilDeclaration) \
@@ -517,11 +546,6 @@ MRV_ASTNodeChildren {
     struct {} HostSymbolIdent;
     struct {} HostTypeIdent;
     struct {} OperatorIdent;
-
-    struct {
-        MRV_ASTNode *outer_ident;
-        MRV_ASTNode *inner_typename;
-    } TypeName;
 
     struct {
         MRV_ASTNode *ident;
@@ -862,10 +886,10 @@ mrv_parse_host_symbol_ident(MRV_ParserContext *ctx) {
 MRV_ASTNode*
 mrv_parse_host_type_ident(MRV_ParserContext *ctx) {
     MRV_Token ident = mrv_parser_expect(ctx, MRV_TokenKind_Ident);
+    mrv_parser_expect(ctx, MRV_TokenKind_EndHostType);
     MRV_ASTNode *node = mrv_parser_mknode(ctx, HostTypeIdent, ident.span);
     return node;
 }
-
 
 MRV_ASTNode*
 mrv_parse_symbol_ident(MRV_ParserContext *ctx) {
@@ -882,63 +906,13 @@ mrv_parse_type_ident(MRV_ParserContext *ctx) {
 }
 
 MRV_ASTNode*
-mrv_parse_type_name(MRV_ParserContext *ctx, bool parent_is_host) {
-    // our job here isn't to validate that host types require a parameter,
-    // but just to make sure that type identifiers inside Host<...> are parsed 
-    // as HostTypeIdent
-    if (parent_is_host) {
-        MRV_ASTNode *host_type = mrv_parse_host_type_ident(ctx);
-        MRV_ASTNode *node = mrv_parser_mknode(
-            ctx,
-            TypeName,
-            host_type->span,
-            .outer_ident = host_type,
-            .inner_typename = mrv_parser_nil_node(ctx),
-        );
-        return node;
-    }
-
-    MRV_ASTNode *outer_ident = mrv_parse_type_ident(ctx);
-    lg_str8 node_text = mrv_span_to_str8(outer_ident->span, ctx->text);
-    bool is_host = lg_strcmp(node_text, lg_str8_lit("Host"));
-
-    MRV_Token peek = mrv_parser_peek(ctx);
-
-    if (peek.kind != MRV_TokenKind_OpenAngleBracket) {
-        MRV_ASTNode *node = mrv_parser_mknode(
-            ctx,
-            TypeName,
-            outer_ident->span,
-            .outer_ident = outer_ident,
-            .inner_typename = mrv_parser_nil_node(ctx),
-        );
-        return node;
-    }
-
-    mrv_parser_consume(ctx); // '<'
-    MRV_ASTNode *inner_typename = mrv_parse_type_name(ctx, is_host);
-    mrv_parser_expect(ctx, MRV_TokenKind_CloseAngleBracket);
-
-    MRV_Span all_span = mrv_get_bounding_span(2, (MRV_ASTNode*[]){outer_ident, inner_typename});
-    MRV_ASTNode *node = mrv_parser_mknode(
-        ctx,
-        TypeName,
-        all_span,
-        .inner_typename = inner_typename,
-        .outer_ident = outer_ident,
-    );
-
-    return node;
-}
-
-MRV_ASTNode*
 mrv_parse_symbol_decl(MRV_ParserContext *ctx) {
     MRV_ASTNode *symbol_ident = mrv_parse_symbol_ident(ctx);
     mrv_parser_expect(ctx, MRV_TokenKind_Colon);
-    MRV_ASTNode *type_name = mrv_parse_type_name(ctx, false);
+    MRV_ASTNode *type_ident = mrv_parse_type_ident(ctx);
 
-    MRV_Span all_span = mrv_get_bounding_span(2, (MRV_ASTNode*[]){symbol_ident, type_name});
-    MRV_ASTNode *node = mrv_parser_mknode(ctx, SymbolDeclaration, all_span, symbol_ident, type_name);
+    MRV_Span all_span = mrv_get_bounding_span(2, (MRV_ASTNode*[]){symbol_ident, type_ident});
+    MRV_ASTNode *node = mrv_parser_mknode(ctx, SymbolDeclaration, all_span, symbol_ident, type_ident);
 
     return node;
 }
@@ -1111,7 +1085,8 @@ MRV_ASTNode*
 mrv_parse_stencil_arg(MRV_ParserContext *ctx) {
     MRV_ASTNode* name = mrv_parse_host_symbol_ident(ctx);
     mrv_parser_expect(ctx, MRV_TokenKind_Colon);
-    MRV_ASTNode* type = mrv_parse_type_name(ctx, false);
+    mrv_parser_expect(ctx, MRV_TokenKind_BeginHostType);
+    MRV_ASTNode* type = mrv_parse_host_type_ident(ctx);
     
     MRV_Span all_span = mrv_get_bounding_span(2, (MRV_ASTNode*[]){name ,type});
     MRV_ASTNode *node = mrv_parser_mknode(ctx, StencilArg, all_span, .ident = name, .host_type = type);
@@ -1211,7 +1186,16 @@ MRV_ASTNode*
 mrv_parse_operator_decl_arg(MRV_ParserContext *ctx) {
     MRV_ASTNode *name = mrv_parse_host_symbol_ident(ctx);
     mrv_parser_expect(ctx, MRV_TokenKind_Colon);
-    MRV_ASTNode *type = mrv_parse_type_name(ctx, false);
+
+    MRV_ASTNode *type = mrv_parser_nil_node(ctx);
+
+    MRV_Token peek = mrv_parser_peek(ctx);
+    if (peek.kind == MRV_TokenKind_BeginHostType) {
+        mrv_parser_consume(ctx);
+        type = mrv_parse_host_type_ident(ctx);
+    } else {
+        type = mrv_parse_type_ident(ctx);
+    }
     
     MRV_Span all_span = mrv_get_bounding_span(2, (MRV_ASTNode*[]){name ,type});
     MRV_ASTNode *node = mrv_parser_mknode(ctx, OperatorDeclarationArg, all_span, .ident = name, .type = type);
@@ -1264,7 +1248,7 @@ end_loop:;
     MRV_Token peek = mrv_parser_peek(ctx);
     if (peek.kind == MRV_TokenKind_RightArrow) {
         mrv_parser_consume(ctx);
-        typename = mrv_parse_type_name(ctx, false);
+        typename = mrv_parse_type_ident(ctx);
     }
 
     mrv_parser_expect(ctx, MRV_TokenKind_Semicolon);
@@ -1539,11 +1523,6 @@ mrv_ast_dump_r(MRV_ASTDumpContext *ctx, MRV_ASTNode *lg_nullable parent, MRV_AST
             mrv_ast_dump_r(ctx, self, as.Statement.symbol_decl);
             mrv_ast_dump_r(ctx, self, as.Statement.operator_invocation);
             break;
-
-        case MRV_ASTNodeKind_TypeName:
-            mrv_ast_dump_r(ctx, self, as.TypeName.outer_ident);
-            mrv_ast_dump_r(ctx, self, as.TypeName.inner_typename);
-            break;
         }
 
     mrv_ast_dump_indent(ctx);
@@ -1691,9 +1670,6 @@ mrv_sema_typecheck_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
             mrv_sema_typecheck_r(ctx, as.Statement.symbol_decl);
             mrv_sema_typecheck_r(ctx, as.Statement.operator_invocation);
             break;
-          break;
-        case MRV_ASTNodeKind_TypeName:
-          break;
         }
 }
 
