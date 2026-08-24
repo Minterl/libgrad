@@ -24,23 +24,23 @@ operator Multiply (x0 : Scalar, x1 : Scalar) -> Scalar;
 stencil contraction (
     iteration_domain : << LG_Polyhedron >>,
 
-    y_transform  : << LG_AffineTransform >>,
-    x0_transform : << LG_AffineTransform >>,
-    x1_transform : << LG_AffineTransform >>,
+    y_atran  : << LG_AffineTransform >>,
+    x0_atran : << LG_AffineTransform >>,
+    x1_atran : << LG_AffineTransform >>,
 
-    y_addr_op  : << LG_AffineTransform >>,
-    x0_addr_op : << LG_AffineTransform >>,
-    x1_addr_op : << LG_AffineTransform >>,
+    y_address_op  : << LG_AffineTransform >>,
+    x0_address_op : << LG_AffineTransform >>,
+    x1_address_op : << LG_AffineTransform >>,
 ) {
     %D : Domain = IntroduceIterationDomain(iteration_domain);
 
-    %y_transform  : AffineTransform = IntroduceAffineTransform(y_transform);
-    %x0_transform : AffineTransform = IntroduceAffineTransform(x0_transform);
-    %x1_transform : AffineTransform = IntroduceAffineTransform(x1_transform);
+    %y_transform  : AffineTransform = IntroduceAffineTransform(y_atran);
+    %x0_transform : AffineTransform = IntroduceAffineTransform(x0_atran);
+    %x1_transform : AffineTransform = IntroduceAffineTransform(x1_atran);
 
-    %y_addr_op  :   AddressOperator = IntroduceAffineAddressOperator(y_addr_op);
-    %x0_addr_op :   AddressOperator = IntroduceAffineAddressOperator(x0_addr_op);
-    %x1_addr_op :   AddressOperator = IntroduceAffineAddressOperator(x1_addr_op);
+    %y_addr_op  :   AffineAddressOperator = IntroduceAffineAddressOperator(y_address_op);
+    %x0_addr_op :   AffineAddressOperator = IntroduceAffineAddressOperator(x0_address_op);
+    %x1_addr_op :   AffineAddressOperator = IntroduceAffineAddressOperator(x1_address_op);
 
     %induction_vector : Coordinate = For(%D, {
         %y_coord :  Coordinate = ApplyAffineTransform(%induction_vector, %y_transform);

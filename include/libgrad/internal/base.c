@@ -666,11 +666,11 @@ lg_table_probe(
     uint64_t key,
     uint64_t hash,
     uint8_t fingerprint,
+    bool search_for_empty,
     size_t *lg_nullable out_last_idx, 
     bool *lg_nullable out_found
 ) {
-    // Be warned when working on this function,
-    // the behavior of the other table functions are very tightly coupled to this one.
+    // TODO: split this into two functions this is one is doing way too much
 
     const size_t fingerprint_blocks_cap = table->cap / 8;
     const size_t starting_fingerprint_block_idx = (hash % table->cap) / 8;
@@ -697,7 +697,10 @@ lg_table_probe(
         const bool has_match = lg_u64_has_zero_byte(block ^ fingerprint_broadcasted);
         if (has_match) {
             for (size_t j = 0; j < 8; j++) {
-                if (table->fingerprints_as[i].individual[j] == LG_TableSentinel_Empty) {
+                if (
+                    table->fingerprints_as[i].individual[j] == LG_TableSentinel_Empty &&
+                    search_for_empty
+                ) {
                     ret_last_idx = i * 8 + j;
                     goto out_success;
                 }
@@ -712,18 +715,17 @@ lg_table_probe(
             }
         }
 
-        // TODO: @perf refactor to allow a get to not search for an
-        // empty space after the zero sentintel is found
-        // and also to look less stupid
-        const bool has_empty_sentinel = lg_u64_has_zero_byte(block);
-        if (has_empty_sentinel) {
-            for (size_t j = 0; j < 8; j++) {
-                if (table->fingerprints_as[i].individual[j] == LG_TableSentinel_Empty) {
-                    ret_last_idx = i * 8 + j;
-                    goto out_success;
+        if (search_for_empty) {
+            const bool has_empty_sentinel = lg_u64_has_zero_byte(block);
+            if (has_empty_sentinel) {
+                for (size_t j = 0; j < 8; j++) {
+                    if (table->fingerprints_as[i].individual[j] == LG_TableSentinel_Empty) {
+                        ret_last_idx = i * 8 + j;
+                        goto out_success;
+                    }
                 }
+                lg_unreachable();
             }
-            lg_unreachable();
         }
     }
 
@@ -737,7 +739,12 @@ lg_table_probe(
     if (out_found != NULL) {
         *out_found = false;
     }
-    return LG_StatusKind_OutOfMemory;
+
+    if (search_for_empty) {
+        return LG_StatusKind_OutOfMemory;
+    } else {
+        return LG_StatusKind_NotFound;
+    }
 
 out_success:
     if (out_last_idx != NULL) {
@@ -764,7 +771,7 @@ lg_table_ensure_g(
 
     bool found;
     size_t last_idx;
-    status = lg_table_probe(table, cmp_key, hash, fingerprint, &last_idx, &found);
+    status = lg_table_probe(table, cmp_key, hash, fingerprint, true, &last_idx, &found);
     if (status != LG_StatusKind_OK) {
         found = false;
         last_idx = 0;
@@ -800,10 +807,10 @@ lg_table_get_g(
 
     bool found;
     size_t last_idx;
-    LG_StatusKind status = lg_table_probe(table, cmp_key, hash, fingerprint, &last_idx, &found);
-    lg_assert(status == LG_StatusKind_OK); // we are't allocating a slot, and this only returns
-                                           // not ok when we're out of capacity
-
+    LG_StatusKind status = lg_table_probe(table, cmp_key, hash, fingerprint, false, &last_idx, &found);
+    // we are't allocating a slot, and this only returns not ok when we're out of capacity or
+    // did not find something.
+    lg_assert(status == LG_StatusKind_OK || status == LG_StatusKind_NotFound); 
     if (out_found != NULL) {
         *out_found = found;
     }
@@ -867,7 +874,6 @@ lg_table_ensure_str8(
     // low this is perfectly fine.
     uint64_t padded_cmp_key = 0;
     lg_memcpy(&padded_cmp_key, key.p, key.len > 8 ? 8 : key.len);
-    lg_table_make_hash((uint8_t*)&key, 4, &hash, &fingerprint);
 
     LG_StatusKind status = lg_table_ensure_g(table, padded_cmp_key, hash, fingerprint, out_idx, out_was_occupied);
 
