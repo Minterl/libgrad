@@ -14,12 +14,13 @@ operator IntroduceIterationDomain(host : << LG_Polyhedron >>) -> Domain;
 operator IntroduceAffineTransform(host : << LG_AffineTransform >>) -> AffineTransform;
 operator IntroduceAffineAddressOperator(host : << LG_AffineTransform >>) -> AffineAddressOperator;
 
-operator For (iter_domain : Domain, block : Block) -> Coordinate;
 operator ApplyAffineTransform (coord : Coordinate, atran : AffineTransform) -> Coordinate;
 operator ApplyAffineAddressOperator (addr_op : AffineAddressOperator, coord : Coordinate) -> Coordinate;
 operator Access (addr : Address) -> Scalar;
 operator Add (x0 : Scalar, x1 : Scalar) -> Scalar;
 operator Multiply (x0 : Scalar, x1 : Scalar) -> Scalar;
+
+control_flow For (iteration_domain : Domain) -> Coordinate;
 
 stencil contraction (
     iteration_domain : << LG_Polyhedron >>,
@@ -42,7 +43,7 @@ stencil contraction (
     %x0_addr_op :   AffineAddressOperator = IntroduceAffineAddressOperator(x0_address_op);
     %x1_addr_op :   AffineAddressOperator = IntroduceAffineAddressOperator(x1_address_op);
 
-    %induction_vector : Coordinate = For(%D, {
+    For (%D) (%induction_vector : Coordinate) {
         %y_coord :  Coordinate = ApplyAffineTransform(%induction_vector, %y_transform);
         %y_addr  :  Address    = ApplyAffineAddressOperator(%y_addr_op, %y_coord);
 
@@ -57,5 +58,5 @@ stencil contraction (
         %y  : Scalar = Multiply(%x0, %x1);
 
         YieldAccumulate(%y_addr, %y);
-    });
+    }
 }
