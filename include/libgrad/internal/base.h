@@ -349,7 +349,7 @@ lg_str8 {
 #define lg_str8_lit(str) ((lg_str8){ .len = sizeof(str) - 1, .p = (uint8_t*)(str) })
 
 typedef struct
-lg_writer {
+LG_Writer {
     void *ctx;
     /// Must copy `str`, since it is not guaranteed to live any longer
     /// than the lifetime of the call to `Write`.

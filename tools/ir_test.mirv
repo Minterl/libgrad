@@ -1,4 +1,4 @@
-language hedral;
+language Hedral;
 
 (* this is a comment *)
 
@@ -19,6 +19,9 @@ operator ApplyAffineAddressOperator (addr_op : AffineAddressOperator, coord : Co
 operator Access (addr : Address) -> Scalar;
 operator Add (x0 : Scalar, x1 : Scalar) -> Scalar;
 operator Multiply (x0 : Scalar, x1 : Scalar) -> Scalar;
+
+operator YieldAssign (addr : Address, val : Scalar);
+operator YieldAccumulate(addr : Address, val : Scalar);
 
 control_flow For (iteration_domain : Domain) -> Coordinate;
 
