@@ -2217,6 +2217,14 @@ mrv_typecheck(
     mrv_sema_record_type_decls_r(&ctx, ctx.ast->root);
     mrv_sema_record_op_and_cf_decls_r(&ctx, ctx.ast->root);
 
+    LG_TableIter iter = {0};
+    lg_table_iter_init(&iter, &ctx.ldesc.table);
+
+    size_t idx = 0;
+    while (lg_table_iter_advance(&iter, &idx, NULL)) {
+        lg_str8 name = ctx.ldesc.entries[idx].name;
+        lg_dbgf("str: %lu %p %.*s, kind: %d, idx: %lu", name.len, name.p, name.len, name.p, ctx.ldesc.entries[idx].kind, idx);
+    }
 
     lg_arena_free_all(&arena);
 }

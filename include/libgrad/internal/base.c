@@ -907,27 +907,44 @@ lg_table_iter_init(LG_TableIter *iter, LG_Table *table) {
 }
 
 lg_force_inline bool 
-lg_table_iter_advance(LG_TableIter *iter) {
-    const size_t fingerprint_blocks_cap = iter->table->cap / 8;
+lg_table_iter_advance(
+    LG_TableIter *iter,
+    size_t *lg_nullable out_idx,
+    uint64_t *lg_nullable out_cmp_key
+) {
+    lg_assert(lg_next_pow2(iter->table->cap) == iter->table->cap && iter->table->cap >= 8);
 
-    for (; iter->matrix_coord[0] < fingerprint_blocks_cap; iter->matrix_coord[0]++) {
-        if (iter->table->fingerprints_as[iter->matrix_coord[0]].block == 0) {
-            iter->matrix_coord[0]++;
-            continue;
-        }
+    const size_t fingerprint_blocks_cap = iter->table->cap >> 3;
 
-        for (; iter->matrix_coord[1] < 8; iter->matrix_coord[1]++) {
-            const uint8_t fingerprint = iter->table->fingerprints_as[iter->matrix_coord[0]].individual[iter->matrix_coord[1]];
-            if (fingerprint != LG_TableSentinel_Empty) {
-                iter->idx = iter->matrix_coord[0] * 8 + iter->matrix_coord[1];
-                iter->key = iter->table->keys[iter->matrix_coord[0] * 8 + iter->matrix_coord[1]];
-                iter->matrix_coord[1]++;
-                return true;
+    bool found = false;
+    size_t outer_idx = iter->next_idx >> 3; // / 8
+    uint8_t inner_idx = iter->next_idx & 7; // % 8
+
+    while (outer_idx < fingerprint_blocks_cap) {
+        uint8_t *block = iter->table->fingerprints_as[outer_idx].individual;
+        for (; inner_idx < 8; inner_idx++) {
+            if (block[inner_idx] != LG_TableSentinel_Empty) {
+                found = true;
+                goto out;
             }
         }
-
-        iter->matrix_coord[1] = 0;
+        outer_idx++;
+        inner_idx = 0;
     }
 
-    return false;
+out:
+    if (lg_likely(found)) {
+        size_t cur_idx = (outer_idx << 3) + inner_idx;
+        if (out_idx != NULL) {
+            *out_idx = cur_idx;
+        }
+        if (out_cmp_key != NULL) {
+            *out_cmp_key = iter->table->keys[cur_idx];
+        }
+        iter->next_idx = cur_idx + 1;
+    } else {
+        iter->next_idx = iter->table->cap;
+    }
+
+    return found;
 }

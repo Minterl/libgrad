@@ -422,14 +422,7 @@ LG_Table {
 typedef struct
 LG_TableIter {
     LG_Table *table;
-
-    uint32_t key;
-    size_t idx;
-
-    /// This treats the table fingerprints array as a matrix in R^2
-    /// with dims {8 x `iter.table.cap` / 8} i.e there are 8 fingerprints per
-    /// u64 in the table key list.
-    size_t matrix_coord[2];
+    size_t    next_idx;
 } LG_TableIter;
 
 LG_StatusKind 
@@ -468,6 +461,10 @@ lg_table_iter_init(LG_TableIter *iter, LG_Table *table);
 
 /// Returns false once the iterator is finished.
 lg_force_inline bool 
-lg_table_iter_advance(LG_TableIter *iter);
+lg_table_iter_advance(
+    LG_TableIter *iter,
+    size_t *lg_nullable out_idx,
+    uint64_t *lg_nullable out_cmp_key
+);
 
 #endif // LG_BASE_H_
