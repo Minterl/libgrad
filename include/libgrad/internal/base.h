@@ -342,8 +342,22 @@ lg_arena_free_all(LG_Arena *arena);
 typedef struct
 lg_str8 {
     size_t    len;
-    uint8_t  *p  lg_check_bounds(len);
+    uint8_t  *p lg_check_bounds(len);
 } lg_str8;
+
+typedef struct
+LG_StringListHead {
+    struct LG_StringListHead *next;
+    struct LG_StringListHead *prev;
+
+    size_t   len;
+    uint8_t  data[];
+} LG_StringListHead;
+
+typedef struct
+LG_StringList {
+    LG_StringListHead *tail;
+} LG_StringList;
 
 // We use sizeof(str) - 1 to trim the null terminator
 #define lg_str8_lit(str) ((lg_str8){ .len = sizeof(str) - 1, .p = (uint8_t*)(str) })
@@ -395,6 +409,11 @@ lg_char_is_numeric(uint8_t ch);
 lg_force_inline bool
 lg_char_is_alphanumeric(uint8_t ch);
 
+LG_StatusKind
+lg_strlist_cpy_append(LG_StringList *strlist, LG_Arena *arena, lg_str8 str);
+
+void
+lg_strlist_write(LG_StringList *strlist, LG_Writer *writer);
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
