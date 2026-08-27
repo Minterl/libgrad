@@ -2250,16 +2250,18 @@ mrv_ldesc_destroy(MRV_LanguageDescriptor *ldesc) {
 
 typedef struct
 MRV_SourcegenContext {
-    LG_Writer *header_file_writer;
+    LG_Arena                 arena;
+    LG_Writer               *header_file_writer;
+    MRV_LanguageDescriptor  *ldesc;
 } MRV_SourcegenContext;
 
 void
-mrv_sg_symbol_type(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc, lg_str8 name) {
+mrv_sg_symbol_type(MRV_SourcegenContext *ctx, lg_str8 name) {
     bool found;
-    size_t idx = lg_table_get_str8(&ldesc->table, name, &found);
+    size_t idx = lg_table_get_str8(&ctx->ldesc->table, name, &found);
     lg_assert(found);
 
-    MRV_LanguageDescriptorTableEntry entry = ldesc->entries[idx];
+    MRV_LanguageDescriptorTableEntry entry = ctx->ldesc->entries[idx];
 
     lg_assert(entry.kind == MRV_LanguageDescriptorTableEntryKind_Type);
 
@@ -2267,7 +2269,7 @@ mrv_sg_symbol_type(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc, lg_
         lg_printf(
             ctx->header_file_writer,
             lg_str8_lit("LG_%{str}Symbol_%{str}"),
-            ldesc->language_name, entry.name
+            ctx->ldesc->language_name, entry.name
         );
     } else if (entry.as.type.type_kind == MRV_TypeKind_Host) {
         lg_write(ctx->header_file_writer, entry.name);
@@ -2277,18 +2279,18 @@ mrv_sg_symbol_type(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc, lg_
 }
 
 void
-mrv_sg_type_enum(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
+mrv_sg_type_enum(MRV_SourcegenContext *ctx) {
     lg_printf(ctx->header_file_writer, lg_str8_lit(
         "\ntypedef uint8_t\nLG_%{str}Type;\n"
         "enum\nLG_%{str}Type {\n"
-    ), ldesc->language_name, ldesc->language_name);
+    ), ctx->ldesc->language_name, ctx->ldesc->language_name);
 
     LG_TableIter iter = {0};
-    lg_table_iter_init(&iter, &ldesc->table);
+    lg_table_iter_init(&iter, &ctx->ldesc->table);
 
     size_t idx;
     while (lg_table_iter_advance(&iter, &idx, NULL)) {
-        MRV_LanguageDescriptorTableEntry entry = ldesc->entries[idx];
+        MRV_LanguageDescriptorTableEntry entry = ctx->ldesc->entries[idx];
         if (
             entry.kind != MRV_LanguageDescriptorTableEntryKind_Type ||
             entry.as.type.type_kind != MRV_TypeKind_Native
@@ -2298,8 +2300,8 @@ mrv_sg_type_enum(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
 
         lg_printf(
             ctx->header_file_writer,
-            lg_str8_lit("   LG_%{str}Type_%{str},\n"),
-            ldesc->language_name, entry.name
+            lg_str8_lit("     LG_%{str}Type_%{str},\n"),
+            ctx->ldesc->language_name, entry.name
         );
     }
 
@@ -2307,23 +2309,23 @@ mrv_sg_type_enum(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
 }
 
 void
-mrv_sg_opcode_enum(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
+mrv_sg_opcode_enum(MRV_SourcegenContext *ctx) {
     lg_printf(ctx->header_file_writer, lg_str8_lit(
         "\ntypedef uint8_t\nLG_%{str}Opcode;\n"
         "enum\nLG_%{str}Opcode {\n"
-    ), ldesc->language_name, ldesc->language_name);
+    ), ctx->ldesc->language_name, ctx->ldesc->language_name);
 
     LG_TableIter iter = {0};
-    lg_table_iter_init(&iter, &ldesc->table);
+    lg_table_iter_init(&iter, &ctx->ldesc->table);
 
     size_t idx;
     while (lg_table_iter_advance(&iter, &idx, NULL)) {
-        MRV_LanguageDescriptorTableEntry entry = ldesc->entries[idx];
+        MRV_LanguageDescriptorTableEntry entry = ctx->ldesc->entries[idx];
         if (entry.kind == MRV_LanguageDescriptorTableEntryKind_Operator) {
             lg_printf(
                 ctx->header_file_writer,
                 lg_str8_lit("    LG_%{str}Opcode_%{str},\n"),
-                ldesc->language_name, entry.name
+                ctx->ldesc->language_name, entry.name
             );
         } else if (entry.kind == MRV_LanguageDescriptorTableEntryKind_ControlFlow) {
             lg_printf(
@@ -2332,8 +2334,8 @@ mrv_sg_opcode_enum(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
                     "    LG_%{str}Opcode_%{str}Begin,\n"
                     "    LG_%{str}Opcode_%{str}End,\n"
                 ),
-                ldesc->language_name, entry.name,
-                ldesc->language_name, entry.name
+                ctx->ldesc->language_name, entry.name,
+                ctx->ldesc->language_name, entry.name
             );
         }
     }
@@ -2342,13 +2344,13 @@ mrv_sg_opcode_enum(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
 }
 
 void
-mrv_sg_symbol_types(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
+mrv_sg_symbol_types(MRV_SourcegenContext *ctx) {
     LG_TableIter iter = {0};
-    lg_table_iter_init(&iter, &ldesc->table);
+    lg_table_iter_init(&iter, &ctx->ldesc->table);
 
     size_t idx;
     while (lg_table_iter_advance(&iter, &idx, NULL)) {
-        MRV_LanguageDescriptorTableEntry entry = ldesc->entries[idx];
+        MRV_LanguageDescriptorTableEntry entry = ctx->ldesc->entries[idx];
         if (
             entry.kind != MRV_LanguageDescriptorTableEntryKind_Type ||
             entry.as.type.type_kind != MRV_TypeKind_Native
@@ -2357,31 +2359,31 @@ mrv_sg_symbol_types(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
         }
 
         lg_write(ctx->header_file_writer, lg_str8_lit("\ntypedef struct\n"));
-        mrv_sg_symbol_type(ctx, ldesc, entry.name);
+        mrv_sg_symbol_type(ctx, entry.name);
         lg_write(ctx->header_file_writer, lg_str8_lit(" {\n    uint32_t id;\n} "));
-        mrv_sg_symbol_type(ctx, ldesc, entry.name);
+        mrv_sg_symbol_type(ctx, entry.name);
         lg_write(ctx->header_file_writer, lg_str8_lit(";\n"));
     }
 }
 
 void
-mrv_sg_expr_types(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
+mrv_sg_node_types(MRV_SourcegenContext *ctx) {
     LG_TableIter iter = {0};
-    lg_table_iter_init(&iter, &ldesc->table);
+    lg_table_iter_init(&iter, &ctx->ldesc->table);
 
     size_t idx;
     while (lg_table_iter_advance(&iter, &idx, NULL)) {
-        MRV_LanguageDescriptorTableEntry entry = ldesc->entries[idx];
+        MRV_LanguageDescriptorTableEntry entry = ctx->ldesc->entries[idx];
         if (entry.kind == MRV_LanguageDescriptorTableEntryKind_Operator) {
             lg_printf(
                 ctx->header_file_writer,
                 lg_str8_lit("\ntypedef struct\nLG_%{str}Node_%{str} {"),
-                ldesc->language_name, entry.name
+                ctx->ldesc->language_name, entry.name
             );
 
             if (entry.as.operator.left_arg_name.len != 0) {
                 lg_write(ctx->header_file_writer, lg_str8_lit("\n    "));
-                mrv_sg_symbol_type(ctx, ldesc, entry.as.operator.left_arg_type);
+                mrv_sg_symbol_type(ctx, entry.as.operator.left_arg_type);
                 lg_printf(
                     ctx->header_file_writer,
                     lg_str8_lit(" %{str};"),
@@ -2390,7 +2392,7 @@ mrv_sg_expr_types(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
             }
             if (entry.as.operator.right_arg_name.len != 0) {
                 lg_write(ctx->header_file_writer, lg_str8_lit("\n    "));
-                mrv_sg_symbol_type(ctx, ldesc, entry.as.operator.right_arg_type);
+                mrv_sg_symbol_type(ctx, entry.as.operator.right_arg_type);
                 lg_printf(
                     ctx->header_file_writer,
                     lg_str8_lit(" %{str};"),
@@ -2399,14 +2401,14 @@ mrv_sg_expr_types(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
             }
             if (entry.as.operator.return_type.len != 0) {
                 lg_write(ctx->header_file_writer, lg_str8_lit("\n    "));
-                mrv_sg_symbol_type(ctx, ldesc, entry.as.operator.return_type);
+                mrv_sg_symbol_type(ctx, entry.as.operator.return_type);
                 lg_write(ctx->header_file_writer, lg_str8_lit(" return_val;"));
             }
             
             lg_printf(
                 ctx->header_file_writer,
                 lg_str8_lit("\n} LG_%{str}Node_%{str};\n"),
-                ldesc->language_name, entry.name
+                ctx->ldesc->language_name, entry.name
             );
         } else if (entry.kind == MRV_LanguageDescriptorTableEntryKind_ControlFlow) {
             // the begin node
@@ -2414,17 +2416,17 @@ mrv_sg_expr_types(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
                 lg_printf(
                     ctx->header_file_writer,
                     lg_str8_lit("\ntypedef struct\nLG_%{str}Node_%{str}Begin {"),
-                    ldesc->language_name, entry.name
+                    ctx->ldesc->language_name, entry.name
                 );
 
                 if (entry.as.control_flow.binding_type.len != 0) {
                     lg_write(ctx->header_file_writer, lg_str8_lit("\n    "));
-                    mrv_sg_symbol_type(ctx, ldesc, entry.as.control_flow.binding_type);
+                    mrv_sg_symbol_type(ctx, entry.as.control_flow.binding_type);
                     lg_write(ctx->header_file_writer, lg_str8_lit(" binding;"));
                 }
                 if (entry.as.control_flow.arg_type.len != 0) {
                     lg_write(ctx->header_file_writer, lg_str8_lit("\n    "));
-                    mrv_sg_symbol_type(ctx, ldesc, entry.as.control_flow.arg_type);
+                    mrv_sg_symbol_type(ctx, entry.as.control_flow.arg_type);
                     lg_printf(
                         ctx->header_file_writer,
                         lg_str8_lit(" %{str};"),
@@ -2435,7 +2437,7 @@ mrv_sg_expr_types(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
                 lg_printf(
                     ctx->header_file_writer,
                     lg_str8_lit("\n} LG_%{str}Node_%{str}Begin;\n"),
-                    ldesc->language_name, entry.name
+                    ctx->ldesc->language_name, entry.name
                 );
             }
 
@@ -2444,13 +2446,13 @@ mrv_sg_expr_types(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
                 lg_printf(
                     ctx->header_file_writer,
                     lg_str8_lit("\ntypedef struct\nLG_%{str}Node_%{str}End {"),
-                    ldesc->language_name, entry.name
+                    ctx->ldesc->language_name, entry.name
                 );
                 lg_write(ctx->header_file_writer, lg_str8_lit("\n    uint8_t _filler;"));
                 lg_printf(
                     ctx->header_file_writer,
                     lg_str8_lit("\n} LG_%{str}Node_%{str}End;\n"),
-                    ldesc->language_name, entry.name
+                    ctx->ldesc->language_name, entry.name
                 );
             }
         }
@@ -2458,9 +2460,58 @@ mrv_sg_expr_types(MRV_SourcegenContext *ctx, MRV_LanguageDescriptor *ldesc) {
 }
 
 void
+mrv_sg_node_union_type(MRV_SourcegenContext *ctx) {
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\ntypedef struct\nLG_%{str}Node {"), ctx->ldesc->language_name);
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}Opcode opcode;"), ctx->ldesc->language_name);
+
+    lg_write(ctx->header_file_writer, lg_str8_lit("\n    union {"));
+    {
+        LG_TableIter iter = {0};
+        lg_table_iter_init(&iter, &ctx->ldesc->table);
+
+        size_t idx;
+        while (lg_table_iter_advance(&iter, &idx, NULL)) {
+            MRV_LanguageDescriptorTableEntry entry = ctx->ldesc->entries[idx];
+            if (entry.kind == MRV_LanguageDescriptorTableEntryKind_Operator) {
+                lg_printf(ctx->header_file_writer, lg_str8_lit("\n        LG_%{str}Node_%{str} %{str};"), ctx->ldesc->language_name, entry.name, entry.name);
+            } else if (entry.kind == MRV_LanguageDescriptorTableEntryKind_ControlFlow) {
+                lg_printf(ctx->header_file_writer, lg_str8_lit("\n        LG_%{str}Node_%{str}Begin %{str}Begin;"), ctx->ldesc->language_name, entry.name, entry.name);
+                lg_printf(ctx->header_file_writer, lg_str8_lit("\n        LG_%{str}Node_%{str}End %{str}End;"), ctx->ldesc->language_name, entry.name, entry.name);
+            }
+        }
+    }
+    lg_write(ctx->header_file_writer, lg_str8_lit("\n    } as;"));
+
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n} LG_%{str}Node;\n"), ctx->ldesc->language_name);
+}
+
+void
+mrv_sg_builder_types(MRV_SourcegenContext *ctx) {
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\ntypedef struct\nLG_%{str}NodeList {"), ctx->ldesc->language_name);
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n    struct LG_%{str}NodeList *prev;"), ctx->ldesc->language_name);
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}Node node;"), ctx->ldesc->language_name);
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n} LG_%{str}NodeList;\n"), ctx->ldesc->language_name);
+
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\ntypedef struct\nLG_%{str}Builder {"), ctx->ldesc->language_name);
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}NodeList *nodes_tail;"), ctx->ldesc->language_name);
+    lg_write(ctx->header_file_writer, lg_str8_lit("\n    uint32_t next_symbol_id;"));
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n} LG_%{str}Builder;\n"), ctx->ldesc->language_name);
+}
+
+void
+mrv_sg_expr_type(MRV_SourcegenContext *ctx) {
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\ntypedef struct\nLG_%{str}Expr {"), ctx->ldesc->language_name);
+    lg_write(ctx->header_file_writer, lg_str8_lit("\n    size_t cap;"));
+    lg_write(ctx->header_file_writer, lg_str8_lit("\n    size_t len;"));
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}Node *nodes;"), ctx->ldesc->language_name);
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n} LG_%{str}Expr;\n"), ctx->ldesc->language_name);
+}
+
+void
 mrv_gen_source(LG_Writer *header_file_writer, MRV_LanguageDescriptor *ldesc) {
     MRV_SourcegenContext ctx = {
         .header_file_writer = header_file_writer,
+        .ldesc = ldesc,
     };
 
     lg_printf(header_file_writer, lg_str8_lit(
@@ -2468,10 +2519,13 @@ mrv_gen_source(LG_Writer *header_file_writer, MRV_LanguageDescriptor *ldesc) {
         "#define LG_%{str}_GEN_H_\n"
     ), ldesc->language_name, ldesc->language_name);
     lg_write(header_file_writer, lg_str8_lit("\n#include <libgrad/internal/base.h>\n"));
-    mrv_sg_type_enum(&ctx, ldesc);
-    mrv_sg_opcode_enum(&ctx, ldesc);
-    mrv_sg_symbol_types(&ctx, ldesc);
-    mrv_sg_expr_types(&ctx, ldesc);
+    mrv_sg_type_enum(&ctx);
+    mrv_sg_opcode_enum(&ctx);
+    mrv_sg_symbol_types(&ctx);
+    mrv_sg_node_types(&ctx);
+    mrv_sg_node_union_type(&ctx);
+    mrv_sg_builder_types(&ctx);
+    mrv_sg_expr_type(&ctx);
     lg_printf(header_file_writer, lg_str8_lit("\n#endif // LG_%{str}_GEN_H_\n"), ldesc->language_name);
 }
 
