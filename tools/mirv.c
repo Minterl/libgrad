@@ -582,7 +582,7 @@ MRV_ASTNodeChildren {
     struct {
         MRV_ASTNode *ident;
         MRV_ASTNode *arg_list;
-        MRV_ASTNode *return_type;
+        MRV_ASTNode *binding_type;
     } ControlFlowDeclaration;
 
     struct {
@@ -758,6 +758,7 @@ MRV_Token
 mrv_parser_peek(MRV_ParserContext *ctx) {
     return ctx->cur_block->tokens[ctx->next_offset];
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -1274,7 +1275,7 @@ mrv_parse_control_flow_decl(MRV_ParserContext *ctx) {
         ident->span,
         .ident = ident,
         .arg_list = arg_list,
-        .return_type = return_type,
+        .binding_type = return_type,
     );
 
     return node;
@@ -1486,7 +1487,7 @@ mrv_ast_dump_r(MRV_ASTDumpContext *ctx, MRV_ASTNode *lg_nullable parent, MRV_AST
         case MRV_ASTNodeKind_ControlFlowDeclaration:
             mrv_ast_dump_r(ctx, self, as.ControlFlowDeclaration.ident);
             mrv_ast_dump_r(ctx, self, as.ControlFlowDeclaration.arg_list);
-            mrv_ast_dump_r(ctx, self, as.ControlFlowDeclaration.return_type);
+            mrv_ast_dump_r(ctx, self, as.ControlFlowDeclaration.binding_type);
             break;
 
         case MRV_ASTNodeKind_ControlFlowBinding:
@@ -1614,40 +1615,61 @@ MRV_SymbolTable {
 } MRV_SymbolTable;
 
 typedef uint8_t
-MRV_AttrKind;
+MRV_TypeKind;
 enum {
-    MRV_AttrKind_Type,
-    MRV_AttrKind_HostType,
+    MRV_TypeKind_Native,
+    MRV_TypeKind_Host,
+};
+
+typedef uint8_t
+MRV_LanguageDescriptorTableEntryKind;
+enum {
+    MRV_LanguageDescriptorTableEntryKind_Type,
+    MRV_LanguageDescriptorTableEntryKind_Operator,
+    MRV_LanguageDescriptorTableEntryKind_ControlFlow,
 };
 
 typedef struct
-MRV_AttrTable {
-    LG_Table       table;
-    MRV_AttrKind  *kinds;
-} MRV_AttrTable;
+MRV_LanguageDescriptorTableEntry {
+    MRV_LanguageDescriptorTableEntryKind kind;
+
+    lg_str8 name;
+
+    union {
+        struct {
+            MRV_TypeKind type_kind;
+        } type;
+
+        struct {
+            lg_str8  left_arg_name;
+            lg_str8  left_arg_type;
+            lg_str8  right_arg_type;
+            lg_str8  right_arg_name;
+            lg_str8  return_type;
+        } operator;
+
+        struct {
+            lg_str8 arg_name;
+            lg_str8 arg_type;
+            lg_str8 binding_type;
+        } control_flow;
+    } as;
+} MRV_LanguageDescriptorTableEntry;
 
 typedef struct
-MRV_OperatorTableValue {
-    lg_str8  left_arg_type;
-    lg_str8  right_arg_type;
-    lg_str8  return_type;
-    bool     is_control_flow;
-} MRV_OperatorTableValue;
-
-typedef struct
-MRV_OperatorTable {
-    LG_Table                 table;
-    MRV_OperatorTableValue  *values;
-} MRV_OperatorTable;
+MRV_LanguageDescriptor {
+    lg_str8                            language_name;
+    LG_Table                           table;
+    MRV_LanguageDescriptorTableEntry  *entries;
+} MRV_LanguageDescriptor;
 
 typedef struct
 MRV_SemaContext {
-    MRV_AST           *ast;
-    lg_str8            text;
-    MRV_SymbolTable    symtab;
-    MRV_OperatorTable  optab;
-    MRV_AttrTable      attrtab;
-    MRV_Error          err;
+    MRV_AST                *ast;
+    lg_str8                 text;
+    MRV_SymbolTable         symtab;
+    MRV_LanguageDescriptor  ldesc;
+    MRV_Error               err;
 } MRV_SemaContext;
 
 typedef void (*MRV_SemaVisitor)(MRV_SemaContext *ctx, MRV_ASTNode *self);
@@ -1739,7 +1761,7 @@ mrv_sema_traverse_children(
     case MRV_ASTNodeKind_ControlFlowDeclaration: {
         MRV_ASTNode *op_ident = as.ControlFlowDeclaration.ident;
         MRV_ASTNode *arg_list = as.ControlFlowDeclaration.arg_list;
-        MRV_ASTNode *return_type = as.ControlFlowDeclaration.return_type;
+        MRV_ASTNode *return_type = as.ControlFlowDeclaration.binding_type;
 
         bool has_return = !mrv_ast_is_nil_node(ctx->ast, return_type);
 
@@ -1860,21 +1882,32 @@ mrv_sema_record_type_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
 
         size_t idx;
         LG_StatusKind status = lg_table_ensure_str8(
-            &ctx->attrtab.table,
+            &ctx->ldesc.table,
             ident,
             &idx,
             NULL
         );
         lg_assert(status == LG_StatusKind_OK);
 
-        ctx->attrtab.kinds[idx] = MRV_AttrKind_HostType;
+        ctx->ldesc.entries[idx].name = ident;
+        ctx->ldesc.entries[idx].kind = MRV_LanguageDescriptorTableEntryKind_Type;
+        ctx->ldesc.entries[idx].as.type.type_kind = MRV_TypeKind_Host;
 
         break;
     }
 
-    case MRV_ASTNodeKind_LanguageDeclaration:
-        // TODO
+    // we'll also take this opportunity to record the language name
+    case MRV_ASTNodeKind_LanguageDeclaration: {
+        lg_str8 language_name = mrv_span_to_str8(self->children_as.LanguageDeclaration.ident->span, ctx->text);
+        if (
+            ctx->ldesc.language_name.len != 0 && 
+            (lg_strcmp(language_name, ctx->ldesc.language_name) != 0)
+        ) {
+            mrv_report_error(&ctx->err, self->span, lg_str8_lit("conflicting langauge declarations found"));
+        }
+        ctx->ldesc.language_name = language_name;
         break;
+    }
 
     case MRV_ASTNodeKind_TypeDeclaration: {
         lg_str8 ident = mrv_span_to_str8(self->children_as.TypeDeclaration.ident->span, ctx->text);
@@ -1882,12 +1915,11 @@ mrv_sema_record_type_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
         size_t idx;
         bool found;
         LG_StatusKind status = lg_table_ensure_str8(
-            &ctx->attrtab.table,
-            ident,                
+            &ctx->ldesc.table,
+            ident,
             &idx,
             &found
         );
-        lg_assert(status == LG_StatusKind_OK);
         if (found) {
             mrv_report_error(
                 &ctx->err,
@@ -1897,8 +1929,11 @@ mrv_sema_record_type_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
             );
             break;
         }
+        lg_assert(status == LG_StatusKind_OK);
 
-        ctx->attrtab.kinds[idx] = MRV_AttrKind_Type;
+        ctx->ldesc.entries[idx].name = ident;
+        ctx->ldesc.entries[idx].kind = MRV_LanguageDescriptorTableEntryKind_Type;
+        ctx->ldesc.entries[idx].as.type.type_kind = MRV_TypeKind_Native;
 
         break;
     }
@@ -1908,7 +1943,7 @@ mrv_sema_record_type_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
 }
 
 void
-mrv_sema_record_op_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
+mrv_sema_record_op_and_cf_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
     if (mrv_ast_is_nil_node(ctx->ast, self)) {
         return;
     }
@@ -1917,27 +1952,13 @@ mrv_sema_record_op_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
 
     mrv_match_ast_node(self->kind) {
     case MRV_ASTNodeKind_Program:
-        mrv_sema_traverse_children(ctx, self, mrv_sema_record_op_decls_r);
+        mrv_sema_traverse_children(ctx, self, mrv_sema_record_op_and_cf_decls_r);
         break;
 
-    case MRV_ASTNodeKind_ControlFlowDeclaration:
     case MRV_ASTNodeKind_OperatorDeclaration: {
-        bool is_control_flow;
-        MRV_ASTNode *op;
-        MRV_ASTNode *arg_list;
-        MRV_ASTNode *return_type;
-        if (self->kind == MRV_ASTNodeKind_OperatorDeclaration) {
-            is_control_flow = false;
-            op = as.OperatorDeclaration.ident;
-            arg_list = as.OperatorDeclaration.arg_list;
-            return_type = as.OperatorDeclaration.return_type;
-        } else {
-            is_control_flow = true;
-            lg_assert(self->kind == MRV_ASTNodeKind_ControlFlowDeclaration);
-            op = as.ControlFlowDeclaration.ident;
-            arg_list = as.ControlFlowDeclaration.arg_list;
-            return_type = as.ControlFlowDeclaration.return_type;
-        }
+        MRV_ASTNode *op = as.OperatorDeclaration.ident;
+        MRV_ASTNode *arg_list = as.OperatorDeclaration.arg_list;
+        MRV_ASTNode *return_type = as.OperatorDeclaration.return_type;
 
         bool has_return = !mrv_ast_is_nil_node(ctx->ast, return_type);
 
@@ -1946,24 +1967,8 @@ mrv_sema_record_op_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
             mrv_span_to_str8(return_type->span, ctx->text) :
             lg_nil(lg_str8);
 
-        size_t op_idx;
-        {
-            bool found;
-            LG_StatusKind status = lg_table_ensure_str8(&ctx->optab.table, op_ident, &op_idx, &found);
-            lg_assert(status == LG_StatusKind_OK);
-            if (found) {
-                mrv_report_error(
-                    &ctx->err,
-                    self->span,
-                    lg_str8_lit("multiple declarations found for operator %{str}"),
-                    op_ident
-                );
-                break;
-            }
-        }
-
-
-        lg_str8 args[2] = {0};
+        lg_str8 arg_names[2] = {0};
+        lg_str8 arg_types[2] = {0};
         {
             size_t n_args = arg_list->children_as.DeclarationArgList.n_args;
             if (n_args > 2) {
@@ -1982,25 +1987,37 @@ mrv_sema_record_op_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
             
             for (size_t i = 0; i < n_args; i++) {
                 lg_assert(i < 2);
+                MRV_Span name_ident_span = arg_list->children_as.DeclarationArgList.args[i]->children_as.DeclarationArg.ident->span;
+                lg_str8 name_ident = mrv_span_to_str8(name_ident_span, ctx->text);
                 MRV_Span type_ident_span = arg_list->children_as.DeclarationArgList.args[i]->children_as.DeclarationArg.type->span;
                 lg_str8 type_ident = mrv_span_to_str8(type_ident_span, ctx->text);
 
-                lg_table_get_str8(&ctx->attrtab.table, type_ident, &found);
+                size_t idx = lg_table_get_str8(&ctx->ldesc.table, type_ident, &found);
                 if (!found) {
                     mrv_report_error(
                         &ctx->err,
-                        return_type->span,
+                        type_ident_span,
                         lg_str8_lit("unknown type in args of operator declaration: %{str}"),
                         type_ident
                     );
                     break;
                 }
+                if (ctx->ldesc.entries[idx].kind != MRV_LanguageDescriptorTableEntryKind_Type) {
+                    mrv_report_error(
+                        &ctx->err,
+                        type_ident_span,
+                        lg_str8_lit("type %{str} in args of operator declaration is not a type at all"),
+                        type_ident
+                    );
+                    break;
+                }
 
-                args[i] = type_ident;
+                arg_names[i] = name_ident;
+                arg_types[i] = type_ident;
             }
 
             if (has_return) {
-                lg_table_get_str8(&ctx->attrtab.table, return_type_ident, &found);
+                size_t idx = lg_table_get_str8(&ctx->ldesc.table, return_type_ident, &found);
                 if (!found) {
                     mrv_report_error(
                         &ctx->err,
@@ -2010,13 +2027,149 @@ mrv_sema_record_op_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
                     );
                     break;
                 }
+                if (ctx->ldesc.entries[idx].kind != MRV_LanguageDescriptorTableEntryKind_Type) {
+                    mrv_report_error(
+                        &ctx->err,
+                        return_type->span,
+                        lg_str8_lit("type %{str} in args of operator declaration is not a type at all"),
+                        return_type_ident
+                    );
+                    break;
+                }
             }
         }
 
-        ctx->optab.values[op_idx].left_arg_type = args[0];
-        ctx->optab.values[op_idx].right_arg_type = args[1];
-        ctx->optab.values[op_idx].return_type = return_type_ident;
-        ctx->optab.values[op_idx].is_control_flow = is_control_flow;
+        size_t op_idx;
+        {
+            bool found;
+            LG_StatusKind status = lg_table_ensure_str8(&ctx->ldesc.table, op_ident, &op_idx, &found);
+            lg_assert(status == LG_StatusKind_OK);
+            if (found) {
+                mrv_report_error(
+                    &ctx->err,
+                    self->span,
+                    lg_str8_lit("multiple declarations found for operator %{str}"),
+                    op_ident
+                );
+                break;
+            }
+        }
+
+        ctx->ldesc.entries[op_idx].name = op_ident;
+        ctx->ldesc.entries[op_idx].kind = MRV_LanguageDescriptorTableEntryKind_Operator;
+        ctx->ldesc.entries[op_idx].as.operator.left_arg_name = arg_names[0];
+        ctx->ldesc.entries[op_idx].as.operator.left_arg_type = arg_types[0];
+        ctx->ldesc.entries[op_idx].as.operator.right_arg_name = arg_names[1];
+        ctx->ldesc.entries[op_idx].as.operator.right_arg_type = arg_types[1];
+        ctx->ldesc.entries[op_idx].as.operator.return_type = return_type_ident;
+
+        break;
+    }
+
+    case MRV_ASTNodeKind_ControlFlowDeclaration: {
+        MRV_ASTNode *tag = as.ControlFlowDeclaration.ident;
+        MRV_ASTNode *arg_list = as.ControlFlowDeclaration.arg_list;
+        MRV_ASTNode *binding_type = as.ControlFlowDeclaration.binding_type;
+
+        bool has_binding = !mrv_ast_is_nil_node(ctx->ast, binding_type);
+
+        lg_str8 tag_ident = mrv_span_to_str8(tag->span, ctx->text);
+        lg_str8 binding_type_ident = has_binding ?
+            mrv_span_to_str8(binding_type->span, ctx->text) :
+            lg_nil(lg_str8);
+
+        lg_str8 arg_name = {0};
+        lg_str8 arg_type = {0};
+        {
+            size_t n_args = arg_list->children_as.DeclarationArgList.n_args;
+            if (n_args > 1) {
+                mrv_report_error(
+                    &ctx->err,
+                    arg_list->span,
+                    lg_str8_lit(
+                        "control flow feature %{str} declared with %{i64} arguments\n"
+                        "control flow features may not have more than one argument"
+                    ),
+                    tag_ident, n_args
+                );
+            }
+
+            if (n_args > 0) {
+                bool found;
+            
+                MRV_Span name_ident_span = arg_list->children_as.DeclarationArgList.args[0]->children_as.DeclarationArg.ident->span;
+                lg_str8 name_ident = mrv_span_to_str8(name_ident_span, ctx->text);
+                MRV_Span type_ident_span = arg_list->children_as.DeclarationArgList.args[0]->children_as.DeclarationArg.type->span;
+                lg_str8 type_ident = mrv_span_to_str8(type_ident_span, ctx->text);
+
+                size_t idx = lg_table_get_str8(&ctx->ldesc.table, type_ident, &found);
+                if (!found) {
+                    mrv_report_error(
+                        &ctx->err,
+                        type_ident_span,
+                        lg_str8_lit("unknown type in args of control flow declaration: %{str}"),
+                        type_ident
+                    );
+                    break;
+                }
+                if (ctx->ldesc.entries[idx].kind != MRV_LanguageDescriptorTableEntryKind_Type) {
+                    mrv_report_error(
+                        &ctx->err,
+                        type_ident_span,
+                        lg_str8_lit("type %{str} in args of control flow declaration is not a type at all"),
+                        type_ident
+                    );
+                    break;
+                }
+
+                arg_name = name_ident;
+                arg_type = type_ident;
+
+                if (has_binding) {
+                    size_t idx = lg_table_get_str8(&ctx->ldesc.table, binding_type_ident, &found);
+                    if (!found) {
+                        mrv_report_error(
+                            &ctx->err,
+                            binding_type->span,
+                            lg_str8_lit("unknown type in binding type of control flow declaration: %{str}"),
+                            binding_type_ident
+                        );
+                        break;
+                    }
+                    if (ctx->ldesc.entries[idx].kind != MRV_LanguageDescriptorTableEntryKind_Type) {
+                        mrv_report_error(
+                            &ctx->err,
+                            binding_type->span,
+                            lg_str8_lit("type %{str} in args of control flow declaration is not a type at all"),
+                            binding_type_ident
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+
+        size_t cf_idx;
+        {
+            bool found;
+            LG_StatusKind status = lg_table_ensure_str8(&ctx->ldesc.table, tag_ident, &cf_idx, &found);
+            lg_assert(status == LG_StatusKind_OK);
+            if (found) {
+                mrv_report_error(
+                    &ctx->err,
+                    self->span,
+                    lg_str8_lit("multiple declarations found for control flow feature %{str}"),
+                    tag_ident
+                );
+                break;
+            }
+        }
+
+        ctx->ldesc.entries[cf_idx].name = tag_ident;
+        ctx->ldesc.entries[cf_idx].kind = MRV_LanguageDescriptorTableEntryKind_Operator;
+        ctx->ldesc.entries[cf_idx].as.control_flow.arg_name = arg_name;
+        ctx->ldesc.entries[cf_idx].as.control_flow.arg_type = arg_type;
+        ctx->ldesc.entries[cf_idx].as.control_flow.binding_type = binding_type_ident;
 
         break;
     }
@@ -2049,24 +2202,21 @@ mrv_typecheck(
     LG_StatusKind status = LG_StatusKind_OK;
     status = lg_table_init(&ctx.symtab.table, &arena, 1024);
     lg_assert(status == LG_StatusKind_OK);
-    status = lg_table_init(&ctx.optab.table, &arena, 1024);
-    lg_assert(status == LG_StatusKind_OK);
-    status = lg_table_init(&ctx.attrtab.table, &arena, 1024);
+    status = lg_table_init(&ctx.ldesc.table, &arena, 1024);
     lg_assert(status == LG_StatusKind_OK);
 
     ctx.symtab.types = lg_arena_alloc_array(&arena, lg_str8, 1024);
     lg_assert(ctx.symtab.types != NULL);
-    ctx.optab.values = lg_arena_alloc_array(&arena, MRV_OperatorTableValue, 1024);
-    lg_assert(ctx.optab.values != NULL);
-    ctx.attrtab.kinds = lg_arena_alloc_array(&arena, MRV_AttrKind, 1024);
-    lg_assert(ctx.attrtab.kinds != NULL);
+    ctx.ldesc.entries = lg_arena_alloc_array(&arena, MRV_LanguageDescriptorTableEntry, 1024);
+    lg_assert(ctx.ldesc.entries != NULL);
 
 
     //////////////////////////////////////////////
     /// ~~ do the type checking ~~
 
     mrv_sema_record_type_decls_r(&ctx, ctx.ast->root);
-    mrv_sema_record_op_decls_r(&ctx, ctx.ast->root);
+    mrv_sema_record_op_and_cf_decls_r(&ctx, ctx.ast->root);
+
 
     lg_arena_free_all(&arena);
 }
