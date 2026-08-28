@@ -410,6 +410,20 @@ lg_force_inline bool
 lg_char_is_alphanumeric(uint8_t ch);
 
 LG_StatusKind
+lg_str8_pascal_to_snake_case(
+    lg_str8 str,
+    LG_Arena *arena,
+    lg_str8 *out_str
+);
+
+LG_StatusKind
+lg_str8_to_upper(
+    lg_str8 str,
+    LG_Arena *arena,
+    lg_str8 *out_str
+);
+
+LG_StatusKind
 lg_strlist_cpy_append(LG_StringList *strlist, LG_Arena *arena, lg_str8 str);
 
 void

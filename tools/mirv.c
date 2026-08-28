@@ -2250,7 +2250,7 @@ mrv_ldesc_destroy(MRV_LanguageDescriptor *ldesc) {
 
 typedef struct
 MRV_SourcegenContext {
-    LG_Arena                 arena;
+    LG_Arena                *scratch;
     LG_Writer               *header_file_writer;
     MRV_LanguageDescriptor  *ldesc;
 } MRV_SourcegenContext;
@@ -2471,13 +2471,22 @@ mrv_sg_node_union_type(MRV_SourcegenContext *ctx) {
 
         size_t idx;
         while (lg_table_iter_advance(&iter, &idx, NULL)) {
+            LG_Scope scope = lg_push_scope(ctx->scratch);
+
             MRV_LanguageDescriptorTableEntry entry = ctx->ldesc->entries[idx];
+
+            lg_str8 name_snake_case;
+            LG_StatusKind status = lg_str8_pascal_to_snake_case(entry.name, ctx->scratch, &name_snake_case);
+            lg_assert(status == LG_StatusKind_OK);
+
             if (entry.kind == MRV_LanguageDescriptorTableEntryKind_Operator) {
-                lg_printf(ctx->header_file_writer, lg_str8_lit("\n        LG_%{str}Node_%{str} %{str};"), ctx->ldesc->language_name, entry.name, entry.name);
+                lg_printf(ctx->header_file_writer, lg_str8_lit("\n        LG_%{str}Node_%{str} %{str};"), ctx->ldesc->language_name, entry.name, name_snake_case);
             } else if (entry.kind == MRV_LanguageDescriptorTableEntryKind_ControlFlow) {
-                lg_printf(ctx->header_file_writer, lg_str8_lit("\n        LG_%{str}Node_%{str}Begin %{str}Begin;"), ctx->ldesc->language_name, entry.name, entry.name);
-                lg_printf(ctx->header_file_writer, lg_str8_lit("\n        LG_%{str}Node_%{str}End %{str}End;"), ctx->ldesc->language_name, entry.name, entry.name);
+                lg_printf(ctx->header_file_writer, lg_str8_lit("\n        LG_%{str}Node_%{str}Begin %{str}_begin;"), ctx->ldesc->language_name, entry.name, name_snake_case);
+                lg_printf(ctx->header_file_writer, lg_str8_lit("\n        LG_%{str}Node_%{str}End %{str}_end;"), ctx->ldesc->language_name, entry.name, name_snake_case);
             }
+
+            lg_pop_scope(ctx->scratch, scope);
         }
     }
     lg_write(ctx->header_file_writer, lg_str8_lit("\n    } as;"));
@@ -2508,16 +2517,27 @@ mrv_sg_expr_type(MRV_SourcegenContext *ctx) {
 }
 
 void
-mrv_gen_source(LG_Writer *header_file_writer, MRV_LanguageDescriptor *ldesc) {
+mrv_gen_source(
+    LG_Writer *header_file_writer,
+    LG_Arena *scratch_allocator,
+    MRV_LanguageDescriptor *ldesc
+) {
     MRV_SourcegenContext ctx = {
         .header_file_writer = header_file_writer,
+        .scratch = scratch_allocator,
         .ldesc = ldesc,
     };
+
+    LG_Scope scope = lg_push_scope(ctx.scratch);
+
+    lg_str8 lang_capitalized;
+    LG_StatusKind status = lg_str8_to_upper(ldesc->language_name, ctx.scratch, &lang_capitalized);
+    lg_assert(status == LG_StatusKind_OK);
 
     lg_printf(header_file_writer, lg_str8_lit(
         "#ifndef LG_%{str}_GEN_H_\n"
         "#define LG_%{str}_GEN_H_\n"
-    ), ldesc->language_name, ldesc->language_name);
+    ), lang_capitalized, lang_capitalized);
     lg_write(header_file_writer, lg_str8_lit("\n#include <libgrad/internal/base.h>\n"));
     mrv_sg_type_enum(&ctx);
     mrv_sg_opcode_enum(&ctx);
@@ -2526,7 +2546,9 @@ mrv_gen_source(LG_Writer *header_file_writer, MRV_LanguageDescriptor *ldesc) {
     mrv_sg_node_union_type(&ctx);
     mrv_sg_builder_types(&ctx);
     mrv_sg_expr_type(&ctx);
-    lg_printf(header_file_writer, lg_str8_lit("\n#endif // LG_%{str}_GEN_H_\n"), ldesc->language_name);
+    lg_printf(header_file_writer, lg_str8_lit("\n#endif // LG_%{str}_GEN_H_\n"), lang_capitalized);
+
+    lg_pop_scope(ctx.scratch, scope);
 }
 
 
@@ -2581,6 +2603,9 @@ int main() {
     lg_str8 text = (lg_str8){ .len = 4096, .p = file_contents };
     MRV_TokenStream tstream = mrv_lex(&libc_allocator, text, &libc_writer);
 
+    LG_Arena scratch_allocator = {0};
+    lg_arena_init(&scratch_allocator, &libc_allocator);
+
     (void)text;
 
     MRV_AST ast = mrv_parse(
@@ -2601,12 +2626,13 @@ int main() {
         &ldesc
     );
 
-    mrv_gen_source(&libc_writer, &ldesc);
+    mrv_gen_source(&libc_writer, &scratch_allocator, &ldesc);
 
     mrv_ldesc_destroy(&ldesc);
     mrv_tstream_destroy(&tstream, &libc_allocator);
     mrv_ast_destroy(&ast);
     fclose(file);
+    lg_arena_free_all(&scratch_allocator);
     return 0;
 }
 

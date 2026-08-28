@@ -225,6 +225,16 @@ lg_char_is_alpha(uint8_t ch) {
 }
 
 lg_force_inline bool
+lg_char_is_capital_letter(uint8_t ch) {
+    return 'A' <= ch && ch <= 'Z';
+}
+
+lg_force_inline bool
+lg_char_is_lower_case_letter(uint8_t ch) {
+    return 'a' <= ch && ch <= 'z';
+}
+
+lg_force_inline bool
 lg_char_is_numeric(uint8_t ch) {
     return '0' <= ch && ch <= '9';
 }
@@ -232,6 +242,82 @@ lg_char_is_numeric(uint8_t ch) {
 lg_force_inline bool
 lg_char_is_alphanumeric(uint8_t ch) {
     return lg_char_is_alpha(ch) || lg_char_is_numeric(ch);
+}
+
+LG_StatusKind
+lg_str8_pascal_to_snake_case(
+    lg_str8 str,
+    LG_Arena *arena,
+    lg_str8 *out_str
+) {
+    lg_assert(out_str != NULL);
+
+    lg_static_assert((int32_t)'a' - 'A' > 0);
+    const size_t difference = 'a' - 'A';
+
+    size_t new_len = str.len;
+
+    for (size_t i = 0; i < str.len; i++) {
+        if (lg_char_is_capital_letter(str.p[i]) && i != 0 && !lg_char_is_capital_letter(str.p[i - 1])) {
+            new_len++;
+        }
+    }
+
+    uint8_t *new_p = lg_arena_alloc_array(arena, uint8_t, new_len);
+    if (new_p == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+
+    for (
+        size_t i_old = 0, i_new = 0;
+        i_old < str.len;
+        i_old++, i_new++
+    ) {
+        lg_assert(i_new < new_len);
+
+        if (lg_char_is_capital_letter(str.p[i_old])) {
+            if (i_old != 0 && !lg_char_is_capital_letter(str.p[i_old - 1])) {
+                new_p[i_new] = '_';
+                i_new++;
+            }
+            new_p[i_new] = str.p[i_old] + difference;
+        } else {
+            new_p[i_new] = str.p[i_old];
+        }
+    }
+
+    *out_str = (lg_str8){ .len = new_len, .p = new_p };
+
+    return LG_StatusKind_OK;
+}
+
+LG_StatusKind
+lg_str8_to_upper(
+    lg_str8 str,
+    LG_Arena *arena,
+    lg_str8 *out_str
+) {
+    lg_assert(out_str != NULL);
+
+    lg_static_assert((int32_t)'a' - 'A' > 0);
+    const size_t difference = 'a' - 'A';
+
+    uint8_t *new_p = lg_arena_alloc_array(arena, uint8_t, str.len);
+    if (new_p == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+
+    for (size_t i = 0; i < str.len; i++) {
+        if (lg_char_is_lower_case_letter(str.p[i])) {
+            new_p[i] = str.p[i] - difference;
+        } else {
+            new_p[i] = str.p[i];
+        }
+    }
+
+    *out_str = (lg_str8){ .len = str.len, .p = new_p };
+
+    return LG_StatusKind_OK;
 }
 
 LG_StatusKind 
