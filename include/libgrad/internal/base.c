@@ -59,6 +59,13 @@ lg_strcmp(const lg_str8 a, const lg_str8 b) {
     if (a.p == b.p && a.len == b.len) {
         return 0;
     }
+
+    if (a.len > b.len) {
+        return a.p[b.len];
+    } else if (b.len > a.len) {
+        return b.p[a.len];
+    }
+
     const size_t len = a.len > b.len ? b.len : a.len;
     return lg_memcmp(a.p, b.p, len);
 }
@@ -70,6 +77,38 @@ lg_strcpy(lg_str8 dest, const lg_str8 src) {
         dest.p[i] = src.p[i];
     }
     return i;
+}
+
+LG_StatusKind
+lg_strcat(
+    LG_Arena *arena,
+    lg_str8 *strings,
+    size_t n_strings,
+    lg_str8 *out_str
+) {
+    lg_assert(out_str != NULL);
+
+    size_t new_len = 0;
+    for (size_t i = 0; i < n_strings; i++) {
+        new_len += strings[i].len;
+    }
+
+    uint8_t *new_p = lg_arena_alloc_array(arena, uint8_t, new_len);
+    if (new_p == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+
+    lg_str8 new_str = { .len = new_len, .p = new_p };
+
+    size_t offset = 0;
+    for (size_t i = 0; i < n_strings; i++) {
+        lg_memcpy(new_p + offset, strings[i].p, strings[i].len);
+        offset += strings[i].len;
+        lg_assert(offset <= new_len);
+    }
+
+    *out_str = new_str;
+    return LG_StatusKind_OK;
 }
 
 void 

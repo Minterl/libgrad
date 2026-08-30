@@ -1626,7 +1626,6 @@ MRV_LanguageDescriptorTableEntryKind;
 enum {
     MRV_LanguageDescriptorTableEntryKind_Type,
     MRV_LanguageDescriptorTableEntryKind_Operator,
-    MRV_LanguageDescriptorTableEntryKind_ControlFlow,
 };
 
 typedef struct
@@ -1647,12 +1646,6 @@ MRV_LanguageDescriptorTableEntry {
             lg_str8  right_arg_name;
             lg_str8  return_type;
         } operator;
-
-        struct {
-            lg_str8 arg_name;
-            lg_str8 arg_type;
-            lg_str8 binding_type;
-        } control_flow;
     } as;
 } MRV_LanguageDescriptorTableEntry;
 
@@ -2068,13 +2061,15 @@ mrv_sema_record_op_and_cf_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
     }
 
     case MRV_ASTNodeKind_ControlFlowDeclaration: {
-        MRV_ASTNode *tag = as.ControlFlowDeclaration.ident;
+        LG_StatusKind status = LG_StatusKind_OK;
+
+        MRV_ASTNode *feature_name = as.ControlFlowDeclaration.ident;
         MRV_ASTNode *arg_list = as.ControlFlowDeclaration.arg_list;
         MRV_ASTNode *binding_type = as.ControlFlowDeclaration.binding_type;
 
         bool has_binding = !mrv_ast_is_nil_node(ctx->ast, binding_type);
 
-        lg_str8 tag_ident = mrv_span_to_str8(tag->span, ctx->text);
+        lg_str8 feature_name_ident = mrv_span_to_str8(feature_name->span, ctx->text);
         lg_str8 binding_type_ident = has_binding ?
             mrv_span_to_str8(binding_type->span, ctx->text) :
             lg_nil(lg_str8);
@@ -2091,7 +2086,7 @@ mrv_sema_record_op_and_cf_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
                         "control flow feature %{str} declared with %{i64} arguments\n"
                         "control flow features may not have more than one argument"
                     ),
-                    tag_ident, n_args
+                    feature_name_ident, n_args
                 );
             }
 
@@ -2150,27 +2145,55 @@ mrv_sema_record_op_and_cf_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
             }
         }
 
-        size_t cf_idx;
+        // this is the point where we actually split control flow features into two parts:
+        // 1) the "begin" operator, which creates the binding variable, and
+        // 2) the "end" operator, which consumes said binding varialble.
+        //
+        // the downside of doing it here is that you have to treat the end operators as a special
+        // case during scope resolution.
+        //
+        // the upside, which in this case bears much more weight, is you get to delete a tone of code
+        // for dealing with control flow features during code generation.
+
+        lg_str8 begin_name = {0};
+        status = lg_strcat(&ctx->ldesc.arena, (lg_str8[]){feature_name_ident, lg_str8_lit("Begin")}, 2, &begin_name);
+        lg_assert(status == LG_StatusKind_OK);
+
+        lg_str8 end_name = {0};
+        status = lg_strcat(&ctx->ldesc.arena, (lg_str8[]){feature_name_ident, lg_str8_lit("End")}, 2, &end_name);
+        lg_assert(status == LG_StatusKind_OK);
+
+        size_t begin_idx;
+        size_t end_idx;
         {
             bool found;
-            LG_StatusKind status = lg_table_ensure_str8(&ctx->ldesc.table, tag_ident, &cf_idx, &found);
+            status = lg_table_ensure_str8(&ctx->ldesc.table, begin_name, &begin_idx, &found);
             lg_assert(status == LG_StatusKind_OK);
             if (found) {
                 mrv_report_error(
                     &ctx->err,
                     self->span,
                     lg_str8_lit("multiple declarations found for control flow feature %{str}"),
-                    tag_ident
+                    feature_name_ident
                 );
                 break;
             }
+
+            status = lg_table_ensure_str8(&ctx->ldesc.table, end_name, &end_idx, &found);
+            lg_assert(status == LG_StatusKind_OK);
+            lg_assert(!found);
         }
 
-        ctx->ldesc.entries[cf_idx].name = tag_ident;
-        ctx->ldesc.entries[cf_idx].kind = MRV_LanguageDescriptorTableEntryKind_ControlFlow;
-        ctx->ldesc.entries[cf_idx].as.control_flow.arg_name = arg_name;
-        ctx->ldesc.entries[cf_idx].as.control_flow.arg_type = arg_type;
-        ctx->ldesc.entries[cf_idx].as.control_flow.binding_type = binding_type_ident;
+        ctx->ldesc.entries[begin_idx].name = begin_name;
+        ctx->ldesc.entries[begin_idx].kind = MRV_LanguageDescriptorTableEntryKind_Operator;
+        ctx->ldesc.entries[begin_idx].as.operator.left_arg_name = arg_name;
+        ctx->ldesc.entries[begin_idx].as.operator.left_arg_type = arg_type;
+        ctx->ldesc.entries[begin_idx].as.operator.return_type = binding_type_ident;
+
+        ctx->ldesc.entries[end_idx].name = end_name;
+        ctx->ldesc.entries[end_idx].kind = MRV_LanguageDescriptorTableEntryKind_Operator;
+        ctx->ldesc.entries[end_idx].as.operator.left_arg_name = lg_str8_lit("binding");
+        ctx->ldesc.entries[end_idx].as.operator.left_arg_type = binding_type_ident;
 
         break;
     }
@@ -2386,7 +2409,7 @@ mrv_sg_type_enum(MRV_SourcegenContext *ctx) {
 
         lg_printf(
             ctx->header_file_writer,
-            lg_str8_lit("     LG_%{str}Type_%{str},\n"),
+            lg_str8_lit("    LG_%{str}Type_%{str},\n"),
             ctx->ldesc->language_name, entry.name
         );
     }
@@ -2411,16 +2434,6 @@ mrv_sg_opcode_enum(MRV_SourcegenContext *ctx) {
             lg_printf(
                 ctx->header_file_writer,
                 lg_str8_lit("    LG_%{str}Opcode_%{str},\n"),
-                ctx->ldesc->language_name, entry.name
-            );
-        } else if (entry.kind == MRV_LanguageDescriptorTableEntryKind_ControlFlow) {
-            lg_printf(
-                ctx->header_file_writer,
-                lg_str8_lit(
-                    "    LG_%{str}Opcode_%{str}Begin,\n"
-                    "    LG_%{str}Opcode_%{str}End,\n"
-                ),
-                ctx->ldesc->language_name, entry.name,
                 ctx->ldesc->language_name, entry.name
             );
         }
@@ -2496,51 +2509,6 @@ mrv_sg_node_types(MRV_SourcegenContext *ctx) {
                 lg_str8_lit("\n} LG_%{str}Node_%{str};\n"),
                 ctx->ldesc->language_name, entry.name
             );
-        } else if (entry.kind == MRV_LanguageDescriptorTableEntryKind_ControlFlow) {
-            // the begin node
-            {
-                lg_printf(
-                    ctx->header_file_writer,
-                    lg_str8_lit("\ntypedef struct\nLG_%{str}Node_%{str}Begin {"),
-                    ctx->ldesc->language_name, entry.name
-                );
-
-                if (entry.as.control_flow.binding_type.len != 0) {
-                    lg_write(ctx->header_file_writer, lg_str8_lit("\n    "));
-                    mrv_sg_symbol_type(ctx, entry.as.control_flow.binding_type);
-                    lg_write(ctx->header_file_writer, lg_str8_lit(" binding;"));
-                }
-                if (entry.as.control_flow.arg_type.len != 0) {
-                    lg_write(ctx->header_file_writer, lg_str8_lit("\n    "));
-                    mrv_sg_symbol_type(ctx, entry.as.control_flow.arg_type);
-                    lg_printf(
-                        ctx->header_file_writer,
-                        lg_str8_lit(" %{str};"),
-                        entry.as.control_flow.arg_name
-                    );
-                }
-
-                lg_printf(
-                    ctx->header_file_writer,
-                    lg_str8_lit("\n} LG_%{str}Node_%{str}Begin;\n"),
-                    ctx->ldesc->language_name, entry.name
-                );
-            }
-
-            // the end node
-            {
-                lg_printf(
-                    ctx->header_file_writer,
-                    lg_str8_lit("\ntypedef struct\nLG_%{str}Node_%{str}End {"),
-                    ctx->ldesc->language_name, entry.name
-                );
-                lg_write(ctx->header_file_writer, lg_str8_lit("\n    uint8_t _filler;"));
-                lg_printf(
-                    ctx->header_file_writer,
-                    lg_str8_lit("\n} LG_%{str}Node_%{str}End;\n"),
-                    ctx->ldesc->language_name, entry.name
-                );
-            }
         }
     }
 }
@@ -2564,9 +2532,6 @@ mrv_sg_node_union_type(MRV_SourcegenContext *ctx) {
 
             if (entry.kind == MRV_LanguageDescriptorTableEntryKind_Operator) {
                 lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}Node_%{str} %{str};"), ctx->ldesc->language_name, entry.name, name_snake_case);
-            } else if (entry.kind == MRV_LanguageDescriptorTableEntryKind_ControlFlow) {
-                lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}Node_%{str}Begin %{str}_begin;"), ctx->ldesc->language_name, entry.name, name_snake_case);
-                lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}Node_%{str}End %{str}_end;"), ctx->ldesc->language_name, entry.name, name_snake_case);
             }
 
             lg_pop_scope(ctx->scratch, scope);
@@ -2605,7 +2570,7 @@ mrv_sg_expr_type(MRV_SourcegenContext *ctx) {
 void
 mrv_sg_append_fn(MRV_SourcegenContext *ctx) {
     const lg_str8 template = lg_str8_lit(R"(
-lg_force_inline uint32_t
+lg_force_inline ${{L:return_type}}
 lg_hbuilder_${{op_snake}}(
     LG_Context *ctx,
     LG_${{lang_name}}Builder *builder${{L:operands}}
@@ -2634,10 +2599,14 @@ lg_hbuilder_${{op_snake}}(
 
     size_t idx;
     while (lg_table_iter_advance(&iter, &idx, NULL)) {
+        MRV_LanguageDescriptorTableEntry entry = ctx->ldesc->entries[idx];
+
+        if (entry.kind != MRV_LanguageDescriptorTableEntryKind_Operator) {
+            continue;
+        }
+
         LG_Scope scope = lg_push_scope(ctx->scratch);
         LG_StatusKind status = LG_StatusKind_OK;
-
-        MRV_LanguageDescriptorTableEntry entry = ctx->ldesc->entries[idx];
 
         lg_str8 name_snake;
         status = lg_str8_pascal_to_snake_case(entry.name, ctx->scratch, &name_snake);
@@ -2645,87 +2614,76 @@ lg_hbuilder_${{op_snake}}(
 
         LG_StringList operands = {0};
 
-        if (entry.kind == MRV_LanguageDescriptorTableEntryKind_Operator) {
-            if (entry.as.operator.left_arg_name.len > 0) {
-                lg_str8 arg_name_snake = {0};
-                status = lg_str8_pascal_to_snake_case(entry.as.operator.left_arg_name, ctx->scratch, &arg_name_snake);
+        if (entry.as.operator.left_arg_name.len > 0) {
+            lg_str8 arg_name_snake = {0};
+            status = lg_str8_pascal_to_snake_case(entry.as.operator.left_arg_name, ctx->scratch, &arg_name_snake);
 
-                bool found;
-                size_t arg_idx = lg_table_get_str8(&ctx->ldesc->table, entry.as.operator.left_arg_type, &found);
-                lg_assert(found);
-                lg_assert(ctx->ldesc->entries[arg_idx].kind == MRV_LanguageDescriptorTableEntryKind_Type);
-
-                lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(",\n    "));
-
-                if (ctx->ldesc->entries[arg_idx].as.type.type_kind == MRV_TypeKind_Native) {
-                    lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("LG_"));
-                    lg_strlist_cpy_append(&operands, ctx->scratch, ctx->ldesc->language_name);
-                    lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("Symbol_"));
-                    lg_strlist_cpy_append(&operands, ctx->scratch, entry.as.operator.left_arg_type);
-                } else if (ctx->ldesc->entries[arg_idx].as.type.type_kind == MRV_TypeKind_Host) {
-                    lg_strlist_cpy_append(&operands, ctx->scratch, entry.as.operator.left_arg_type);
-                } else {
-                    lg_unreachable();
-                }
-
-                lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(" "));
-                lg_strlist_cpy_append(&operands, ctx->scratch, arg_name_snake);
-            }
-            if (entry.as.operator.right_arg_name.len > 0) {
-                lg_str8 arg_name_snake = {0};
-                status = lg_str8_pascal_to_snake_case(entry.as.operator.right_arg_name, ctx->scratch, &arg_name_snake);
-
-                bool found;
-                size_t arg_idx = lg_table_get_str8(&ctx->ldesc->table, entry.as.operator.right_arg_type, &found);
-                lg_assert(found);
-                lg_assert(ctx->ldesc->entries[arg_idx].kind == MRV_LanguageDescriptorTableEntryKind_Type);
-
-                lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(",\n    "));
-
-                if (ctx->ldesc->entries[arg_idx].as.type.type_kind == MRV_TypeKind_Native) {
-                    lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("LG_"));
-                    lg_strlist_cpy_append(&operands, ctx->scratch, ctx->ldesc->language_name);
-                    lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("Symbol_"));
-                    lg_strlist_cpy_append(&operands, ctx->scratch, entry.as.operator.right_arg_type);
-                } else if (ctx->ldesc->entries[arg_idx].as.type.type_kind == MRV_TypeKind_Host) {
-                    lg_strlist_cpy_append(&operands, ctx->scratch, entry.as.operator.right_arg_type);
-                } else {
-                    lg_unreachable();
-                }
-
-                lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(" "));
-                lg_strlist_cpy_append(&operands, ctx->scratch, arg_name_snake);
-            }
-        } else if (
-            entry.kind == MRV_LanguageDescriptorTableEntryKind_ControlFlow &&
-            entry.as.control_flow.binding_type.len > 0
-        ) {
             bool found;
-            size_t binding_idx = lg_table_get_str8(&ctx->ldesc->table, entry.as.control_flow.binding_type, &found);
+            size_t arg_idx = lg_table_get_str8(&ctx->ldesc->table, entry.as.operator.left_arg_type, &found);
             lg_assert(found);
-            lg_assert(ctx->ldesc->entries[binding_idx].kind == MRV_LanguageDescriptorTableEntryKind_Type);
+            lg_assert(ctx->ldesc->entries[arg_idx].kind == MRV_LanguageDescriptorTableEntryKind_Type);
 
             lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(",\n    "));
 
-            lg_assert(ctx->ldesc->entries[binding_idx].as.type.type_kind == MRV_TypeKind_Native);
+            if (ctx->ldesc->entries[arg_idx].as.type.type_kind == MRV_TypeKind_Native) {
+                lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("LG_"));
+                lg_strlist_cpy_append(&operands, ctx->scratch, ctx->ldesc->language_name);
+                lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("Symbol_"));
+                lg_strlist_cpy_append(&operands, ctx->scratch, entry.as.operator.left_arg_type);
+            } else if (ctx->ldesc->entries[arg_idx].as.type.type_kind == MRV_TypeKind_Host) {
+                lg_strlist_cpy_append(&operands, ctx->scratch, entry.as.operator.left_arg_type);
+            } else {
+                lg_unreachable();
+            }
 
-            lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("LG_"));
-            lg_strlist_cpy_append(&operands, ctx->scratch, ctx->ldesc->language_name);
-            lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("Symbol_"));
-            lg_strlist_cpy_append(&operands, ctx->scratch, entry.as.control_flow.binding_type);
+            lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(" "));
+            lg_strlist_cpy_append(&operands, ctx->scratch, arg_name_snake);
+        }
+        if (entry.as.operator.right_arg_name.len > 0) {
+            lg_str8 arg_name_snake = {0};
+            status = lg_str8_pascal_to_snake_case(entry.as.operator.right_arg_name, ctx->scratch, &arg_name_snake);
 
-            lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(" binding"));
-        } else {
-            continue;
+            bool found;
+            size_t arg_idx = lg_table_get_str8(&ctx->ldesc->table, entry.as.operator.right_arg_type, &found);
+            lg_assert(found);
+            lg_assert(ctx->ldesc->entries[arg_idx].kind == MRV_LanguageDescriptorTableEntryKind_Type);
+
+            lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(",\n    "));
+
+            if (ctx->ldesc->entries[arg_idx].as.type.type_kind == MRV_TypeKind_Native) {
+                lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("LG_"));
+                lg_strlist_cpy_append(&operands, ctx->scratch, ctx->ldesc->language_name);
+                lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit("Symbol_"));
+                lg_strlist_cpy_append(&operands, ctx->scratch, entry.as.operator.right_arg_type);
+            } else if (ctx->ldesc->entries[arg_idx].as.type.type_kind == MRV_TypeKind_Host) {
+                lg_strlist_cpy_append(&operands, ctx->scratch, entry.as.operator.right_arg_type);
+            } else {
+                lg_unreachable();
+            }
+
+            lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(" "));
+            lg_strlist_cpy_append(&operands, ctx->scratch, arg_name_snake);
         }
 
-        MRV_TmplFieldTable fields[] = {
-            {lg_str8_lit("lang_name"), { .str = ctx->ldesc->language_name }},
-            {lg_str8_lit("lang_snake"), { .str = ctx->common_strings.lang_snake_case}},
-            {lg_str8_lit("op_snake"), { .str = name_snake }},
-            {lg_str8_lit("operands"), { .strlist = operands }},
+        LG_StringList return_type = {0};
+        if (entry.as.operator.return_type.len > 0) {
+            lg_strlist_cpy_append(&return_type, ctx->scratch, lg_str8_lit("LG_"));
+            lg_strlist_cpy_append(&return_type, ctx->scratch, ctx->ldesc->language_name);
+            lg_strlist_cpy_append(&return_type, ctx->scratch, lg_str8_lit("Symbol_"));
+            lg_strlist_cpy_append(&return_type, ctx->scratch, entry.as.operator.return_type);
+        } else {
+            lg_strlist_cpy_append(&return_type, ctx->scratch, lg_str8_lit("void"));
+        }
+
+        const size_t len = 5;
+        MRV_TmplFieldTable fields[5] = {
+            {lg_str8_lit("lang_name"),    { .str = ctx->ldesc->language_name }},
+            {lg_str8_lit("lang_snake"),   { .str = ctx->common_strings.lang_snake_case}},
+            {lg_str8_lit("return_type"),  { .strlist = return_type }},
+            {lg_str8_lit("op_snake"),     { .str = name_snake }},
+            {lg_str8_lit("operands"),     { .strlist = operands }},
         };
-        mrv_write_tmpl(ctx->header_file_writer, template, fields, 4);
+        mrv_write_tmpl(ctx->header_file_writer, template, fields, len);
 
         lg_pop_scope(ctx->scratch, scope);
     }

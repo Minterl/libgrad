@@ -1,13 +1,6 @@
 #ifndef LG_BASE_H_
 #define LG_BASE_H_
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-///
-/// freestanding compiler-provided includes
-///
-////////////////////////////////////////////////////////////////////////////////
-
 #include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
@@ -76,7 +69,7 @@
 #elif defined(__COUNTER__) && defined(LG_FEATURE_MAYBE_UNUSED)
 #   define lg_static_assert_concat_(a, b) a##b 
 #   define lg_static_assert_concat(a, b) lg_static_assert_concat_(a, b)
-#   define lg_static_assert(cond) size_t lg_maybe_unused lg_static_assert_concat(lg_static_assert, __COUNTER__) = sizeof(uint8_t[(cond) ? 1: -1])
+#   define lg_static_assert(cond) size_t lg_maybe_unused lg_static_assert_concat(lg_static_assert, __COUNTER__) = sizeof(uint8_t[(cond) ? 1 : -1])
 #else
 #   define lg_static_assert(cond)
 #endif // defined(_Static_assert)
@@ -383,6 +376,14 @@ lg_strcmp(const lg_str8 a, const lg_str8 b);
 /// Returns the number of bytes written.
 size_t 
 lg_strcpy(lg_str8 dest, const lg_str8 src);
+
+LG_StatusKind
+lg_strcat(
+    LG_Arena *arena,
+    lg_str8 *strings,
+    size_t n_strings,
+    lg_str8 *out_str
+);
 
 void 
 lg_copy_to_cstring(uint8_t *dst, const lg_str8 src);
