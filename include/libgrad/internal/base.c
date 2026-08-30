@@ -371,9 +371,15 @@ lg_strlist_cpy_append(LG_StringList *strlist, LG_Arena *arena, lg_str8 str) {
 
 void
 lg_strlist_write(LG_StringList *strlist, LG_Writer *writer) {
+    lg_assert(strlist != NULL);
+
+    if (strlist->tail == NULL) {
+        return;
+    }
+
     LG_StringListHead *iter_head = strlist->tail;
     while (true) {
-        if (iter_head == NULL) {
+        if (iter_head->prev == NULL) {
             break;
         }
         iter_head = iter_head->prev;

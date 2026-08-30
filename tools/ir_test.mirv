@@ -10,9 +10,9 @@ type Domain;
 type AffineTransform;
 type AffineAddressOperator;
 
-operator IntroduceIterationDomain(host : << LG_Polyhedron >>) -> Domain;
-operator IntroduceAffineTransform(host : << LG_AffineTransform >>) -> AffineTransform;
-operator IntroduceAffineAddressOperator(host : << LG_AffineTransform >>) -> AffineAddressOperator;
+operator IntroduceIterationDomain (host : << LG_Polyhedron >>) -> Domain;
+operator IntroduceAffineTransform (host : << LG_AffineTransform >>) -> AffineTransform;
+operator IntroduceAffineAddressOperator (host : << LG_AffineTransform >>) -> AffineAddressOperator;
 
 operator ApplyAffineTransform (coord : Coordinate, atran : AffineTransform) -> Coordinate;
 operator ApplyAffineAddressOperator (addr_op : AffineAddressOperator, coord : Coordinate) -> Coordinate;
