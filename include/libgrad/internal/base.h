@@ -29,6 +29,7 @@
 #endif // defined(__has_attribute) && __has_attribute(nullability)
        
 #if defined(__has_attribute) && __has_attribute(unused) 
+#   define LG_FEATURE_MAYBE_UNUSED
 #   define lg_maybe_unused __attribute__((unused))
 #else
 #   define lg_maybe_unused
@@ -72,10 +73,10 @@
 /// Static assertions
 #if defined(_Static_assert)
 #   define lg_static_assert(cond) _Static_assert((cond), "")
-#elif defined(__COUNTER__)
+#elif defined(__COUNTER__) && defined(LG_FEATURE_MAYBE_UNUSED)
 #   define lg_static_assert_concat_(a, b) a##b 
 #   define lg_static_assert_concat(a, b) lg_static_assert_concat_(a, b)
-#   define lg_static_assert(cond) size_t lg_static_assert_concat(lg_static_assert, __COUNTER__) = sizeof(uint8_t[(cond) ? 1: -1])
+#   define lg_static_assert(cond) size_t lg_maybe_unused lg_static_assert_concat(lg_static_assert, __COUNTER__) = sizeof(uint8_t[(cond) ? 1: -1])
 #else
 #   define lg_static_assert(cond)
 #endif // defined(_Static_assert)

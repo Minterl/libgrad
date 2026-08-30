@@ -2244,6 +2244,60 @@ mrv_ldesc_destroy(MRV_LanguageDescriptor *ldesc) {
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ///
+/// text templates
+///
+////////////////////////////////////////////////////////////////////////////////
+
+typedef struct
+MRV_TmplFieldTable {
+    lg_str8 key;
+    lg_str8 value;
+} MRV_TmplFieldTable;
+
+void 
+mrv_write_tmpl(
+    LG_Writer *writer,
+    lg_str8 text,
+    MRV_TmplFieldTable *fields,
+    size_t n_entries
+) {
+    for (size_t i = 0 ; i < text.len; i++) {
+        if (
+            text.p[i] == '$' &&
+            (i + 1 < text.len && text.p[i + 1] == '{') &&
+            (i + 2 < text.len && text.p[i + 2] == '{')
+        ) {
+            i += 2;
+
+            size_t scan = i;
+            while (
+                (scan < text.len && text.p[scan] != '}') &&
+                (scan + 1 < text.len && text.p[scan + 1] != '}')
+            ) { scan++; }
+
+            lg_str8 found_key = (lg_str8){ .len = scan - i, .p = text.p + i + 1 };
+            lg_str8 found_value = {0};
+            for (size_t i_table = 0; i_table < n_entries; i_table++) {
+                if (lg_strcmp(found_key, fields[i_table].key) == 0) {
+                    found_value = fields[i_table].value;
+                    break;
+                }
+            }
+
+            lg_assert(found_value.len > 0);
+            lg_write(writer, found_value);
+
+            i = scan + 2;
+        } else {
+            lg_write(writer, ((lg_str8){ .len = 1, .p = text.p + i }));
+        }
+    }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+///
 /// the sourcegen stuff
 ///
 ////////////////////////////////////////////////////////////////////////////////
@@ -2253,6 +2307,7 @@ MRV_SourcegenContext {
     LG_Arena                *scratch;
     LG_Writer               *header_file_writer;
     MRV_LanguageDescriptor  *ldesc;
+    lg_str8                  type_ident_prefix;
 } MRV_SourcegenContext;
 
 void
@@ -2517,6 +2572,48 @@ mrv_sg_expr_type(MRV_SourcegenContext *ctx) {
 }
 
 void
+mrv_sg_append_fn(MRV_SourcegenContext *ctx) {
+    const lg_str8 template = lg_str8_lit(R"(
+LG_${{lang_name}}Symbol
+lg_hbuilder_append(
+    LG_Context *ctx,
+    LG_${{lang_name}}Builder *builder,
+    LG_${{lang_name}}Opcode opcode,
+    LG_${{lang_name}}Operands operands
+) {
+    LG_${{lang_name}}BuilderNode *node = lg_arena_alloc_struct(&ctx->arena, LG_${{lang_name}}BuilderNode);
+    if (node == NULL) {
+        lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory appending to ${{lang_name}} expr"));
+        return lg_nil(LG_${{lang_name}}Symbol);
+    }
+
+    builder->next_symbol_id++;
+    LG_${{lang_name}}Symbol y = (LG_${{lang_name}}Symbol){
+        .id = builder->next_symbol_id,
+        .type = lg_${{lang_name}}_op_get_return_type(opcode),
+    };
+
+    node->node.opcode = opcode;
+    node->node.y = y;
+    node->node.as = operands;
+
+    // TODO: make lg_sll_prepend
+    if (builder->ir_tail != NULL) {
+        node->prev = builder->ir_tail;
+    }
+    builder->ir_tail = node;
+
+    return y;
+}
+)");
+    
+    MRV_TmplFieldTable fields[] = {
+        {lg_str8_lit("lang_name"), ctx->ldesc->language_name},
+    };
+    mrv_write_tmpl(ctx->header_file_writer, template, fields, 1);
+}
+
+void
 mrv_gen_source(
     LG_Writer *header_file_writer,
     LG_Arena *scratch_allocator,
@@ -2546,6 +2643,7 @@ mrv_gen_source(
     mrv_sg_node_union_type(&ctx);
     mrv_sg_builder_types(&ctx);
     mrv_sg_expr_type(&ctx);
+    mrv_sg_append_fn(&ctx);
     lg_printf(header_file_writer, lg_str8_lit("\n#endif // LG_%{str}_GEN_H_\n"), lang_capitalized);
 
     lg_pop_scope(ctx.scratch, scope);

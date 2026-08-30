@@ -63,7 +63,11 @@ examples/mnist:
 tools/mirv:
 	mkdir -p out/tools && \
 	cc -o out/tools/mirv.out \
-		$(CFLAGS) \
+		-Wall -Werror -Wextra -g -std=gnu11 \
+		-Iinclude \
+		-Itest \
+		-DLG_SAFE \
+		-DLG_DEBUG \
 		-Iexamples/include \
 		-fsanitize=address \
 		-fsanitize=bounds \
