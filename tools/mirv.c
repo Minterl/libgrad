@@ -2308,6 +2308,11 @@ MRV_SourcegenContext {
     LG_Writer               *header_file_writer;
     MRV_LanguageDescriptor  *ldesc;
     lg_str8                  type_ident_prefix;
+
+    struct {
+        lg_str8 lang_capitalized;
+        lg_str8 lang_snake_case;
+    } common_strings;
 } MRV_SourcegenContext;
 
 void
@@ -2583,14 +2588,14 @@ lg_hbuilder_append(
 ) {
     LG_${{lang_name}}BuilderNode *node = lg_arena_alloc_struct(&ctx->arena, LG_${{lang_name}}BuilderNode);
     if (node == NULL) {
-        lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory appending to ${{lang_name}} expr"));
+        lg_report_error(ctx, LG_StatusKind_OutOfMemory, lg_str8_lit("ran out of memory appending to ${{lang_snake}} expr"));
         return lg_nil(LG_${{lang_name}}Symbol);
     }
 
     builder->next_symbol_id++;
     LG_${{lang_name}}Symbol y = (LG_${{lang_name}}Symbol){
         .id = builder->next_symbol_id,
-        .type = lg_${{lang_name}}_op_get_return_type(opcode),
+        .type = lg_${{lang_snake}}_op_get_return_type(opcode),
     };
 
     node->node.opcode = opcode;
@@ -2609,8 +2614,9 @@ lg_hbuilder_append(
     
     MRV_TmplFieldTable fields[] = {
         {lg_str8_lit("lang_name"), ctx->ldesc->language_name},
+        {lg_str8_lit("lang_snake"), ctx->common_strings.lang_snake_case},
     };
-    mrv_write_tmpl(ctx->header_file_writer, template, fields, 1);
+    mrv_write_tmpl(ctx->header_file_writer, template, fields, 2);
 }
 
 void
@@ -2627,14 +2633,25 @@ mrv_gen_source(
 
     LG_Scope scope = lg_push_scope(ctx.scratch);
 
-    lg_str8 lang_capitalized;
-    LG_StatusKind status = lg_str8_to_upper(ldesc->language_name, ctx.scratch, &lang_capitalized);
-    lg_assert(status == LG_StatusKind_OK);
+    // common strigs
+    {
+        LG_StatusKind status = LG_StatusKind_OK;
 
-    lg_printf(header_file_writer, lg_str8_lit(
-        "#ifndef LG_%{str}_GEN_H_\n"
-        "#define LG_%{str}_GEN_H_\n"
-    ), lang_capitalized, lang_capitalized);
+        status = lg_str8_to_upper(ldesc->language_name, ctx.scratch, &ctx.common_strings.lang_capitalized);
+        status = lg_str8_pascal_to_snake_case(ldesc->language_name, ctx.scratch, &ctx.common_strings.lang_snake_case);
+
+        lg_assert(status == LG_StatusKind_OK);
+    }
+
+    lg_printf(
+        header_file_writer, 
+        lg_str8_lit(
+            "#ifndef LG_%{str}_GEN_H_\n"
+            "#define LG_%{str}_GEN_H_\n"
+        ), 
+        ctx.common_strings.lang_capitalized,
+        ctx.common_strings.lang_capitalized
+    );
     lg_write(header_file_writer, lg_str8_lit("\n#include <libgrad/internal/base.h>\n"));
     mrv_sg_type_enum(&ctx);
     mrv_sg_opcode_enum(&ctx);
@@ -2644,7 +2661,7 @@ mrv_gen_source(
     mrv_sg_builder_types(&ctx);
     mrv_sg_expr_type(&ctx);
     mrv_sg_append_fn(&ctx);
-    lg_printf(header_file_writer, lg_str8_lit("\n#endif // LG_%{str}_GEN_H_\n"), lang_capitalized);
+    lg_printf(header_file_writer, lg_str8_lit("\n#endif // LG_%{str}_GEN_H_\n"), ctx.common_strings.lang_capitalized);
 
     lg_pop_scope(ctx.scratch, scope);
 }

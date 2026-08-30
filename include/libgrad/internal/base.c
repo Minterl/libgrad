@@ -320,6 +320,35 @@ lg_str8_to_upper(
     return LG_StatusKind_OK;
 }
 
+LG_StatusKind
+lg_str8_to_lower(
+    lg_str8 str,
+    LG_Arena *arena,
+    lg_str8 *out_str
+) {
+    lg_assert(out_str != NULL);
+
+    lg_static_assert((int32_t)'a' - 'A' > 0);
+    const size_t difference = 'a' - 'A';
+
+    uint8_t *new_p = lg_arena_alloc_array(arena, uint8_t, str.len);
+    if (new_p == NULL) {
+        return LG_StatusKind_OutOfMemory;
+    }
+
+    for (size_t i = 0; i < str.len; i++) {
+        if (lg_char_is_capital_letter(str.p[i])) {
+            new_p[i] = str.p[i] + difference;
+        } else {
+            new_p[i] = str.p[i];
+        }
+    }
+
+    *out_str = (lg_str8){ .len = str.len, .p = new_p };
+
+    return LG_StatusKind_OK;
+}
+
 LG_StatusKind 
 lg_strlist_cpy_append(LG_StringList *strlist, LG_Arena *arena, lg_str8 str) {
     LG_StringListHead *head = lg_arena_alloc_famstruct(arena, LG_StringListHead, str.len);
