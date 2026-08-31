@@ -389,20 +389,22 @@ lg_str8_to_lower(
 }
 
 LG_StatusKind 
-lg_strlist_cpy_append(LG_StringList *strlist, LG_Arena *arena, lg_str8 str) {
+lg_strlist_append(
+    LG_StringList *strlist,
+    LG_Arena *arena,
+    lg_str8 str
+) {
     LG_StringListHead *head = lg_arena_alloc_famstruct(arena, LG_StringListHead, str.len);
     if (head == NULL) {
         return LG_StatusKind_OutOfMemory;
     }
 
-    lg_memcpy(head->data, str.p, str.len);
-
+    head->str = str;
     if (strlist->tail != NULL) {
         lg_assert(strlist->tail->next == NULL);
         strlist->tail->next = head;
         head->prev = strlist->tail;
     }
-    head->len = str.len;
     strlist->tail = head;
 
     return LG_StatusKind_OK;
@@ -425,8 +427,7 @@ lg_strlist_write(LG_StringList *strlist, LG_Writer *writer) {
     }
 
     while (iter_head != NULL) {
-        lg_str8 str = { .len = iter_head->len, .p = iter_head->data };
-        lg_write(writer, str);
+        lg_write(writer, iter_head->str);
         iter_head = iter_head->next;
     }
 }

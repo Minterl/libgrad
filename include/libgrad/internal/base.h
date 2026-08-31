@@ -344,8 +344,7 @@ LG_StringListHead {
     struct LG_StringListHead *next;
     struct LG_StringListHead *prev;
 
-    size_t   len;
-    uint8_t  data[];
+    lg_str8 str;
 } LG_StringListHead;
 
 typedef struct
@@ -426,7 +425,11 @@ lg_str8_to_upper(
 );
 
 LG_StatusKind
-lg_strlist_cpy_append(LG_StringList *strlist, LG_Arena *arena, lg_str8 str);
+lg_strlist_append(
+    LG_StringList *strlist,
+    LG_Arena *arena,
+    lg_str8 str
+);
 
 void
 lg_strlist_write(LG_StringList *strlist, LG_Writer *writer);
