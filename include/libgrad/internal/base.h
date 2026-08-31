@@ -365,6 +365,10 @@ LG_Writer {
     size_t (*write)(void *ctx, const lg_str8 str);
 } LG_Writer;
 
+
+lg_str8
+lg_str8_from_cstr(uint8_t *cstr);
+
 /// Behaves like libc `strcmp`, but returns 1 when `a.len` > `b.len`, and -1 in the opposite case.
 int32_t 
 lg_strcmp(const lg_str8 a, const lg_str8 b);

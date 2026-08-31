@@ -2817,8 +2817,27 @@ libc_writer = {
     .write = write_stdout,
 };
 
-int main() {
-    FILE *file = fopen("./tools/ir_test.mirv", "r+");
+int 
+main(int32_t argc, char **argv) {
+    int32_t ret_code = 0;
+
+    LG_Arena scratch_allocator = {0};
+    lg_arena_init(&scratch_allocator, &libc_allocator);
+    
+    lg_str8 *args = lg_arena_alloc_array(&scratch_allocator, lg_str8, argc);
+    lg_assert(args != NULL);
+    for (int32_t i = 0; i < argc; i++) {
+        args[i] = lg_str8_from_cstr((uint8_t*)argv[i]);
+    }
+
+    if (argc < 2) {
+        lg_printf(&libc_writer, lg_str8_lit("provide the input file as the first argument\n"));
+        ret_code = -1;
+        goto out_free_all;
+    }
+
+    // lg_assert(args[0].p[args[0].len] == 0);
+    FILE *file = fopen((const char*)args[1].p, "r+");
     lg_assert(file != NULL);
 
     uint8_t file_contents[4096] = {0};
@@ -2827,9 +2846,6 @@ int main() {
 
     lg_str8 text = (lg_str8){ .len = 4096, .p = file_contents };
     MRV_TokenStream tstream = mrv_lex(&libc_allocator, text, &libc_writer);
-
-    LG_Arena scratch_allocator = {0};
-    lg_arena_init(&scratch_allocator, &libc_allocator);
 
     (void)text;
 
@@ -2840,6 +2856,14 @@ int main() {
         &tstream,
         text
     );
+
+    for (int32_t i = 0; i < argc; i++) {
+        if (lg_strcmp(args[i], lg_str8_lit("--dump-ast")) == 0) {
+            mrv_ast_dump(&ast, &libc_writer, text);
+            ret_code = 0;
+            goto out_destroy_ast;
+        }
+    }
 
     MRV_LanguageDescriptor ldesc = {0};
     mrv_analyze(
@@ -2854,11 +2878,14 @@ int main() {
     mrv_gen_source(&libc_writer, &scratch_allocator, &ldesc);
 
     mrv_ldesc_destroy(&ldesc);
-    mrv_tstream_destroy(&tstream, &libc_allocator);
+
+out_destroy_ast:
     mrv_ast_destroy(&ast);
+    mrv_tstream_destroy(&tstream, &libc_allocator);
     fclose(file);
+out_free_all:
     lg_arena_free_all(&scratch_allocator);
-    return 0;
+    return ret_code;
 }
 
 #include <libgrad/internal/base.c>

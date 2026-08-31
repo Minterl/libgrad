@@ -31,16 +31,14 @@ lg_vformat_string(va_list ap, LG_Writer *writer) {
 void 
 lg_vformat_cstring(va_list ap, LG_Writer *writer) {
     uint8_t *s = va_arg(ap, uint8_t*);
-    size_t len = 0;
-    while (s[len] != '\0') {len++;};
-    lg_write(writer, ((lg_str8){ .len = len, .p = s }));
+    lg_str8 str8 = lg_str8_from_cstr(s);
+    lg_write(writer, str8);
 }
 void lg_vformat_status_kind(va_list ap, LG_Writer *writer) {
     LG_StatusKind status = va_arg(ap, LG_StatusKind);
-    uint8_t *str = (uint8_t*)lg_status_kind_as_cstring(status);
-    size_t len = 0;
-    while (str[len] != '\0') {len++;};
-    lg_write(writer, ((lg_str8){ .len = len, .p = str }));
+    uint8_t *s = (uint8_t*)lg_status_kind_as_cstring(status);
+    lg_str8 str8 = lg_str8_from_cstr(s);
+    lg_write(writer, str8);
 }
 
 #define LG_FMT_FN_LUT_LEN 4
@@ -53,6 +51,13 @@ static const struct {
     {lg_hash_lit_16("cstr"),    lg_vformat_cstring},
     {lg_hash_lit_16("status"),  lg_vformat_status_kind},
 };
+
+lg_str8
+lg_str8_from_cstr(uint8_t *cstr) {
+    size_t len = 0;
+    while (cstr[len] != '\0') {len++;};
+    return (lg_str8){ .len = len, .p = cstr };
+}
 
 int32_t 
 lg_strcmp(const lg_str8 a, const lg_str8 b) {
