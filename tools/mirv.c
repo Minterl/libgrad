@@ -2541,7 +2541,7 @@ mrv_sg_node_union_type(MRV_SourcegenContext *ctx) {
 
     lg_printf(ctx->header_file_writer, lg_str8_lit("\ntypedef struct\nLG_%{str}Node {"), ctx->ldesc->language_name);
     lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}Opcode opcode;"), ctx->ldesc->language_name);
-    lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}Operands operands_as;"), ctx->ldesc->language_name);
+    lg_printf(ctx->header_file_writer, lg_str8_lit("\n    LG_%{str}Operands as;"), ctx->ldesc->language_name);
     lg_printf(ctx->header_file_writer, lg_str8_lit("\n} LG_%{str}Node;\n"), ctx->ldesc->language_name);
 }
 
@@ -2583,16 +2583,14 @@ lg_hbuilder_${{op_snake}}(
 
     // increment first so zero is not a valid symbol id
     builder->next_symbol_id++;
-    uint32_t y = next_symbol_id;
+    
+    node->node.opcode = LG_${{lang_name}}Opcode_${{op}};
+    node->node.as.${{op_snake}} = (LG_${{lang_name}}Node_${{op}}){${{L:props}}};
 
-    if (builder->ir_tail != NULL) {
-        node->prev = builder->ir_tail;
+    if (builder->nodes_tail != NULL) {
+        node->prev = builder->nodes_tail;
     }
-    builder->ir_tail = node;
-
-    return y;
-}
-)");
+    builder->nodes_tail = node;)");
     
     LG_TableIter iter = {0};
     lg_table_iter_init(&iter, &ctx->ldesc->table);
@@ -2613,6 +2611,7 @@ lg_hbuilder_${{op_snake}}(
         lg_assert(status == LG_StatusKind_OK);
 
         LG_StringList operands = {0};
+        LG_StringList props = {0};
 
         if (entry.as.operator.left_arg_name.len > 0) {
             lg_str8 arg_name_snake = {0};
@@ -2638,6 +2637,12 @@ lg_hbuilder_${{op_snake}}(
 
             lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(" "));
             lg_strlist_cpy_append(&operands, ctx->scratch, arg_name_snake);
+
+            lg_strlist_cpy_append(&props, ctx->scratch, lg_str8_lit("\n        ."));
+            lg_strlist_cpy_append(&props, ctx->scratch, arg_name_snake);
+            lg_strlist_cpy_append(&props, ctx->scratch, lg_str8_lit(" = "));
+            lg_strlist_cpy_append(&props, ctx->scratch, arg_name_snake);
+            lg_strlist_cpy_append(&props, ctx->scratch, lg_str8_lit(","));
         }
         if (entry.as.operator.right_arg_name.len > 0) {
             lg_str8 arg_name_snake = {0};
@@ -2663,6 +2668,12 @@ lg_hbuilder_${{op_snake}}(
 
             lg_strlist_cpy_append(&operands, ctx->scratch, lg_str8_lit(" "));
             lg_strlist_cpy_append(&operands, ctx->scratch, arg_name_snake);
+
+            lg_strlist_cpy_append(&props, ctx->scratch, lg_str8_lit("\n        ."));
+            lg_strlist_cpy_append(&props, ctx->scratch, arg_name_snake);
+            lg_strlist_cpy_append(&props, ctx->scratch, lg_str8_lit(" = "));
+            lg_strlist_cpy_append(&props, ctx->scratch, arg_name_snake);
+            lg_strlist_cpy_append(&props, ctx->scratch, lg_str8_lit(","));
         }
 
         LG_StringList return_type = {0};
@@ -2671,19 +2682,35 @@ lg_hbuilder_${{op_snake}}(
             lg_strlist_cpy_append(&return_type, ctx->scratch, ctx->ldesc->language_name);
             lg_strlist_cpy_append(&return_type, ctx->scratch, lg_str8_lit("Symbol_"));
             lg_strlist_cpy_append(&return_type, ctx->scratch, entry.as.operator.return_type);
+
+            lg_strlist_cpy_append(&props, ctx->scratch, lg_str8_lit("\n        .return_val = "));
+            lg_strlist_cpy_append(&props, ctx->scratch, lg_str8_lit("{ .id = builder->next_symbol_id },"));
         } else {
             lg_strlist_cpy_append(&return_type, ctx->scratch, lg_str8_lit("void"));
         }
 
-        const size_t len = 5;
-        MRV_TmplFieldTable fields[5] = {
+        if (props.tail != NULL) {
+            lg_strlist_cpy_append(&props, ctx->scratch, lg_str8_lit("\n    "));
+        }
+
+        MRV_TmplFieldTable fields[] = {
             {lg_str8_lit("lang_name"),    { .str = ctx->ldesc->language_name }},
             {lg_str8_lit("lang_snake"),   { .str = ctx->common_strings.lang_snake_case}},
             {lg_str8_lit("return_type"),  { .strlist = return_type }},
+            {lg_str8_lit("op"),           { .str = entry.name }},
             {lg_str8_lit("op_snake"),     { .str = name_snake }},
             {lg_str8_lit("operands"),     { .strlist = operands }},
+            {lg_str8_lit("props"),        { .strlist = props }},
         };
-        mrv_write_tmpl(ctx->header_file_writer, template, fields, len);
+        mrv_write_tmpl(ctx->header_file_writer, template, fields, sizeof(fields) / sizeof(MRV_TmplFieldTable));
+
+        if (entry.as.operator.return_type.len > 0) {
+            lg_printf(ctx->header_file_writer, lg_str8_lit(
+                "\n\n    return (LG_%{str}Symbol_%{str}){ .id = ctx->next_symbol_id };"
+            ), ctx->ldesc->language_name, entry.as.operator.return_type);
+        }
+
+        lg_write(ctx->header_file_writer, lg_str8_lit("\n}\n"));
 
         lg_pop_scope(ctx->scratch, scope);
     }
