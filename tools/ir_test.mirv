@@ -66,7 +66,7 @@ combinator Contract (
         %x0 : Scalar = Access(%x0_addr);
         %x1 : Scalar = Access(%x1_addr);
         %cons_pair : ScalarConsPair = MakeScalarConsPair(%x0, %x1);
-        %y  : Scalar = ApplyScalarExpression(%scalar_expr, %cons_pair);
+        %y : Scalar = ApplyScalarExpression(%scalar_expr, %cons_pair);
 
         YieldAccumulate(%y_addr, %y);
     }
