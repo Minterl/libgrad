@@ -9,23 +9,26 @@ type Coordinate;
 type Domain;
 type AffineTransform;
 type AffineAddressOperator;
+type ScalarConsPair;
+type ScalarExpression;
 
 operator IntroduceIterationDomain (host : << LG_Polyhedron >>) -> Domain;
 operator IntroduceAffineTransform (host : << LG_AffineTransform >>) -> AffineTransform;
 operator IntroduceAffineAddressOperator (host : << LG_AffineTransform >>) -> AffineAddressOperator;
+operator IntroduceScalarExpression (host : << LG_ScalarExpression >>) -> ScalarExpression;
 
 operator ApplyAffineTransform (coord : Coordinate, atran : AffineTransform) -> Coordinate;
 operator ApplyAffineAddressOperator (addr_op : AffineAddressOperator, coord : Coordinate) -> Coordinate;
+operator ApplyScalarExpression (scalar_expr : ScalarExpression, cons_pair : ScalarConsPair) -> Scalar;
 operator Access (addr : Address) -> Scalar;
-operator Add (x0 : Scalar, x1 : Scalar) -> Scalar;
-operator Multiply (x0 : Scalar, x1 : Scalar) -> Scalar;
+operator MakeScalarConsPair (x0 : Scalar, x1 : Scalar) -> ScalarConsPair;
 
 operator YieldAssign (addr : Address, val : Scalar);
 operator YieldAccumulate(addr : Address, val : Scalar);
 
 control_flow For (iteration_domain : Domain) -> Coordinate;
 
-stencil contraction (
+combinator Contract (
     iteration_domain : << LG_Polyhedron >>,
 
     y_atran  : << LG_AffineTransform >>,
@@ -35,6 +38,8 @@ stencil contraction (
     y_address_op  : << LG_AffineTransform >>,
     x0_address_op : << LG_AffineTransform >>,
     x1_address_op : << LG_AffineTransform >>,
+
+    scalar_expression : << LG_ScalarExpression >>,
 ) {
     %D : Domain = IntroduceIterationDomain(iteration_domain);
 
@@ -45,6 +50,8 @@ stencil contraction (
     %y_addr_op  :   AffineAddressOperator = IntroduceAffineAddressOperator(y_address_op);
     %x0_addr_op :   AffineAddressOperator = IntroduceAffineAddressOperator(x0_address_op);
     %x1_addr_op :   AffineAddressOperator = IntroduceAffineAddressOperator(x1_address_op);
+
+    %scalar_expr : ScalarExpression = IntroduceScalarExpression(scalar_expression);
 
     For (%D) (%induction_vector : Coordinate) {
         %y_coord :  Coordinate = ApplyAffineTransform(%induction_vector, %y_transform);
@@ -58,7 +65,8 @@ stencil contraction (
 
         %x0 : Scalar = Access(%x0_addr);
         %x1 : Scalar = Access(%x1_addr);
-        %y  : Scalar = Multiply(%x0, %x1);
+        %cons_pair : ScalarConsPair = MakeScalarConsPair(%x0, %x1);
+        %y  : Scalar = ApplyScalarExpression(%scalar_expr, %cons_pair);
 
         YieldAccumulate(%y_addr, %y);
     }

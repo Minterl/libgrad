@@ -70,7 +70,7 @@ mrv_report_error(MRV_Error *err, MRV_Span span, lg_str8 fmt, ...) {
     MRV_X(Language,           "language") \
     MRV_X(Type,               "type") \
     MRV_X(Operator,           "operator") \
-    MRV_X(Stencil,            "stencil") \
+    MRV_X(Combinator,         "combinator") \
     MRV_X(ControlFlow,        "control_flow") \
     MRV_X(RightArrow,         "->") \
     MRV_X(Ident,              "") \
@@ -490,7 +490,7 @@ enum {
     MRV_X(OtherIdent) \
     MRV_X(SymbolDeclaration) \
     MRV_X(LanguageDeclaration) \
-    MRV_X(StencilDeclaration) \
+    MRV_X(CombinatorDeclaration) \
     MRV_X(TypeDeclaration) \
     MRV_X(OperatorDeclaration) \
     MRV_X(DeclarationArg) \
@@ -604,7 +604,7 @@ MRV_ASTNodeChildren {
         MRV_ASTNode *ident;
         MRV_ASTNode *arg_list;
         MRV_ASTNode *body;
-    } StencilDeclaration;
+    } CombinatorDeclaration;
 
     struct {
         size_t         n_statements;
@@ -1140,7 +1140,7 @@ mrv_parse_decl_arg(MRV_ParserContext *ctx) {
 }
 
 MRV_ASTNode*
-mrv_parse_decl_arg_list(MRV_ParserContext *ctx) {
+mrv_parse_decl_arg_list(MRV_ParserContext *ctx, bool is_binary) {
     LG_Scope scope = lg_push_scope(&ctx->scratch);
 
     uint32_t n_children = 0;
@@ -1170,6 +1170,15 @@ loop_end:;
 
     MRV_ASTNode **children = mrv_parser_nrs_unwind_cpy(ctx, n_children);
     MRV_Span all_span = mrv_get_bounding_span(ctx, n_children, children);
+
+    if (n_children > 2 && is_binary) {
+        mrv_report_error(&ctx->err, all_span, lg_str8_lit(
+            "all operators must be pure three-address code\n"
+            "this argument list has %{i64} arguments"
+        ), n_children);
+        return mrv_parser_nil_node(ctx);
+    }
+
     MRV_ASTNode *node = mrv_parser_mknode(
         ctx,
         DeclarationArgList,
@@ -1184,11 +1193,11 @@ loop_end:;
 }
 
 MRV_ASTNode*
-mrv_parse_stencil_decl(MRV_ParserContext *ctx) {
+mrv_parse_combinator_decl(MRV_ParserContext *ctx) {
     MRV_ASTNode *ident = mrv_parse_other_ident(ctx);
 
     mrv_parser_expect(ctx, MRV_TokenKind_OpenParen);
-    MRV_ASTNode *arg_list = mrv_parse_decl_arg_list(ctx);
+    MRV_ASTNode *arg_list = mrv_parse_decl_arg_list(ctx, false);
 
     mrv_parser_expect(ctx, MRV_TokenKind_OpenBrace);
     MRV_ASTNode *body = mrv_parse_block(ctx);
@@ -1200,7 +1209,7 @@ mrv_parse_stencil_decl(MRV_ParserContext *ctx) {
     MRV_Span all_span = mrv_get_bounding_span(ctx, 3, (MRV_ASTNode*[]){ident, arg_list, body});
     MRV_ASTNode *node = mrv_parser_mknode(
         ctx,
-        StencilDeclaration,
+        CombinatorDeclaration,
         all_span,
         .ident = ident,
         .arg_list = arg_list,
@@ -1231,7 +1240,7 @@ mrv_parse_operator_decl(MRV_ParserContext *ctx) {
     MRV_ASTNode *ident = mrv_parse_other_ident(ctx);
     mrv_parser_expect(ctx, MRV_TokenKind_OpenParen);
 
-    MRV_ASTNode *arg_list = mrv_parse_decl_arg_list(ctx);
+    MRV_ASTNode *arg_list = mrv_parse_decl_arg_list(ctx, true);
 
     MRV_ASTNode *return_type = mrv_parser_nil_node(ctx);
     MRV_Token peek = mrv_parser_peek(ctx);
@@ -1258,7 +1267,7 @@ MRV_ASTNode*
 mrv_parse_control_flow_decl(MRV_ParserContext *ctx) {
     MRV_ASTNode *ident = mrv_parse_other_ident(ctx);
     mrv_parser_expect(ctx, MRV_TokenKind_OpenParen);
-    MRV_ASTNode *arg_list = mrv_parse_decl_arg_list(ctx);
+    MRV_ASTNode *arg_list = mrv_parse_decl_arg_list(ctx, true);
     
     MRV_ASTNode *return_type = mrv_parser_nil_node(ctx);
     MRV_Token peek = mrv_parser_peek(ctx);
@@ -1294,10 +1303,10 @@ mrv_parse_program(MRV_ParserContext *ctx) {
             goto loop_end;
         }
 
-        case MRV_TokenKind_Stencil: {
+        case MRV_TokenKind_Combinator: {
             mrv_parser_consume(ctx);
-            MRV_ASTNode *stencil = mrv_parse_stencil_decl(ctx);
-            mrv_parser_nrs_push(ctx, stencil);
+            MRV_ASTNode *func = mrv_parse_combinator_decl(ctx);
+            mrv_parser_nrs_push(ctx, func);
             break;
         }
 
@@ -1522,10 +1531,10 @@ mrv_ast_dump_r(MRV_ASTDumpContext *ctx, MRV_ASTNode *lg_nullable parent, MRV_AST
             mrv_ast_dump_r(ctx, self, as.ControlFlowStatement.block);
             break;
 
-        case MRV_ASTNodeKind_StencilDeclaration:
-            mrv_ast_dump_r(ctx, self, as.StencilDeclaration.ident);
-            mrv_ast_dump_r(ctx, self, as.StencilDeclaration.arg_list);
-            mrv_ast_dump_r(ctx, self, as.StencilDeclaration.body);
+        case MRV_ASTNodeKind_CombinatorDeclaration:
+            mrv_ast_dump_r(ctx, self, as.CombinatorDeclaration.ident);
+            mrv_ast_dump_r(ctx, self, as.CombinatorDeclaration.arg_list);
+            mrv_ast_dump_r(ctx, self, as.CombinatorDeclaration.body);
             break;
 
         case MRV_ASTNodeKind_DeclarationArgList:
@@ -1686,7 +1695,7 @@ mrv_sema_traverse_children(
     case MRV_ASTNodeKind_Program:
         for (uint32_t i = 0; i < as.Program.n_children; i++) {
             lg_assert(
-                as.Program.children[i]->kind == MRV_ASTNodeKind_StencilDeclaration ||
+                as.Program.children[i]->kind == MRV_ASTNodeKind_CombinatorDeclaration ||
                 as.Program.children[i]->kind == MRV_ASTNodeKind_TypeDeclaration ||
                 as.Program.children[i]->kind == MRV_ASTNodeKind_OperatorDeclaration ||
                 as.Program.children[i]->kind == MRV_ASTNodeKind_ControlFlowDeclaration ||
@@ -1721,10 +1730,10 @@ mrv_sema_traverse_children(
         break;
     }
 
-    case MRV_ASTNodeKind_StencilDeclaration: {
-        next(ctx, as.StencilDeclaration.ident);
-        next(ctx, as.StencilDeclaration.arg_list);
-        next(ctx, as.StencilDeclaration.body);
+    case MRV_ASTNodeKind_CombinatorDeclaration: {
+        next(ctx, as.CombinatorDeclaration.ident);
+        next(ctx, as.CombinatorDeclaration.arg_list);
+        next(ctx, as.CombinatorDeclaration.body);
         break;
     }
 
@@ -1864,7 +1873,7 @@ mrv_sema_record_type_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
     case MRV_ASTNodeKind_Program:
     case MRV_ASTNodeKind_OperatorDeclaration:
     case MRV_ASTNodeKind_InvocationExpression:
-    case MRV_ASTNodeKind_StencilDeclaration: 
+    case MRV_ASTNodeKind_CombinatorDeclaration: 
     case MRV_ASTNodeKind_DeclarationArg:
     case MRV_ASTNodeKind_DeclarationArgList: {
         mrv_sema_traverse_children(ctx, self, mrv_sema_record_type_decls_r);
@@ -1975,6 +1984,7 @@ mrv_sema_record_op_and_cf_decls_r(MRV_SemaContext *ctx, MRV_ASTNode *self) {
                     ),
                     op_ident, n_args
                 );
+                break;
             }
 
             bool found;
