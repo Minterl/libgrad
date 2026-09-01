@@ -2488,6 +2488,7 @@ typedef struct
 MRV_SourcegenContext {
     LG_Arena                *scratch;
     LG_Writer               *header_file_writer;
+    LG_Writer               *source_file_writer;
     MRV_LanguageDescriptor  *ldesc;
     lg_str8                  type_ident_prefix;
 
@@ -2751,7 +2752,14 @@ LG_${{lang_name}}Redex_${{comb_name}} {${{L:members}}
 
 void
 mrv_sg_append_fn(MRV_SourcegenContext *ctx) {
-    const lg_str8 template = lg_str8_lit(R"(
+    const lg_str8 header_tmpl = lg_str8_lit(R"(
+lg_force_inline ${{L:return_type}}
+lg_hbuilder_${{op_snake}}(
+    LG_Context *ctx,
+    LG_${{lang_name}}Builder *builder${{L:operands}}
+);
+)");
+    const lg_str8 source_tmpl = lg_str8_lit(R"(
 lg_force_inline ${{L:return_type}}
 lg_hbuilder_${{op_snake}}(
     LG_Context *ctx,
@@ -2874,15 +2882,16 @@ lg_hbuilder_${{op_snake}}(
             {lg_str8_lit("operands"),                { .strlist = operands }},
             {lg_str8_lit("props"),                   { .strlist = props }},
         };
-        mrv_write_tmpl(ctx->header_file_writer, template, fields, sizeof(fields) / sizeof(MRV_TmplFieldTable));
+        mrv_write_tmpl(ctx->header_file_writer, header_tmpl, fields, sizeof(fields) / sizeof(MRV_TmplFieldTable));
+        mrv_write_tmpl(ctx->source_file_writer, source_tmpl, fields, sizeof(fields) / sizeof(MRV_TmplFieldTable));
 
         if (entry.as.operator.return_type.len > 0) {
-            lg_printf(ctx->header_file_writer, lg_str8_lit(
+            lg_printf(ctx->source_file_writer, lg_str8_lit(
                 "\n\n    return (LG_%{str}Symbol_%{str}){ .id = ctx->next_symbol_id };"
             ), ctx->ldesc->language_name, entry.as.operator.return_type);
         }
 
-        lg_write(ctx->header_file_writer, lg_str8_lit("\n}\n"));
+        lg_write(ctx->source_file_writer, lg_str8_lit("\n}\n"));
 
         lg_pop_scope(ctx->scratch, scope);
     }
@@ -2891,11 +2900,13 @@ lg_hbuilder_${{op_snake}}(
 void
 mrv_gen_source(
     LG_Writer *header_file_writer,
+    LG_Writer *source_file_writer,
     LG_Arena *scratch_allocator,
     MRV_LanguageDescriptor *ldesc
 ) {
     MRV_SourcegenContext ctx = {
         .header_file_writer = header_file_writer,
+        .source_file_writer = source_file_writer,
         .scratch = scratch_allocator,
         .ldesc = ldesc,
     };
@@ -3037,7 +3048,7 @@ main(int32_t argc, char **argv) {
         &ldesc
     );
 
-    mrv_gen_source(&libc_writer, &scratch_allocator, &ldesc);
+    mrv_gen_source(&libc_writer, &libc_writer, &scratch_allocator, &ldesc);
 
     mrv_ldesc_destroy(&ldesc);
 
