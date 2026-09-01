@@ -24,11 +24,11 @@ operator Access (addr : Address) -> Scalar;
 operator MakeScalarConsPair (x0 : Scalar, x1 : Scalar) -> ScalarConsPair;
 
 operator YieldAssign (addr : Address, val : Scalar);
-operator YieldAccumulate(addr : Address, val : Scalar);
+operator YieldAccumulate (addr : Address, val : Scalar);
 
 control_flow For (iteration_domain : Domain) -> Coordinate;
 
-combinator Contract (
+combinator BinaryReduction (
     iteration_domain : << LG_Polyhedron >>,
 
     y_atran  : << LG_AffineTransform >>,
